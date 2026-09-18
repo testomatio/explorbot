@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'bun:test';
-import { createCodeceptJSTools } from '../../src/ai/tools.ts';
+import { createCodeceptJSTools, failedToolResult, resolveAmbiguousElement } from '../../src/ai/tools.ts';
 import { ConfigParser } from '../../src/config.ts';
 
 function multipleElementsError(visibility: boolean[] = [], texts: string[] = ['First control', 'Second control']): Error {
@@ -91,5 +91,48 @@ describe('click on an ambiguous locator', () => {
 
     expect(result.multipleElementsDetected).toBe(true);
     expect(result.elements).toContain('Element 2:');
+  });
+
+  it('names the judged element and points at elementIndex when the judge is confident', async () => {
+    const { deps } = fakeDeps(() => multipleElementsError());
+    const judge: any = { directEnabled: true, ask: async () => ({ pick: { answer: '2', confidence: 0.92, probabilities: { '1': 0.05, '2': 0.92, none: 0.03 } } }) };
+    const tools = createCodeceptJSTools({ ...deps, judge }, fakeTask());
+
+    const result = await tools.click.execute({ commands: [`I.click({"role":"switch"})`], explanation: 'Toggle the control' }, {} as any);
+
+    expect(result.judgedElement).toBe(2);
+    expect(result.suggestion).toContain('elementIndex');
+  });
+});
+
+describe('resolveAmbiguousElement', () => {
+  it('picks the intended match when judge is confident', async () => {
+    const judge: any = { directEnabled: true, ask: async () => ({ pick: { answer: '2', confidence: 0.92, probabilities: { '1': 0.05, '2': 0.92, none: 0.03 } } }) };
+    const result = await failedToolResult('click', 'Multiple elements (2) found', {}, multipleElementsError());
+
+    const judged = await resolveAmbiguousElement(judge, result, 'Toggle the control');
+
+    expect(judged).toBe(2);
+  });
+
+  it('leaves the numbered list alone when judge is uncertain', async () => {
+    const judge: any = { directEnabled: true, ask: async () => ({ pick: { answer: '1', confidence: 0.2, probabilities: { '1': 0.5, '2': 0.48, none: 0.02 } } }) };
+    const result = await failedToolResult('click', 'Multiple elements (2) found', {}, multipleElementsError());
+
+    const judged = await resolveAmbiguousElement(judge, result, 'Toggle the control');
+
+    expect(judged).toBeNull();
+    expect(result.multipleElementsDetected).toBe(true);
+    expect(result.elements).toContain('Element 1:');
+    expect(result.elements).toContain('Element 2:');
+  });
+
+  it('leaves the numbered list alone with no judge', async () => {
+    const result = await failedToolResult('click', 'Multiple elements (2) found', {}, multipleElementsError());
+
+    const judged = await resolveAmbiguousElement(undefined, result, 'Toggle the control');
+
+    expect(judged).toBeNull();
+    expect(result.multipleElementsDetected).toBe(true);
   });
 });

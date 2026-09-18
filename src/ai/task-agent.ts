@@ -8,6 +8,7 @@ import type { StateManager } from '../state-manager.ts';
 import { HooksRunner } from '../utils/hooks-runner.ts';
 import type { AgentDeps, ToolDeps } from './agent.ts';
 import { Historian } from './historian.js';
+import type { Judge } from './judge.ts';
 import type { Navigator } from './navigator.js';
 import type { Provider } from './provider.js';
 import { Quartermaster } from './quartermaster.js';
@@ -29,6 +30,7 @@ export abstract class TaskAgent {
   config!: ExplorbotConfig;
   stateManager!: StateManager;
   knowledgeTracker!: KnowledgeTracker;
+  protected judge?: Judge;
   protected hooksRunner!: HooksRunner;
   protected consecutiveFailures = 0;
   protected consecutiveEmptyResults = 0;
@@ -45,6 +47,7 @@ export abstract class TaskAgent {
     this.config = deps.config;
     this.stateManager = deps.stateManager;
     this.knowledgeTracker = deps.knowledgeTracker;
+    this.judge = deps.judge;
     this.hooksRunner = new HooksRunner(deps.explorer, deps.config);
   }
 
@@ -59,7 +62,7 @@ export abstract class TaskAgent {
   protected abstract getNavigator(): Navigator;
 
   protected get toolDeps(): ToolDeps {
-    return { explorer: this.explorer, stateManager: this.stateManager, ai: this.provider };
+    return { explorer: this.explorer, stateManager: this.stateManager, ai: this.provider, judge: this.judge };
   }
 
   protected getExperienceTracker(): ExperienceTracker {

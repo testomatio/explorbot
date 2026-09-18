@@ -16,6 +16,7 @@ import { compactErrorMessage, normalizeInlineText, truncate } from '../utils/str
 import { WebElement } from '../utils/web-element.ts';
 import type { ToolDeps } from './agent.ts';
 import { createJudgeTool } from './judge-tool.ts';
+import type { Judge } from './judge.ts';
 import { Navigator } from './navigator.ts';
 import { Researcher } from './researcher.ts';
 import { sectionContextRule } from './rules.ts';
@@ -32,7 +33,7 @@ interface AgentToolDeps extends ToolDeps {
 
 export const ASSERTION_TOOLS = ['verify'] as const;
 
-export function createCodeceptJSTools({ explorer, stateManager }: ToolDeps, task: Task) {
+export function createCodeceptJSTools({ explorer, stateManager, judge }: ToolDeps, task: Task) {
   return {
     click: tool({
       description: dedent`
@@ -149,7 +150,7 @@ export function createCodeceptJSTools({ explorer, stateManager }: ToolDeps, task
 
         const suggestion = clickFailureSuggestion(attempts);
 
-        return failedToolResult(
+        const clickResult = await failedToolResult(
           'click',
           'All click commands failed',
           {
@@ -159,6 +160,7 @@ export function createCodeceptJSTools({ explorer, stateManager }: ToolDeps, task
           },
           ambiguityError || action.lastError
         );
+        return attachJudgedElement(judge, clickResult, explanation);
       },
     }),
 
@@ -429,7 +431,7 @@ export function createCodeceptJSTools({ explorer, stateManager }: ToolDeps, task
 
             const formSuggestion = 'Commands after the failing one never ran. Retry only those, using click() or form().';
 
-            return failedToolResult(
+            const formResult = await failedToolResult(
               'form',
               `Form execution FAILED! ${message}\n${formatExecutedSteps(action.executedSteps, codeLines.length)}`,
               {
@@ -440,6 +442,7 @@ export function createCodeceptJSTools({ explorer, stateManager }: ToolDeps, task
               },
               action.lastError
             );
+            return attachJudgedElement(judge, formResult, explanation);
           }
 
           if (!hasObservablePageChange(toolResult)) {
@@ -1296,6 +1299,7 @@ export async function failedToolResult(action: string, message: string, data?: R
     result.suggestion = getMultipleElementsSuggestion();
     result.multipleElementsDetected = true;
     result.elements = formatElementList(matched);
+    result.matchedElements = matched;
     return result;
   }
 
@@ -1360,6 +1364,7 @@ export function clickFailureSuggestion(attempts: Array<{ error?: string }>): str
 const MAX_DISAMBIGUATE_ELEMENTS = 10;
 const MAX_DISAMBIGUATE_TEXT = 80;
 const MAX_DISAMBIGUATE_HTML = 300;
+const ELEMENT_CONFIDENCE = 0.7;
 const MULTIPLE_ELEMENTS_PATTERN = 'multiple elements';
 
 async function extractWebElements(error: Error | null | undefined): Promise<MatchedElement[] | null> {
@@ -1405,6 +1410,42 @@ function formatElementList(matched: MatchedElement[] | null): string {
 
 export async function formatMatchedElements(error: Error | null | undefined): Promise<string | null> {
   return formatElementList(await extractWebElements(error));
+}
+
+export async function resolveAmbiguousElement(judge: Judge | undefined, result: Record<string, any>, intent?: string): Promise<number | null> {
+  if (!judge?.directEnabled) return null;
+
+  const matched = result?.matchedElements as MatchedElement[] | undefined;
+  if (!matched || matched.length < 2) return null;
+
+  const options: Record<string, string> = { none: 'None of these is the element meant.' };
+  matched.forEach((element, index) => {
+    options[String(index + 1)] = `${element.text || 'no text'} — ${element.html}`;
+  });
+
+  const answers = await judge.ask({ intent: intent || 'the element the last action aimed at', matches: options }, { pick: { instructions: 'Which listed element does the intent name?', options } });
+
+  const pick = answers?.pick;
+  if (!pick) return null;
+  if (pick.answer === 'none') return null;
+  if (pick.confidence < ELEMENT_CONFIDENCE) return null;
+
+  const index = Number(pick.answer);
+  if (!Number.isInteger(index)) return null;
+  if (index < 1 || index > matched.length) return null;
+  return index;
+}
+
+async function attachJudgedElement(judge: Judge | undefined, result: Record<string, any>, intent?: string): Promise<Record<string, any>> {
+  if (!result.multipleElementsDetected) return result;
+
+  const judged = await resolveAmbiguousElement(judge, result, intent);
+  if (!judged) return result;
+
+  const element = (result.matchedElements as MatchedElement[])[judged - 1];
+  result.judgedElement = judged;
+  result.suggestion = `Element ${judged} ("${element.text || 'no text'}") is the one meant. Repeat the action with step.opts({ elementIndex: ${judged} }) as the last argument.`;
+  return result;
 }
 
 function getNotFoundSuggestion(errorMessage: string): string | null {
