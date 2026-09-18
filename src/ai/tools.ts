@@ -227,7 +227,7 @@ export function createCodeceptJSTools({ explorer, stateManager, judge }: ToolDep
 
         const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, commands[0]);
         activeNote.commit(TestResult.FAILED);
-        return failedToolResult(
+        const hoverResult = await failedToolResult(
           'hover',
           'All hover commands failed',
           {
@@ -237,6 +237,7 @@ export function createCodeceptJSTools({ explorer, stateManager, judge }: ToolDep
           },
           action.lastError
         );
+        return attachJudgedElement(judge, hoverResult, explanation);
       },
     }),
 

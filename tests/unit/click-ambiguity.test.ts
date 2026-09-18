@@ -106,6 +106,32 @@ describe('click on an ambiguous locator', () => {
   });
 });
 
+describe('hover on an ambiguous locator', () => {
+  it('hands the matched elements back to the model without leaking raw element data', async () => {
+    const { deps } = fakeDeps(() => multipleElementsError());
+    const tools = createCodeceptJSTools(deps, fakeTask());
+
+    const result = await tools.hover.execute({ commands: [`I.moveCursorTo({"role":"switch"})`], explanation: 'Reveal the row actions' }, {} as any);
+
+    expect(result.success).toBe(false);
+    expect(result.multipleElementsDetected).toBe(true);
+    expect(result.elements).toContain('Element 1:');
+    expect(result.matchedElements).toBeUndefined();
+  });
+
+  it('names the judged element and points at elementIndex when the judge is confident', async () => {
+    const { deps } = fakeDeps(() => multipleElementsError());
+    const judge: any = { directEnabled: true, ask: async () => ({ pick: { answer: '1', confidence: 0.85, probabilities: { '1': 0.85, '2': 0.1, none: 0.05 } } }) };
+    const tools = createCodeceptJSTools({ ...deps, judge }, fakeTask());
+
+    const result = await tools.hover.execute({ commands: [`I.moveCursorTo({"role":"switch"})`], explanation: 'Reveal the row actions' }, {} as any);
+
+    expect(result.judgedElement).toBe(1);
+    expect(result.suggestion).toContain('elementIndex');
+    expect(result.matchedElements).toBeUndefined();
+  });
+});
+
 describe('resolveAmbiguousElement', () => {
   it('picks the intended match when judge is confident', async () => {
     const judge: any = { directEnabled: true, ask: async () => ({ pick: { answer: '2', confidence: 0.92, probabilities: { '1': 0.05, '2': 0.92, none: 0.03 } } }) };
