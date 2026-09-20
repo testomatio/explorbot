@@ -951,8 +951,16 @@ export class Prima {
     const run = `I.usePlaywrightTo(${JSON.stringify(`go to ${target}`)}, async ({ page }) => page.locator(${JSON.stringify(ariaRefSelector(ref))}).click())`;
     if (!(await explorer.action().attempt(run, `go ${target}`))) return null;
 
+    const newState = this.bot.stateManager().getCurrentState();
+    if (!newState) return null;
+    if (newState.hash === previousState.hash && newState.url === previousState.url) return null;
+
+    const confirmSnapshot = await this.refAriaSnapshot(ActionResult.fromState(newState));
+    if (!confirmSnapshot) return null;
+    if (!(await judgeArrivedAtTarget(judge, target, confirmSnapshot))) return null;
+
     const code = named ? `I.click(${JSON.stringify(named)})` : run;
-    const result = await this.capturedResult(this.bot.stateManager().getCurrentState());
+    const result = await this.capturedResult(newState);
     return this.successEnvelope(`go ${target}`, [code], result, previousState);
   }
 
@@ -1185,6 +1193,18 @@ export async function judgeNavigationRef(judge: Judge | undefined, target: strin
   if (pick.answer === 'none') return null;
   if (pick.confidence < NAVIGATION_CONFIDENCE) return null;
   return pick.answer;
+}
+
+export async function judgeArrivedAtTarget(judge: Judge | undefined, target: string, pageSnapshot: string): Promise<boolean> {
+  if (!judge?.directEnabled) return false;
+
+  const answers = await judge.ask({ task: `Reach: ${target}`, page: pageSnapshot }, { arrived: { instructions: 'Does the page now show the target?' } });
+
+  const arrived = answers?.arrived;
+  if (!arrived) return false;
+  if (arrived.answer !== 'yes') return false;
+  if (arrived.confidence < NAVIGATION_CONFIDENCE) return false;
+  return true;
 }
 
 interface Discovery {

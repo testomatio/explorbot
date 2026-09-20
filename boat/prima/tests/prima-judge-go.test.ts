@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { judgeNavigationRef } from '../src/prima.ts';
+import { judgeArrivedAtTarget, judgeNavigationRef } from '../src/prima.ts';
 
 const snapshot = '- link "Plans" [ref=e4]\n- link "Suites" [ref=e7]\n- button "New" [ref=e9]';
 
@@ -54,5 +54,27 @@ describe('judgeNavigationRef', () => {
     expect(seenOptions).not.toHaveProperty('f1e1');
     expect(seenOptions).not.toHaveProperty('f1e2');
     expect(seenOptions).not.toHaveProperty('f1e6');
+  });
+});
+
+describe('judgeArrivedAtTarget', () => {
+  it('returns true when confident the page shows the target', async () => {
+    const judge = { directEnabled: true, ask: async () => ({ arrived: { answer: 'yes', confidence: 0.9, probabilities: {} } }) };
+    expect(await judgeArrivedAtTarget(judge as any, 'the suites page', snapshot)).toBe(true);
+  });
+
+  it('returns false when confidence is below the threshold', async () => {
+    const judge = { directEnabled: true, ask: async () => ({ arrived: { answer: 'yes', confidence: 0.3, probabilities: {} } }) };
+    expect(await judgeArrivedAtTarget(judge as any, 'the suites page', snapshot)).toBe(false);
+  });
+
+  it('returns false on a confident no', async () => {
+    const judge = { directEnabled: true, ask: async () => ({ arrived: { answer: 'no', confidence: 0.95, probabilities: {} } }) };
+    expect(await judgeArrivedAtTarget(judge as any, 'the suites page', snapshot)).toBe(false);
+  });
+
+  it('returns false without a judge or a null answer', async () => {
+    expect(await judgeArrivedAtTarget(undefined, 't', snapshot)).toBe(false);
+    expect(await judgeArrivedAtTarget({ directEnabled: true, ask: async () => null } as any, 't', snapshot)).toBe(false);
   });
 });
