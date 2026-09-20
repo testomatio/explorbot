@@ -1,5 +1,13 @@
-import { describe, expect, it } from 'bun:test';
-import { shouldSkipReview } from '../../src/ai/pilot.ts';
+import { beforeEach, describe, expect, it, mock } from 'bun:test';
+import { ActionResult } from '../../src/action-result.ts';
+import { Pilot, shouldSkipReview } from '../../src/ai/pilot.ts';
+import { ConfigParser } from '../../src/config.ts';
+import { Test } from '../../src/test-plan.ts';
+
+beforeEach(() => {
+  ConfigParser.resetForTesting();
+  ConfigParser.setupTestConfig();
+});
 
 const base = { task: 't', page: 'p', recentActions: ['click - ok'], deadLoop: false, allFailed: false, ariaUnchanged: false, skippedLast: false };
 const judgeReturning = (needed: any, progressing: any) => ({
@@ -38,5 +46,66 @@ describe('shouldSkipReview', () => {
   it('never skips without a judge or when judge declines', async () => {
     expect(await shouldSkipReview(undefined, base)).toBe(false);
     expect(await shouldSkipReview({ directEnabled: true, ask: async () => null } as any, base)).toBe(false);
+  });
+});
+
+function buildPilotWithJudge(askSpy: ReturnType<typeof mock>) {
+  const invokeConversation = mock(async () => ({ response: { text: 'NEXT: keep going' }, toolExecutions: [] }));
+  const conversation: any = {
+    addUserText: mock(() => {}),
+    markLastMessageCacheable: mock(() => {}),
+    cleanupTag: mock(() => {}),
+  };
+  const deps: any = {
+    ai: {
+      getAgenticModel: () => 'model',
+      startConversation: mock(() => conversation),
+      invokeConversation,
+    },
+    explorer: {},
+    stateManager: {
+      isInDeadLoop: () => false,
+      getCurrentState: () => null,
+      otherTabs: [],
+    },
+    requestStore: { getFailedRequests: () => [] },
+    playwrightRecorder: {},
+    judge: { directEnabled: true, ask: askSpy },
+  };
+  const researcher: any = {};
+  return new Pilot(deps, {}, researcher);
+}
+
+function buildState(): ActionResult {
+  return new ActionResult({ url: '/page', title: 'Page', html: '<html><body><h1>Page</h1></body></html>', ariaSnapshot: '' });
+}
+
+function buildTestTask(): Test {
+  return new Test('check page', 'normal', 'page works', '/page');
+}
+
+const healthyAnswers = async () => ({ pilot_needed: { answer: 'no', confidence: 0.9, probabilities: {} }, progressing: { answer: 'yes', confidence: 0.9, probabilities: {} } });
+
+describe('Pilot.analyzeProgress — scheduled gating', () => {
+  it('always reviews on a reactive trigger, even when the judge reads the run as healthy', async () => {
+    const askSpy = mock(healthyAnswers);
+    const pilot = buildPilotWithJudge(askSpy);
+    const testerConversation: any = { getToolExecutions: () => [] };
+
+    const guidance = await pilot.analyzeProgress(buildTestTask(), buildState(), testerConversation, false);
+
+    expect(guidance).toBe('NEXT: keep going');
+    expect(askSpy).not.toHaveBeenCalled();
+  });
+
+  it('consults the judge and can skip on the scheduled trigger', async () => {
+    const askSpy = mock(healthyAnswers);
+    const pilot = buildPilotWithJudge(askSpy);
+    const testerConversation: any = { getToolExecutions: () => [{ toolName: 'click', wasSuccessful: true, output: { pageDiff: { ariaChanges: 'added button' } } }] };
+
+    const guidance = await pilot.analyzeProgress(buildTestTask(), buildState(), testerConversation, true);
+
+    expect(guidance).toBeNull();
+    expect(askSpy).toHaveBeenCalledTimes(1);
   });
 });

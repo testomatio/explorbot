@@ -323,11 +323,13 @@ export class Tester extends TaskAgent implements Agent {
             if (isNewPage && this.pilot) {
               const guidance = await this.pilot.reviewNewPage(task, currentState, conversation);
               if (guidance) nextStep += `\n\n${guidance}`;
-            } else if (this.shouldAnalyzeProgress(iteration, currentState) && this.pilot) {
-              const guidance = await this.pilot.analyzeProgress(task, currentState, conversation);
-              if (guidance) nextStep += `\n\n${guidance}`;
-              this.consecutiveFailures = 0;
-              this.lastAnalyzedStateHash = currentState.hash;
+            } else if (this.pilot) {
+              const reviewTrigger = this.getReviewTrigger(iteration, currentState);
+              if (reviewTrigger) {
+                const guidance = await this.pilot.analyzeProgress(task, currentState, conversation, reviewTrigger === 'scheduled');
+                if (guidance) nextStep += `\n\n${guidance}`;
+                this.applyReviewOutcome(guidance, currentState);
+              }
             }
             conversation.addUserText(nextStep);
           }
@@ -481,16 +483,22 @@ export class Tester extends TaskAgent implements Agent {
     };
   }
 
-  private shouldAnalyzeProgress(iteration: number, currentState: ActionResult): boolean {
+  private getReviewTrigger(iteration: number, currentState: ActionResult): 'scheduled' | 'reactive' | null {
     if (this.regionTransitioned) {
       this.regionTransitioned = false;
-      return true;
+      return 'reactive';
     }
-    if (this.consecutiveFailures >= 3) return true;
-    if (this.consecutiveEmptyResults >= 2) return true;
-    if (iteration % this.progressCheckInterval !== 0) return false;
-    if (this.lastAnalyzedStateHash === currentState.hash) return false;
-    return true;
+    if (this.consecutiveFailures >= 3) return 'reactive';
+    if (this.consecutiveEmptyResults >= 2) return 'reactive';
+    if (iteration % this.progressCheckInterval !== 0) return null;
+    if (this.lastAnalyzedStateHash === currentState.hash) return null;
+    return 'scheduled';
+  }
+
+  private applyReviewOutcome(guidance: string | null, currentState: ActionResult): void {
+    if (guidance === null) return;
+    this.consecutiveFailures = 0;
+    this.lastAnalyzedStateHash = currentState.hash;
   }
 
   private shouldStopForStalledExecution(task: Test, previousState: ActionResult, toolExecutions: any[]): boolean {

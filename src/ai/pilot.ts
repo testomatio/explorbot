@@ -537,28 +537,30 @@ export class Pilot implements Agent {
     );
   }
 
-  async analyzeProgress(task: Test, currentState: ActionResult, testerConversation: Conversation): Promise<string> {
+  async analyzeProgress(task: Test, currentState: ActionResult, testerConversation: Conversation, scheduled: boolean): Promise<string | null> {
     tag('substep').log('Pilot analyzing progress...');
 
     const toolCalls = testerConversation.getToolExecutions().slice(-this.stepsToReview);
     const stateContext = this.buildStateContext(currentState);
 
-    const supervisionState: SupervisionState = {
-      task: task.scenario,
-      page: stateContext,
-      recentActions: toolCalls.map((t) => {
-        if (t.wasSuccessful) return `${t.toolName} - ok`;
-        return `${t.toolName} - failed`;
-      }),
-      deadLoop: this.stateManager.isInDeadLoop(),
-      allFailed: toolCalls.length === 0 || toolCalls.every((t) => !t.wasSuccessful),
-      ariaUnchanged: toolCalls.every((t) => !t.output?.pageDiff?.ariaChanges),
-      skippedLast: this.skippedLastReview,
-    };
+    if (scheduled) {
+      const supervisionState: SupervisionState = {
+        task: task.scenario,
+        page: stateContext,
+        recentActions: toolCalls.map((t) => {
+          if (t.wasSuccessful) return `${t.toolName} - ok`;
+          return `${t.toolName} - failed`;
+        }),
+        deadLoop: this.stateManager.isInDeadLoop(),
+        allFailed: toolCalls.length === 0 || toolCalls.every((t) => !t.wasSuccessful),
+        ariaUnchanged: toolCalls.every((t) => !t.output?.pageDiff?.ariaChanges),
+        skippedLast: this.skippedLastReview,
+      };
 
-    const skipReview = await shouldSkipReview(this.judge, supervisionState);
-    this.skippedLastReview = skipReview;
-    if (skipReview) return '';
+      const skipReview = await shouldSkipReview(this.judge, supervisionState);
+      this.skippedLastReview = skipReview;
+      if (skipReview) return null;
+    }
 
     if (!this.conversation) {
       const agenticModel = this.provider.getAgenticModel('pilot');
