@@ -6,6 +6,7 @@ import type { RequestStore } from '../api/request-store.ts';
 import { ConfigParser } from '../config.ts';
 import { renderExperienceToc } from '../experience-tracker.ts';
 import type Explorer from '../explorer.ts';
+import { Observability } from '../observability.ts';
 import type { PlaywrightRecorder } from '../playwright-recorder.ts';
 import type { StateManager } from '../state-manager.ts';
 import { Stats } from '../stats.ts';
@@ -185,6 +186,7 @@ export class Pilot implements Agent {
 
       const result = response?.object;
       if (!result) {
+        await recordJudgeShadow(presumedState, 'fail');
         task.finish(TestResult.FAILED);
         return false;
       }
@@ -198,9 +200,7 @@ export class Pilot implements Agent {
       }
 
       tag('info').log(`Pilot: ${result.decision} - ${result.reason}`);
-      if (presumedState) {
-        tag('substep').log(`Judge shadow: presumed-state=${presumedState.answer} (${presumedState.confidence.toFixed(2)}) verdict=${result.decision}`);
-      }
+      await recordJudgeShadow(presumedState, result.decision);
       task.summary = result.reason;
 
       const verdictState = screenshotState || currentState;
@@ -229,6 +229,7 @@ export class Pilot implements Agent {
       return true;
     } catch (error: any) {
       tag('warning').log(`Pilot verdict failed: ${error.message}`);
+      await recordJudgeShadow(presumedState, 'fail');
       task.finish(TestResult.FAILED);
       return false;
     }
@@ -1277,6 +1278,18 @@ export async function judgePresumedState(judge: Judge | undefined, scenario: str
   const held = answers?.held;
   if (!held) return null;
   return { answer: held.answer, confidence: held.confidence };
+}
+
+export async function recordJudgeShadow(presumedState: { answer: string; confidence: number } | null, verdict: string): Promise<void> {
+  if (!presumedState) return;
+
+  tag('substep').log(`Judge shadow: presumed-state=${presumedState.answer} (${presumedState.confidence.toFixed(2)}) verdict=${verdict}`);
+
+  await Observability.run('judge.shadow.presumed_state', { tags: ['judge', 'shadow'] }, async () => {
+    const span = Observability.getSpan();
+    if (!span) return;
+    span.setAttribute('ai.telemetry.metadata.judgeShadow', JSON.stringify({ question: 'held', answer: presumedState.answer, confidence: presumedState.confidence, verdict }));
+  });
 }
 
 export type SettledStatus = 'passed' | 'failed' | 'unverified' | 'contradiction';
