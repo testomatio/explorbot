@@ -111,6 +111,7 @@ export class Pilot implements Agent {
     const stateContext = this.buildStateContext(currentState);
     const successfulAssertions = this.formatSuccessfulAssertions(currentState, testerConversation);
     const notes = task.notesToString() || 'No notes recorded.';
+    const presumedState = await judgePresumedState(this.judge, task.scenario, stateContext, task.getPrintableNotes());
 
     let visualAnalysis = '';
     let screenshotState: ActionResult | null = null;
@@ -197,6 +198,9 @@ export class Pilot implements Agent {
       }
 
       tag('info').log(`Pilot: ${result.decision} - ${result.reason}`);
+      if (presumedState) {
+        tag('substep').log(`Judge shadow: presumed-state=${presumedState.answer} (${presumedState.confidence.toFixed(2)}) verdict=${result.decision}`);
+      }
       task.summary = result.reason;
 
       const verdictState = screenshotState || currentState;
@@ -1263,6 +1267,16 @@ export async function shouldSkipReview(judge: Judge | undefined, state: Supervis
 
   tag('substep').log(`Skipping scheduled review — pilot_needed=no (${needed.confidence.toFixed(2)}), progressing=yes (${progressing.confidence.toFixed(2)}), vetoes clear (deadLoop=${state.deadLoop}, allFailed=${state.allFailed}, ariaUnchanged=${state.ariaUnchanged})`);
   return true;
+}
+
+export async function judgePresumedState(judge: Judge | undefined, scenario: string, page: string, notes: string[]): Promise<{ answer: string; confidence: number } | null> {
+  if (!judge?.directEnabled) return null;
+
+  const answers = await judge.ask({ task: scenario, page, notes }, { held: { instructions: 'The application held the data and prior state the task assumes were already there.' } });
+
+  const held = answers?.held;
+  if (!held) return null;
+  return { answer: held.answer, confidence: held.confidence };
 }
 
 export type SettledStatus = 'passed' | 'failed' | 'unverified' | 'contradiction';
