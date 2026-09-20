@@ -1228,6 +1228,51 @@ describe('Prima.go', () => {
     expect(envelope.used).toEqual([]);
   });
 
+  test('a confident judge clicks a ref instead of asking the navigator', async () => {
+    const { prima } = fakePrima();
+    let visited = false;
+    (prima as any).bot.agentNavigator = () => ({
+      visit: async () => {
+        visited = true;
+      },
+    });
+    (prima as any).bot.judge = () => ({
+      directEnabled: true,
+      ask: async () => ({ target: { answer: 'e7', confidence: 0.9, probabilities: {} } }),
+    });
+
+    const baseExplorer = (prima as any).bot.getExplorer();
+    const attempts: string[] = [];
+    (prima as any).bot.getExplorer = () => ({
+      ...baseExplorer,
+      action: () => ({ attempt: async (code: string) => attempts.push(code) > 0 }),
+    });
+
+    const envelope = await prima.go('billing settings');
+    expect(visited).toBe(false);
+    expect(attempts).toHaveLength(1);
+    expect(attempts[0]).toContain('aria-ref=e7');
+    expect(envelope.ok).toBe(true);
+  });
+
+  test('an unconfident judge falls back to the navigator unchanged', async () => {
+    const { prima } = fakePrima();
+    const visited: string[] = [];
+    (prima as any).bot.agentNavigator = () => ({
+      visit: async (destination: string) => {
+        visited.push(destination);
+      },
+    });
+    (prima as any).bot.judge = () => ({
+      directEnabled: true,
+      ask: async () => ({ target: { answer: 'e7', confidence: 0.3, probabilities: {} } }),
+    });
+
+    const envelope = await prima.go('billing settings');
+    expect(visited).toEqual(['billing settings']);
+    expect(envelope.ok).toBe(true);
+  });
+
   test('url target reports the executed navigation code as used', async () => {
     const { prima } = fakePrima();
     (prima as any).bot.agentNavigator = () => ({ visit: async () => {} });

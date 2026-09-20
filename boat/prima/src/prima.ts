@@ -8,6 +8,7 @@ import * as playwright from 'playwright';
 import type { Browser } from 'playwright';
 import { z } from 'zod';
 import { ActionResult } from '../../../src/action-result.ts';
+import type { Judge } from '../../../src/ai/judge.ts';
 import { getPreviousResearch } from '../../../src/ai/researcher/cache.ts';
 import { actionRule, locatorRule } from '../../../src/ai/rules.ts';
 import { createAgentTools, createCodeceptJSTools, createRefTools } from '../../../src/ai/tools.ts';
@@ -20,7 +21,7 @@ import { Reporter } from '../../../src/reporter.ts';
 import type { WebPageState } from '../../../src/state-manager.ts';
 import { Stats } from '../../../src/stats.ts';
 import { Task, Test, TestResult } from '../../../src/test-plan.ts';
-import { ariaRefSnapshot } from '../../../src/utils/aria-ref.ts';
+import { ariaRefSelector, ariaRefSnapshot, describeRef, parseAriaRefs, refIsGone } from '../../../src/utils/aria-ref.ts';
 import { compactAriaSnapshot } from '../../../src/utils/aria.ts';
 import { browserErrorMessage } from '../../../src/utils/browser-errors.ts';
 import { pluralize } from '../../../src/utils/logger.ts';
@@ -446,6 +447,12 @@ export class Prima {
     }
 
     const previousState = this.bot.stateManager().getCurrentState();
+
+    if (!isUrl) {
+      const judged = await this.judgedGo(target, previousState);
+      if (judged) return judged;
+    }
+
     let navigationError: unknown = null;
 
     try {
@@ -925,6 +932,30 @@ export class Prima {
     return snapshot || result.ariaSnapshot;
   }
 
+  private async judgedGo(target: string, previousState: WebPageState | null): Promise<EnvelopeData | null> {
+    if (!previousState) return null;
+
+    const judge = this.bot.judge?.() || undefined;
+    if (!judge?.directEnabled) return null;
+
+    const refSnapshot = await this.refAriaSnapshot(ActionResult.fromState(previousState));
+    if (!refSnapshot) return null;
+
+    const ref = await judgeNavigationRef(judge, target, refSnapshot);
+    if (!ref) return null;
+
+    const explorer = this.bot.getExplorer();
+    if (await refIsGone(explorer, ref)) return null;
+
+    const named = await describeRef(explorer, ref);
+    const run = `I.usePlaywrightTo(${JSON.stringify(`go to ${target}`)}, async ({ page }) => page.locator(${JSON.stringify(ariaRefSelector(ref))}).click())`;
+    if (!(await explorer.action().attempt(run, `go ${target}`))) return null;
+
+    const code = named ? `I.click(${JSON.stringify(named)})` : run;
+    const result = await this.capturedResult(this.bot.stateManager().getCurrentState());
+    return this.successEnvelope(`go ${target}`, [code], result, previousState);
+  }
+
   private executedCodes(code: unknown): string[] {
     if (typeof code !== 'string') return [];
     return code
@@ -1133,6 +1164,27 @@ export class Prima {
   private instanceName(): string {
     return this.options.instance || 'default';
   }
+}
+
+const NAVIGATION_CONFIDENCE = 0.7;
+
+export async function judgeNavigationRef(judge: Judge | undefined, target: string, refSnapshot: string): Promise<string | null> {
+  if (!judge?.directEnabled) return null;
+
+  const options: Record<string, string> = { none: 'Nothing listed leads to the target.' };
+  for (const entry of parseAriaRefs(refSnapshot)) {
+    if (!entry.name) continue;
+    options[entry.ref] = `${entry.role} named "${entry.name}"`;
+  }
+  if (Object.keys(options).length < 2) return null;
+
+  const answers = await judge.ask({ task: `Reach: ${target}`, controls: options }, { target: { instructions: 'Which listed control leads to the target?', options } });
+
+  const pick = answers?.target;
+  if (!pick) return null;
+  if (pick.answer === 'none') return null;
+  if (pick.confidence < NAVIGATION_CONFIDENCE) return null;
+  return pick.answer;
 }
 
 interface Discovery {
