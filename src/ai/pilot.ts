@@ -36,6 +36,7 @@ const PILOT_MESSAGE_LIMIT = 2;
 const PILOT_MESSAGE_MAX_LENGTH = 160;
 const PILOT_REQUEST_LIMIT = 5;
 const PILOT_EXPERIENCE_PAGE_CAP = 12000;
+const SUPERVISION_CONFIDENCE = 0.7;
 
 export class Pilot implements Agent {
   emoji = '🧭';
@@ -49,6 +50,7 @@ export class Pilot implements Agent {
   private playwrightRecorder: PlaywrightRecorder;
   private fisherman: Fisherman | null = null;
   private judge?: Judge;
+  private skippedLastReview = false;
 
   constructor(deps: AgentDeps, agentTools: any, researcher: Researcher) {
     this.provider = deps.ai;
@@ -71,6 +73,7 @@ export class Pilot implements Agent {
 
   reset(): void {
     this.conversation = null;
+    this.skippedLastReview = false;
   }
 
   getLastAnalysis(): string | null {
@@ -537,15 +540,33 @@ export class Pilot implements Agent {
   async analyzeProgress(task: Test, currentState: ActionResult, testerConversation: Conversation): Promise<string> {
     tag('substep').log('Pilot analyzing progress...');
 
+    const toolCalls = testerConversation.getToolExecutions().slice(-this.stepsToReview);
+    const stateContext = this.buildStateContext(currentState);
+
+    const supervisionState: SupervisionState = {
+      task: task.scenario,
+      page: stateContext,
+      recentActions: toolCalls.map((t) => {
+        if (t.wasSuccessful) return `${t.toolName} - ok`;
+        return `${t.toolName} - failed`;
+      }),
+      deadLoop: this.stateManager.isInDeadLoop(),
+      allFailed: toolCalls.length === 0 || toolCalls.every((t) => !t.wasSuccessful),
+      ariaUnchanged: toolCalls.every((t) => !t.output?.pageDiff?.ariaChanges),
+      skippedLast: this.skippedLastReview,
+    };
+
+    const skipReview = await shouldSkipReview(this.judge, supervisionState);
+    this.skippedLastReview = skipReview;
+    if (skipReview) return '';
+
     if (!this.conversation) {
       const agenticModel = this.provider.getAgenticModel('pilot');
       this.conversation = this.provider.startConversation(this.getSystemPrompt(task, currentState), 'pilot', agenticModel);
       this.conversation.markLastMessageCacheable();
     }
 
-    const toolCalls = testerConversation.getToolExecutions().slice(-this.stepsToReview);
     const actionsContext = this.formatActions(toolCalls);
-    const stateContext = this.buildStateContext(currentState);
 
     const hasFailures = toolCalls.length === 0 || toolCalls.some((t) => !t.wasSuccessful);
 
@@ -1214,10 +1235,48 @@ export class Pilot implements Agent {
   }
 }
 
+export async function shouldSkipReview(judge: Judge | undefined, state: SupervisionState): Promise<boolean> {
+  if (!judge?.directEnabled) return false;
+  if (state.deadLoop) return false;
+  if (state.allFailed) return false;
+  if (state.ariaUnchanged) return false;
+  if (state.skippedLast) return false;
+
+  const answers = await judge.ask(
+    { task: state.task, page: state.page, recentActions: state.recentActions },
+    {
+      pilot_needed: { instructions: 'A supervisor should review this run now.' },
+      progressing: { instructions: 'The recent actions moved the run closer to completing the task.' },
+    }
+  );
+  if (!answers) return false;
+
+  const needed = answers.pilot_needed;
+  const progressing = answers.progressing;
+  if (!needed || !progressing) return false;
+  if (needed.answer !== 'no') return false;
+  if (needed.confidence < SUPERVISION_CONFIDENCE) return false;
+  if (progressing.answer !== 'yes') return false;
+  if (progressing.confidence < SUPERVISION_CONFIDENCE) return false;
+
+  tag('substep').log(`Skipping scheduled review — pilot_needed=no (${needed.confidence.toFixed(2)}), progressing=yes (${progressing.confidence.toFixed(2)}), vetoes clear (deadLoop=${state.deadLoop}, allFailed=${state.allFailed}, ariaUnchanged=${state.ariaUnchanged})`);
+  return true;
+}
+
 export type SettledStatus = 'passed' | 'failed' | 'unverified' | 'contradiction';
 
 export interface SettledExpectation {
   text: string;
   status: SettledStatus;
   evidence?: string;
+}
+
+export interface SupervisionState {
+  task: string;
+  page: string;
+  recentActions: string[];
+  deadLoop: boolean;
+  allFailed: boolean;
+  ariaUnchanged: boolean;
+  skippedLast: boolean;
 }
