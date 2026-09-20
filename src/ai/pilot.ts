@@ -623,7 +623,12 @@ export class Pilot implements Agent {
 
     if (!image) {
       const judged = await this.judgeOutcomes(undecided, task);
-      if (judged) return task.expected.map((text) => judged[text] || { text, status: decided(text) });
+      if (judged) {
+        return task.expected.map((text) => {
+          if (!undecided.includes(text)) return { text, status: decided(text) };
+          return judged[text] || { text, status: 'unverified' as SettledStatus };
+        });
+      }
     }
 
     const schema = z.object({
@@ -708,16 +713,15 @@ export class Pilot implements Agent {
     const judge = this.judge;
     if (!judge?.directEnabled) return null;
 
+    const options = {
+      passed: 'The run shows the outcome happened.',
+      failed: 'The run shows the outcome did not happen.',
+      unverified: 'The run neither shows it happening nor shows it failing.',
+    };
+
     const questions: Record<string, JudgeQuestion> = {};
     undecided.forEach((text, index) => {
-      questions[`o${index}`] = {
-        instructions: `What did this run establish about the expected outcome: ${text}`,
-        options: {
-          passed: 'The run shows the outcome happened.',
-          failed: 'The run shows the outcome did not happen.',
-          unverified: 'The run neither shows it happening nor shows it failing.',
-        },
-      };
+      questions[`o${index}`] = { instructions: `What did this run establish about the expected outcome: ${text}`, options };
     });
 
     const answers = await judge.ask({ task: task.scenario, run_log: task.notesToString() || 'No steps recorded.' }, questions);
@@ -727,7 +731,9 @@ export class Pilot implements Agent {
     undecided.forEach((text, index) => {
       const answer = answers[`o${index}`];
       if (!answer) return;
-      settled[text] = { text, status: answer.answer as SettledExpectation['status'], confidence: answer.confidence };
+      let status: SettledExpectation['status'] = 'unverified';
+      if (answer.answer in options) status = answer.answer as SettledExpectation['status'];
+      settled[text] = { text, status, confidence: answer.confidence };
     });
     return settled;
   }

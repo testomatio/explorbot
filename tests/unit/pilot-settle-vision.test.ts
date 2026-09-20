@@ -3,8 +3,8 @@ import { Pilot } from '../../src/ai/pilot.ts';
 import { Stats } from '../../src/stats.ts';
 import { Test, TestResult } from '../../src/test-plan.ts';
 
-function buildPilot(provider: any): Pilot {
-  return Object.assign(Object.create(Pilot.prototype), { provider }) as Pilot;
+function buildPilot(provider: any, judge?: any): Pilot {
+  return Object.assign(Object.create(Pilot.prototype), { provider, judge }) as Pilot;
 }
 
 function finalPage(): any {
@@ -103,5 +103,42 @@ describe('Pilot settling outcomes against the final page', () => {
 
     expect(settled).toEqual([{ text: 'the list refreshes', status: 'unverified' }]);
     expect(models).toEqual(['text-model']);
+  });
+});
+
+describe('Pilot settling outcomes via the judge', () => {
+  it('settles an expectation the judge left unanswered as unverified, not failed', async () => {
+    const judge = {
+      directEnabled: true,
+      ask: async () => ({ o0: { answer: 'passed', confidence: 0.9, probabilities: {} } }),
+    };
+    const pilot = buildPilot({}, judge);
+
+    const task = new Test('open the editor', 'normal', ['the editor opens', 'the list refreshes'], '/skills');
+
+    const settled = await pilot.settleExpectations(task);
+
+    expect(settled).toEqual([
+      { text: 'the editor opens', status: 'passed', confidence: 0.9 },
+      { text: 'the list refreshes', status: 'unverified' },
+    ]);
+
+    const unreached = settled.filter((expectation) => expectation.status === 'failed');
+    const contradicted = settled.filter((expectation) => expectation.status === 'contradiction');
+    expect(!unreached.length && !contradicted.length).toBe(true);
+  });
+
+  it('treats an out-of-vocabulary judge answer as unverified rather than trusting it verbatim', async () => {
+    const judge = {
+      directEnabled: true,
+      ask: async () => ({ o0: { answer: 'maybe', confidence: 0.9, probabilities: {} } }),
+    };
+    const pilot = buildPilot({}, judge);
+
+    const task = new Test('open the editor', 'normal', ['the editor opens'], '/skills');
+
+    const settled = await pilot.settleExpectations(task);
+
+    expect(settled).toEqual([{ text: 'the editor opens', status: 'unverified', confidence: 0.9 }]);
   });
 });
