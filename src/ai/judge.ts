@@ -12,6 +12,8 @@ const YES_NO: Record<string, string> = {
 
 const REQUEST_TIMEOUT_MS = 15000;
 
+export const JUDGE_PAGE_CAP = 12000;
+
 export class Judge {
   private fetchImpl: typeof fetch = fetch;
   private requestTimeoutMs = REQUEST_TIMEOUT_MS;
@@ -32,16 +34,23 @@ export class Judge {
     return Observability.run('judge.ask', { tags: ['judge'] }, async () => {
       setActivity('⚖️ Asking judge...', 'ai');
       try {
-        const answers = await this.post(state, questions);
-        if (!answers) debugLog('judge declined, caller falls through');
-        return answers;
+        const { answers, errorClass } = await this.post(state, questions);
+        const span = Observability.getSpan();
+        if (answers) {
+          const withConfidence = Object.fromEntries(Object.entries(answers).map(([id, answer]) => [id, { answer: answer.answer, confidence: answer.confidence }]));
+          span?.setAttribute('ai.telemetry.metadata.judgeAsk', JSON.stringify({ questions: Object.keys(questions), answers: withConfidence }));
+          return answers;
+        }
+        debugLog('judge declined, caller falls through');
+        span?.setAttribute('ai.telemetry.metadata.judgeAsk', JSON.stringify({ questions: Object.keys(questions), answers: null, errorClass }));
+        return null;
       } finally {
         clearActivity();
       }
     });
   }
 
-  private async post(state: unknown, questions: Record<string, JudgeQuestion>): Promise<Record<string, JudgeAnswer> | null> {
+  private async post(state: unknown, questions: Record<string, JudgeQuestion>): Promise<JudgePostResult> {
     const body = {
       model: this.settings.model,
       state,
@@ -53,7 +62,7 @@ export class Judge {
       requestBody = JSON.stringify(body);
     } catch (error) {
       debugLog('failed to serialize request body: %s', error);
-      return null;
+      return { answers: null, errorClass: 'unserializable_state' };
     }
 
     const controller = new AbortController();
@@ -75,14 +84,19 @@ export class Judge {
       timedOut,
     ]).finally(() => clearTimeout(timeoutId));
 
-    if (!response) return null;
+    if (!response) {
+      if (controller.signal.aborted) return { answers: null, errorClass: 'timeout' };
+      return { answers: null, errorClass: 'transport' };
+    }
     if (!response.ok) {
       debugLog('endpoint returned %d', response.status);
-      return null;
+      return { answers: null, errorClass: `http_${response.status}` };
     }
 
     const payload = await response.json().catch(() => null);
-    return normalizeAnswers(payload);
+    const answers = normalizeAnswers(payload);
+    if (!answers) return { answers: null, errorClass: 'malformed_body' };
+    return { answers };
   }
 }
 
@@ -110,4 +124,9 @@ export interface JudgeAnswer {
   answer: string;
   confidence: number;
   probabilities: Record<string, number>;
+}
+
+interface JudgePostResult {
+  answers: Record<string, JudgeAnswer> | null;
+  errorClass?: string;
 }

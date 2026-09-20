@@ -21,7 +21,7 @@ import type { Agent, AgentDeps } from './agent.ts';
 import type { Conversation } from './conversation.ts';
 import type { Fisherman } from './fisherman.ts';
 import { createAskApiTool } from './fisherman/tools.ts';
-import type { Judge, JudgeQuestion } from './judge.ts';
+import { JUDGE_PAGE_CAP, type Judge, type JudgeQuestion } from './judge.ts';
 import type { Navigator } from './navigator.ts';
 import type { Provider } from './provider.ts';
 import type { Researcher } from './researcher.ts';
@@ -36,7 +36,6 @@ const PILOT_REASONING_LIMIT = 500;
 const PILOT_MESSAGE_LIMIT = 2;
 const PILOT_MESSAGE_MAX_LENGTH = 160;
 const PILOT_REQUEST_LIMIT = 5;
-const PILOT_EXPERIENCE_PAGE_CAP = 12000;
 const SUPERVISION_CONFIDENCE = 0.7;
 
 export class Pilot implements Agent {
@@ -186,7 +185,7 @@ export class Pilot implements Agent {
 
       const result = response?.object;
       if (!result) {
-        await recordJudgeShadow(presumedState, 'fail');
+        await recordJudgeShadow(presumedState, 'fail').catch(() => {});
         task.finish(TestResult.FAILED);
         return false;
       }
@@ -229,7 +228,7 @@ export class Pilot implements Agent {
       return true;
     } catch (error: any) {
       tag('warning').log(`Pilot verdict failed: ${error.message}`);
-      await recordJudgeShadow(presumedState, 'fail');
+      await recordJudgeShadow(presumedState, 'fail').catch(() => {});
       task.finish(TestResult.FAILED);
       return false;
     }
@@ -788,7 +787,7 @@ export class Pilot implements Agent {
     const toc = this.stateManager.getExperienceTracker().getExperienceTableOfContents(actionResult);
     if (toc.length === 0) return '';
 
-    const page = actionResult.getCompactARIA().slice(0, PILOT_EXPERIENCE_PAGE_CAP);
+    const page = actionResult.getCompactARIA().slice(0, JUDGE_PAGE_CAP);
     const filteredToc = await filterExperienceToc(this.judge, toc, page);
     return renderExperienceToc(filteredToc);
   }

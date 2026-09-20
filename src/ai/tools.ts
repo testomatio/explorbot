@@ -16,7 +16,7 @@ import { compactErrorMessage, normalizeInlineText, truncate } from '../utils/str
 import { WebElement } from '../utils/web-element.ts';
 import type { ToolDeps } from './agent.ts';
 import { createJudgeTool } from './judge-tool.ts';
-import type { Judge } from './judge.ts';
+import { JUDGE_PAGE_CAP, type Judge } from './judge.ts';
 import { Navigator } from './navigator.ts';
 import { Researcher } from './researcher.ts';
 import { sectionContextRule } from './rules.ts';
@@ -1185,7 +1185,6 @@ const NAVIGATED_SUGGESTION = 'The action left the page. Elements are never compa
 const ARIA_OUTPUT_CAP = 4000;
 const HTML_OUTPUT_CAP = 6000;
 const ANALYSIS_OUTPUT_CAP = 2000;
-const JUDGE_PAGE_CAP = 12000;
 const JUDGE_RECENT_ACTIONS_LIMIT = 8;
 
 function cap(text: string | undefined | null, max: number): string {
@@ -1308,7 +1307,7 @@ export async function failedToolResult(action: string, message: string, data?: R
     result.suggestion = getMultipleElementsSuggestion();
     result.multipleElementsDetected = true;
     result.elements = formatElementList(matched);
-    result.matchedElements = matched;
+    if (matched) result.matchedElements = matched;
     return result;
   }
 

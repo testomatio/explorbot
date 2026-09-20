@@ -1071,6 +1071,30 @@ describe('Prima.check', () => {
     expect(!unreached.length && !contradicted.length).toBe(true);
   });
 
+  test('downgrades a weakly settled fail to unverified', async () => {
+    const { downgradeWeakExpectations } = await import('../src/prima.ts');
+    const settled = [
+      { text: 'the row is removed', status: 'failed' as const, confidence: 0.35 },
+      { text: 'the dialog closed', status: 'failed' as const, confidence: 0.9 },
+      { text: 'the toast appeared', status: 'failed' as const },
+    ];
+
+    expect(downgradeWeakExpectations(settled)).toEqual([
+      { text: 'the row is removed', status: 'unverified', confidence: 0.35 },
+      { text: 'the dialog closed', status: 'failed', confidence: 0.9 },
+      { text: 'the toast appeared', status: 'failed' },
+    ]);
+  });
+
+  test('keeps ok true when a weak fail is the only doubt', async () => {
+    const { downgradeWeakExpectations } = await import('../src/prima.ts');
+    const downgraded = downgradeWeakExpectations([{ text: 'x', status: 'failed' as const, confidence: 0.2 }]);
+    const unreached = downgraded.filter((e) => e.status === 'failed');
+    const contradicted = downgraded.filter((e) => e.status === 'contradiction');
+
+    expect(!unreached.length && !contradicted.length).toBe(true);
+  });
+
   test('a weakly settled pass is reported in the warning and does not fail the check', async () => {
     const { prima } = fakePrima();
     (prima as any).bot.agentTester = () => ({

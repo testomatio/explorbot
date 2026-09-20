@@ -1186,7 +1186,7 @@ const EXPECTATION_CONFIDENCE = 0.6;
 
 export function downgradeWeakExpectations(expectations: SettledExpectation[]): SettledExpectation[] {
   return expectations.map((expectation) => {
-    if (expectation.status !== 'passed') return expectation;
+    if (expectation.status !== 'passed' && expectation.status !== 'failed') return expectation;
     if (expectation.confidence === undefined) return expectation;
     if (expectation.confidence >= EXPECTATION_CONFIDENCE) return expectation;
     return { ...expectation, status: 'unverified' };

@@ -21,7 +21,7 @@ import { normalizeInlineText } from '../utils/strings.ts';
 import { extractStatePath, matchesNavigationUrl } from '../utils/url-matcher.js';
 import type { Agent, AgentDeps } from './agent.js';
 import type { Conversation } from './conversation.js';
-import type { Judge } from './judge.ts';
+import { JUDGE_PAGE_CAP, type Judge } from './judge.ts';
 import type { Provider } from './provider.js';
 import { Researcher } from './researcher.ts';
 import { actionRule, locatorRule, unexpectedPopupRule } from './rules.js';
@@ -879,7 +879,7 @@ class Navigator implements Agent {
     const judge = this.judge;
     if (!judge?.directEnabled) return undefined;
 
-    const answers = await judge.ask({ claim, page: actionResult.getCompactARIA().slice(0, PAGE_STATE_CAP) }, { holds: { instructions: 'Does the page show that the claim is true?' } });
+    const answers = await judge.ask({ claim, page: actionResult.getCompactARIA().slice(0, JUDGE_PAGE_CAP) }, { holds: { instructions: 'Does the page show that the claim is true?' } });
 
     const holds = answers?.holds;
     if (!holds) return undefined;
@@ -888,7 +888,6 @@ class Navigator implements Agent {
 }
 
 const CLAIM_CONFIDENCE = 0.7;
-const PAGE_STATE_CAP = 12000;
 
 export async function judgeAlreadyVerified(judge: Judge | undefined, claim: string, prior: Record<string, boolean>): Promise<string | null> {
   if (!judge?.directEnabled) return null;

@@ -9,14 +9,13 @@ import { HooksRunner } from '../utils/hooks-runner.ts';
 import { pluralize, tag } from '../utils/logger.ts';
 import type { AgentDeps, ToolDeps } from './agent.ts';
 import { Historian } from './historian.js';
-import type { Judge, JudgeQuestion } from './judge.ts';
+import { JUDGE_PAGE_CAP, type Judge, type JudgeQuestion } from './judge.ts';
 import type { Navigator } from './navigator.js';
 import type { Provider } from './provider.js';
 import { Quartermaster } from './quartermaster.js';
 
 const EXPERIENCE_CONFIDENCE = 0.7;
 const EXPERIENCE_BLOCK_CAP = 600;
-const EXPERIENCE_PAGE_CAP = 12000;
 
 export function isInteractive(): boolean {
   if (process.env.INK_RUNNING === 'true') return true;
@@ -90,7 +89,7 @@ export abstract class TaskAgent {
     const toc = this.getExperienceTracker().getExperienceTableOfContents(actionResult);
     if (toc.length === 0) return '';
 
-    const page = actionResult.getCompactARIA().slice(0, EXPERIENCE_PAGE_CAP);
+    const page = actionResult.getCompactARIA().slice(0, JUDGE_PAGE_CAP);
     const filteredToc = await filterExperienceToc(this.judge, toc, page);
     return renderExperienceToc(filteredToc);
   }
