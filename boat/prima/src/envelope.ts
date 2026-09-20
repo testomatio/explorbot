@@ -29,7 +29,7 @@ export interface EnvelopeData {
   page: { url: string; previousUrl?: string; title: string; state: string; visits: number };
   changes?: string | null;
   steps?: Array<{ label: string; ok: boolean; unconfirmed?: boolean; proof: string }>;
-  expectations?: Array<{ text: string; status: 'passed' | 'failed' | 'unverified' | 'contradiction'; evidence?: string }>;
+  expectations?: Array<{ text: string; status: 'passed' | 'failed' | 'unverified' | 'contradiction'; evidence?: string; confidence?: number }>;
   warning?: string;
   stepFiles?: string;
   value?: string;

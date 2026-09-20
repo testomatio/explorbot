@@ -21,7 +21,7 @@ import type { Agent, AgentDeps } from './agent.ts';
 import type { Conversation } from './conversation.ts';
 import type { Fisherman } from './fisherman.ts';
 import { createAskApiTool } from './fisherman/tools.ts';
-import type { Judge } from './judge.ts';
+import type { Judge, JudgeQuestion } from './judge.ts';
 import type { Navigator } from './navigator.ts';
 import type { Provider } from './provider.ts';
 import type { Researcher } from './researcher.ts';
@@ -621,6 +621,11 @@ export class Pilot implements Agent {
     if (image) undecided = task.expected;
     if (!undecided.length) return task.expected.map((text) => ({ text, status: decided(text) }));
 
+    if (!image) {
+      const judged = await this.judgeOutcomes(undecided, task);
+      if (judged) return task.expected.map((text) => judged[text] || { text, status: decided(text) });
+    }
+
     const schema = z.object({
       outcomes: z.array(
         z.object({
@@ -697,6 +702,34 @@ export class Pilot implements Agent {
       if (!outcome) return { text, status: 'unverified' as SettledStatus };
       return { text, status: outcome.status || 'unverified', evidence: outcome.evidence };
     });
+  }
+
+  private async judgeOutcomes(undecided: string[], task: Test): Promise<Record<string, SettledExpectation> | null> {
+    const judge = this.judge;
+    if (!judge?.directEnabled) return null;
+
+    const questions: Record<string, JudgeQuestion> = {};
+    undecided.forEach((text, index) => {
+      questions[`o${index}`] = {
+        instructions: `What did this run establish about the expected outcome: ${text}`,
+        options: {
+          passed: 'The run shows the outcome happened.',
+          failed: 'The run shows the outcome did not happen.',
+          unverified: 'The run neither shows it happening nor shows it failing.',
+        },
+      };
+    });
+
+    const answers = await judge.ask({ task: task.scenario, run_log: task.notesToString() || 'No steps recorded.' }, questions);
+    if (!answers) return null;
+
+    const settled: Record<string, SettledExpectation> = {};
+    undecided.forEach((text, index) => {
+      const answer = answers[`o${index}`];
+      if (!answer) return;
+      settled[text] = { text, status: answer.answer as SettledExpectation['status'], confidence: answer.confidence };
+    });
+    return settled;
   }
 
   private formatExpectations(task: Test): string {
@@ -1298,6 +1331,7 @@ export interface SettledExpectation {
   text: string;
   status: SettledStatus;
   evidence?: string;
+  confidence?: number;
 }
 
 export interface SupervisionState {

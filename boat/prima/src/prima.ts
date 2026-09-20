@@ -9,6 +9,7 @@ import type { Browser } from 'playwright';
 import { z } from 'zod';
 import { ActionResult } from '../../../src/action-result.ts';
 import type { Judge } from '../../../src/ai/judge.ts';
+import type { SettledExpectation } from '../../../src/ai/pilot.ts';
 import { getPreviousResearch } from '../../../src/ai/researcher/cache.ts';
 import { actionRule, locatorRule } from '../../../src/ai/rules.ts';
 import { createAgentTools, createCodeceptJSTools, createRefTools } from '../../../src/ai/tools.ts';
@@ -369,10 +370,17 @@ export class Prima {
     const routine = recorded.length - failed.length;
     if (routine) envelope.steps.push({ label: `${routine} further ${pluralize(routine, 'step')} ran without failing — prima status ${envelope.status} for the full log`, ok: true, proof: '' });
 
-    envelope.expectations = await this.bot.agentPilot().settleExpectations(test, result);
+    const settled = await this.bot.agentPilot().settleExpectations(test, result);
+    envelope.expectations = downgradeWeakExpectations(settled);
 
     if (!result.screenshot || !this.visionEnabled()) {
       envelope.warning = 'These outcomes were settled from the run log alone — no screenshot backed them. Set ai.visionModel, or check anything visual with prima ask.';
+    }
+
+    const downgraded = envelope.expectations.filter((expectation, index) => expectation.status !== settled[index].status).length;
+    if (downgraded) {
+      const note = `${downgraded} ${pluralize(downgraded, 'outcome')} settled with low confidence and downgraded to unverified.`;
+      envelope.warning = [envelope.warning, note].filter(Boolean).join('\n');
     }
 
     const unreached = envelope.expectations.filter((expectation) => expectation.status === 'failed');
@@ -1172,6 +1180,17 @@ export class Prima {
   private instanceName(): string {
     return this.options.instance || 'default';
   }
+}
+
+const EXPECTATION_CONFIDENCE = 0.6;
+
+export function downgradeWeakExpectations(expectations: SettledExpectation[]): SettledExpectation[] {
+  return expectations.map((expectation) => {
+    if (expectation.status !== 'passed') return expectation;
+    if (expectation.confidence === undefined) return expectation;
+    if (expectation.confidence >= EXPECTATION_CONFIDENCE) return expectation;
+    return { ...expectation, status: 'unverified' };
+  });
 }
 
 const NAVIGATION_CONFIDENCE = 0.7;

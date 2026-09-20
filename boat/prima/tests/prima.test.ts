@@ -1046,6 +1046,50 @@ describe('Prima.check', () => {
     expect(envelope.artifacts?.aria).toContain('aria.yml');
     expect(envelope.artifacts?.screenshot).toContain('page.png');
   });
+
+  test('downgrades a weakly settled pass to unverified', async () => {
+    const { downgradeWeakExpectations } = await import('../src/prima.ts');
+    const settled = [
+      { text: 'the row is listed', status: 'passed' as const, confidence: 0.35 },
+      { text: 'the dialog closed', status: 'passed' as const, confidence: 0.9 },
+      { text: 'the toast appeared', status: 'passed' as const },
+    ];
+
+    expect(downgradeWeakExpectations(settled)).toEqual([
+      { text: 'the row is listed', status: 'unverified', confidence: 0.35 },
+      { text: 'the dialog closed', status: 'passed', confidence: 0.9 },
+      { text: 'the toast appeared', status: 'passed' },
+    ]);
+  });
+
+  test('keeps ok true when a weak pass is the only doubt', async () => {
+    const { downgradeWeakExpectations } = await import('../src/prima.ts');
+    const downgraded = downgradeWeakExpectations([{ text: 'x', status: 'passed' as const, confidence: 0.2 }]);
+    const unreached = downgraded.filter((e) => e.status === 'failed');
+    const contradicted = downgraded.filter((e) => e.status === 'contradiction');
+
+    expect(!unreached.length && !contradicted.length).toBe(true);
+  });
+
+  test('a weakly settled pass is reported in the warning and does not fail the check', async () => {
+    const { prima } = fakePrima();
+    (prima as any).bot.agentTester = () => ({
+      test: async (test: any) => {
+        test.addNote('the row is listed', TestResult.PASSED);
+        test.finish(TestResult.PASSED);
+        return { success: true };
+      },
+    });
+    (prima as any).bot.agentPilot = () => ({
+      settleExpectations: async () => [{ text: 'the row is listed', status: 'passed', confidence: 0.35 }],
+    });
+
+    const envelope = await prima.check('add a row', ['the row is listed']);
+
+    expect(envelope.expectations).toEqual([{ text: 'the row is listed', status: 'unverified', confidence: 0.35 }]);
+    expect(envelope.warning).toContain('1 outcome settled with low confidence');
+    expect(envelope.ok).toBe(true);
+  });
 });
 
 describe('Prima.ask, verify, research', () => {
