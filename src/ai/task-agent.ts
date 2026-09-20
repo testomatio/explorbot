@@ -6,6 +6,7 @@ import type Explorer from '../explorer.ts';
 import type { KnowledgeTracker } from '../knowledge-tracker.js';
 import type { StateManager } from '../state-manager.ts';
 import { HooksRunner } from '../utils/hooks-runner.ts';
+import { pluralize, tag } from '../utils/logger.ts';
 import type { AgentDeps, ToolDeps } from './agent.ts';
 import { Historian } from './historian.js';
 import type { Judge, JudgeQuestion } from './judge.ts';
@@ -89,12 +90,8 @@ export abstract class TaskAgent {
     const toc = this.getExperienceTracker().getExperienceTableOfContents(actionResult);
     if (toc.length === 0) return '';
 
-    const blocks = toc.map(renderTocEntryBlock);
     const page = actionResult.getCompactARIA().slice(0, EXPERIENCE_PAGE_CAP);
-    const kept = await filterExperienceBlocks(this.judge, blocks, page);
-    const keptBlocks = new Set(kept);
-    const filteredToc = toc.filter((_, index) => keptBlocks.has(blocks[index]));
-
+    const filteredToc = await filterExperienceToc(this.judge, toc, page);
     return renderExperienceToc(filteredToc);
   }
 
@@ -161,7 +158,25 @@ export async function filterExperienceBlocks(judge: Judge | undefined, blocks: s
   });
 }
 
+export async function filterExperienceToc(judge: Judge | undefined, toc: ExperienceTocEntry[], page: string): Promise<ExperienceTocEntry[]> {
+  if (toc.length === 0) return toc;
+
+  const blocks = toc.map(renderTocEntryBlock);
+  const kept = await filterExperienceBlocks(judge, blocks, page);
+  const keptBlocks = new Set(kept);
+  const filtered = toc.filter((_, index) => keptBlocks.has(blocks[index]));
+
+  logExperienceToc(filtered);
+  return filtered;
+}
+
 function renderTocEntryBlock(entry: ExperienceTocEntry): string {
   const titles = entry.sections.map((section) => section.title).join('; ');
   return `${entry.url}: ${titles}`;
+}
+
+function logExperienceToc(toc: ExperienceTocEntry[]): void {
+  if (toc.length === 0) return;
+  const totalSections = toc.reduce((sum, entry) => sum + entry.sections.length, 0);
+  tag('operation').log(`Found ${toc.length} experience ${pluralize(toc.length, 'file')} (${totalSections} sections)`);
 }

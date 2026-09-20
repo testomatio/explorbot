@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { ActionResult } from '../action-result.ts';
 import type { RequestStore } from '../api/request-store.ts';
 import { ConfigParser } from '../config.ts';
+import { renderExperienceToc } from '../experience-tracker.ts';
 import type Explorer from '../explorer.ts';
 import type { PlaywrightRecorder } from '../playwright-recorder.ts';
 import type { StateManager } from '../state-manager.ts';
@@ -24,7 +25,7 @@ import type { Navigator } from './navigator.ts';
 import type { Provider } from './provider.ts';
 import type { Researcher } from './researcher.ts';
 import { capabilityGroundingRule, dataProtectionRules } from './rules.ts';
-import { isInteractive } from './task-agent.ts';
+import { filterExperienceToc, isInteractive } from './task-agent.ts';
 import { withdrawVisionTools } from './tools.ts';
 
 const CHECK_TOOLS = ['verify', 'see', 'research'];
@@ -34,6 +35,7 @@ const PILOT_REASONING_LIMIT = 500;
 const PILOT_MESSAGE_LIMIT = 2;
 const PILOT_MESSAGE_MAX_LENGTH = 160;
 const PILOT_REQUEST_LIMIT = 5;
+const PILOT_EXPERIENCE_PAGE_CAP = 12000;
 
 export class Pilot implements Agent {
   emoji = '🧭';
@@ -681,7 +683,7 @@ export class Pilot implements Agent {
     let finalUserText = userText;
     if (opts.tools) {
       this.conversation!.cleanupTag('experience', '...cleaned experience index...');
-      const tocBlock = this.getExperienceToc();
+      const tocBlock = await this.getExperienceToc();
       if (tocBlock) finalUserText = `${tocBlock}\n\n${userText}`;
     }
     this.conversation!.addUserText(finalUserText);
@@ -711,10 +713,17 @@ export class Pilot implements Agent {
     `;
   }
 
-  private getExperienceToc(): string {
+  private async getExperienceToc(): Promise<string> {
     const state = this.stateManager.getCurrentState();
     if (!state) return '';
-    return this.stateManager.getExperienceTracker().renderExperienceTocFor(ActionResult.fromState(state));
+
+    const actionResult = ActionResult.fromState(state);
+    const toc = this.stateManager.getExperienceTracker().getExperienceTableOfContents(actionResult);
+    if (toc.length === 0) return '';
+
+    const page = actionResult.getCompactARIA().slice(0, PILOT_EXPERIENCE_PAGE_CAP);
+    const filteredToc = await filterExperienceToc(this.judge, toc, page);
+    return renderExperienceToc(filteredToc);
   }
 
   private pickPlanningTools() {
