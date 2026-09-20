@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-09-20
+
+### Configuration
+- **`ai.decisionModel`** — Opt in to a decision model: a cheap model that answers one narrow question and returns its answer with a confidence score from 0 to 1. Explorbot uses it to settle small judgement calls it would otherwise guess at. Accepts a model name, or an object to turn either half off. Default: unset, and with it unset nothing changes.
+- **`ai.decisionModel.tool`** — Whether the AI can ask the decision model itself, mid-run. Default: `true`.
+- **`ai.decisionModel.direct`** — Whether Explorbot consults it at the fixed points listed below. Default: `true`.
+- **`ai.decisionModel.baseUrl`** — Endpoint to call. Default: `https://openrouter.ai/api/alpha/decisions`.
+- **`ai.decisionModel.apiKey`** — Key to authenticate with. Default: `OPENROUTER_API_KEY`, or `TYPESAFE_API_KEY` when the endpoint is TypeSafe's own.
+
+`explorbot config` now lists the decision model alongside the other configured models.
+
+### Changes
+- [Tester] New `judge` tool. When a decision depends on reading the page rather than running a command, the tester can ask a yes/no or pick-one question and gets back an answer with a confidence score, instead of guessing. Available to Pilot as well.
+- [Tester] When a locator matches several elements, Explorbot now tries to work out which one was meant and acts on it. If the matches genuinely cannot be told apart it falls back to the numbered list and the visual-click route, as before.
+- [Pilot] The periodic progress review can now be skipped when a run is clearly healthy, saving the expensive model call. It is only ever skipped when the run is confidently progressing and nothing looks wrong, never two reviews in a row, and never when Pilot was called because something already went wrong.
+- [Pilot] The verdict now records, alongside the result, what the decision model thought about whether the app held the data the scenario assumed. This is recorded only — it does not change any verdict.
+- [Navigator] A claim already checked on the page is recognised even when it is worded differently, skipping a repeat check. Claims that no assertion can express — previously a dead end — now get an answer about the page with a confidence score attached, reported separately from assertions that actually ran.
+- [Researcher] Stored notes about a page are filtered before they reach a prompt, so agents see the ones that apply to what they are doing. Anything uncertain is kept.
+- Prima: `prima go` with a page description rather than a URL can now pick the control that leads there directly. It confirms it arrived before reporting success, and otherwise falls back to the usual navigation.
+- Prima: `prima check` settles each expected outcome independently instead of all at once, so one uncertain outcome no longer colours the rest. Outcomes settled with low confidence are reported as unverified rather than as a pass or a failure.
+
 ## 2026-09-17
 
 ### Changes
