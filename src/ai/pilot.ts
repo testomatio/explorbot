@@ -603,16 +603,9 @@ export class Pilot implements Agent {
     let undecided = task.expected.filter((text) => !task.getCheckedExpectations().includes(text));
     if (image) undecided = task.expected;
 
-    const settledByJudge = new Map<string, SettledStatus>();
-    if (!image && this.judge) {
-      const state = { scenario: task.scenario, runLog: task.notesToString() || 'No steps recorded.' };
-      const decisions = await Promise.all(undecided.map((text) => this.judge!.decide(`What did this run establish about the expected outcome: ${text}`, [...Object.keys(OUTCOME_STATUS), UNDECIDED], state)));
-      undecided.forEach((text, index) => {
-        const status = OUTCOME_STATUS[decisions[index].value ?? ''];
-        if (status) settledByJudge.set(text, status);
-      });
-      undecided = undecided.filter((text) => !settledByJudge.has(text));
-    }
+    let settledByJudge = new Map<string, SettledStatus>();
+    if (!image) settledByJudge = await this.settleByJudge(task, undecided);
+    undecided = undecided.filter((text) => !settledByJudge.has(text));
     if (!undecided.length) return task.expected.map((text) => ({ text, status: settledByJudge.get(text) || decided(text) }));
 
     const schema = z.object({
@@ -693,6 +686,22 @@ export class Pilot implements Agent {
       if (!outcome) return { text, status: 'unverified' as SettledStatus };
       return { text, status: outcome.status || 'unverified', evidence: outcome.evidence };
     });
+  }
+
+  private async settleByJudge(task: Test, expectations: string[]): Promise<Map<string, SettledStatus>> {
+    const settled = new Map<string, SettledStatus>();
+    const judge = this.judge;
+    if (!judge) return settled;
+
+    const state = { scenario: task.scenario, runLog: task.notesToString() || 'No steps recorded.' };
+    await Promise.all(
+      expectations.map(async (text) => {
+        const decision = await judge.decide(`What did this run establish about the expected outcome: ${text}`, [...Object.keys(OUTCOME_STATUS), UNDECIDED], state);
+        const status = OUTCOME_STATUS[decision.value ?? ''];
+        if (status) settled.set(text, status);
+      })
+    );
+    return settled;
   }
 
   private formatExpectations(task: Test): string {
