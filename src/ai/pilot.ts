@@ -127,7 +127,9 @@ export class Pilot implements Agent {
     }
 
     const schema = z.object({
-      decision: z.enum(['pass', 'fail', 'continue', 'skipped']).describe('pass = test succeeded, fail = test failed, continue = tester should keep going, skipped = scenario is irrelevant OR systematic execution failures prevented testing'),
+      decision: z
+        .enum(['pass', 'fail', 'continue', 'skipped'])
+        .describe('pass = scenario goal accomplished, fail = the app misbehaved, continue = tester should keep going, skipped = the scenario cannot be judged against this app (its premise does not hold, it is irrelevant, or systematic execution failures prevented testing)'),
       reason: z.string().describe('Concise user-facing reason, maximum 1 short sentence and 120 characters. Do NOT repeat the decision status; explain only the evidence. For continue: explain why rejected and suggest alternatives.'),
       guidance: z.string().nullable().describe('Required for "continue": specific actionable instruction for the tester — what exactly to verify, retry differently, or complete next. Be concrete.'),
       requestVerification: z
@@ -416,9 +418,13 @@ export class Pilot implements Agent {
         DOM assertion can't be made.
         Do not pass when Tester achieved only a related navigation/filter/tab/status outcome instead of the
         requested action, workflow, or entity detail goal.
-      - "fail": goal not achieved and no further step toward it is available on the current page.
-      - "skipped": scenario is irrelevant to the app, OR systematic infrastructure failures (LLM errors,
-        crashes) prevented testing. NOT for "test failed to interact" — that's "fail" or "continue".
+      - "fail": the app misbehaved — the scenario's action ran against the right target and the app
+        produced a wrong, broken, or missing outcome. Not reaching the goal is not by itself a fail.
+      - "skipped": the scenario cannot be judged against this app — the page shows its premise does not
+        hold (the assumed constraint, field, or behaviour is designed differently), the target entity or
+        feature is not the one here, the scenario is irrelevant, OR systematic infrastructure failures
+        (LLM errors, crashes) prevented testing. NOT for "test failed to interact" — that's "fail" or
+        "continue".
       - "continue": goal incomplete but the control for the NEXT step is present on the current page, or a
         concrete missing check would change your verdict. Guidance must name that step.
         If a verify() asserted a state that was ALREADY TRUE before the test, it proves nothing — reject.

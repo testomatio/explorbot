@@ -18,6 +18,7 @@ import { formatHeadings } from '../utils/context-formatter.ts';
 import { createDebug, tag } from '../utils/logger.ts';
 import { loop } from '../utils/loop.ts';
 import { RulesLoader } from '../utils/rules-loader.ts';
+import { isInternalStep } from '../utils/step-analyzer.ts';
 import type { Agent, AgentDeps } from './agent.ts';
 import { toolExecutionLabel } from './conversation.ts';
 import type { Navigator } from './navigator.ts';
@@ -85,6 +86,7 @@ export class Rerunner extends TaskAgent implements Agent {
 
     const onStepStarted = (step: any) => {
       if (!step.toCode) return;
+      if (isInternalStep(step)) return;
       const code = highlight(step.toCode(), { language: 'javascript' });
       console.log(chalk.dim(`    ${code}`));
     };
@@ -92,12 +94,14 @@ export class Rerunner extends TaskAgent implements Agent {
     const onStepPassed = (step: any) => {
       const task = this.getCurrentTask(testMap);
       if (!task || !step.toCode) return;
+      if (isInternalStep(step)) return;
       task.addStep(step.toCode(), step.duration, 'passed');
     };
 
     const onStepFailed = (step: any, error: any) => {
       const task = this.getCurrentTask(testMap);
       if (!task || !step.toCode) return;
+      if (isInternalStep(step)) return;
       task.addStep(step.toCode(), step.duration, 'failed', error?.message);
       console.log(chalk.red(`    ${figureSet.cross} ${step.toCode()} — ${error?.message || 'failed'}`));
     };

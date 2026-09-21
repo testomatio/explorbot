@@ -19,6 +19,32 @@
 - Prima: `prima go` with a page description rather than a URL can now pick the control that leads there directly. It confirms it arrived before reporting success, and otherwise falls back to the usual navigation.
 - Prima: `prima check` settles the expected outcomes the decision model is sure about without calling the larger model; the rest are settled as before.
 
+## 2026-09-18
+
+### Changes
+
+- Reporter: internal page-inspection calls Explorbot makes on its own — `I.grabBrowserLogs()`, `I.grabSource()`,
+  `I.saveScreenshot()` and the like — no longer appear among a test's steps or in its log on Testomat.io. Reported
+  tests now list only the actions the test actually performed.
+- Reporter: browser console errors and failed network requests are no longer reported as failed steps. They are
+  collected in the test log instead, so a page that logs errors in the background no longer makes a passing test
+  read as broken. Pilot and the session report still receive them as before.
+- Reporter: a console or network error arriving at the very end of a test no longer replaces the test's summary
+  message in the report.
+- [Rerunner] `explorbot rerun` no longer prints or records Explorbot's own page-inspection calls between the steps
+  of the test being re-run.
+- Observability: each step in a Langfuse trace is now named after the command it ran (`I.click`, `I.fillField`)
+  instead of a generic `I.step`.
+- [Navigator] A site that redirects to another host under the same domain — a bare domain sending the browser to
+  its `www.` host, for example — no longer fails every navigation. Explorbot used to compare the landing host to the
+  configured one exactly, so it rejected the page it had just loaded and reported `expected /, got /`. A host now
+  counts as the same site when it is the configured one or a subdomain of it; the port still has to match, the
+  scheme no longer does.
+- [Navigator] When a navigation does land on a different site, the failure now names the full URL it reached
+  instead of just the path, so the mismatch is visible in the log.
+- Network calls and API requests recorded during a run are matched against the site the same way, so calls made
+  from a redirected host are captured instead of silently dropped.
+
 ## 2026-09-17
 
 ### Changes
@@ -26,6 +52,9 @@
 - [Pilot] When the app reports an action succeeded but the record is not visible on the page, Pilot now asks
   the API whether it was stored instead of failing on what the screenshot shows. A record the API cannot find
   is still a failure. Needs API access configured; without it, Pilot judges from the page as before.
+- [Pilot] A test is now marked failed only when the app itself misbehaved. When the page shows the app was
+  never built the way the scenario assumed — the field is optional, the constraint does not exist, the feature
+  belongs to a different part of the app — the test is reported as skipped instead of as a defect.
 
 ## 2026-09-16
 

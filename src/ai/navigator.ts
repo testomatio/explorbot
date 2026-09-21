@@ -18,7 +18,7 @@ import { createDebug, pluralize, tag } from '../utils/logger.js';
 import { loop, pause } from '../utils/loop.js';
 import { RulesLoader } from '../utils/rules-loader.ts';
 import { normalizeInlineText } from '../utils/strings.ts';
-import { extractStatePath, matchesNavigationUrl } from '../utils/url-matcher.js';
+import { extractStatePath, isSameHostFamily, matchesNavigationUrl } from '../utils/url-matcher.js';
 import type { Agent, AgentDeps } from './agent.js';
 import type { Conversation } from './conversation.js';
 import { type Decision, JUDGE_PAGE_CAP, type Judge, UNDECIDED } from './judge.ts';
@@ -102,15 +102,6 @@ class Navigator implements Agent {
     return this.config.ai?.agents?.navigator?.verifyTimeout ?? 1500;
   }
 
-  private getBaseOrigin(): string | null {
-    const baseUrl = this.config.playwright.url;
-    try {
-      return new URL(baseUrl).origin;
-    } catch {
-      return null;
-    }
-  }
-
   private getComparableCurrentUrl(stateManager: any, expectedUrl: string): string {
     const currentState = stateManager.getCurrentState();
     if (!currentState) return '';
@@ -129,18 +120,12 @@ class Navigator implements Agent {
     const currentFullUrl = currentState.fullUrl || currentState.url || '';
     if (!currentFullUrl) return false;
 
-    try {
-      const currentOrigin = new URL(currentFullUrl).origin;
-      if (/^https?:\/\//i.test(expectedUrl)) {
-        return currentOrigin === new URL(expectedUrl).origin;
-      }
+    if (!/^https?:\/\//i.test(currentFullUrl)) return !/^https?:\/\//i.test(expectedUrl);
+    if (/^https?:\/\//i.test(expectedUrl)) return isSameHostFamily(currentFullUrl, expectedUrl);
 
-      const baseOrigin = this.getBaseOrigin();
-      if (!baseOrigin) return true;
-      return currentOrigin === baseOrigin;
-    } catch {
-      return !/^https?:\/\//i.test(expectedUrl);
-    }
+    const baseUrl = this.config.playwright.url;
+    if (!baseUrl) return true;
+    return isSameHostFamily(currentFullUrl, baseUrl);
   }
 
   private isOnExpectedPage(expectedUrl: string, stateManager: any): boolean {
@@ -328,8 +313,9 @@ class Navigator implements Agent {
               lastFailure = `Reached ${check.freshState.url} but the page state did not change`;
               tag('warning').log(`Page state did not change at ${check.freshState.url}`);
             } else {
-              lastFailure = `Reached ${check.freshState.url}, expected ${expectedUrl}`;
-              tag('warning').log(`URL verification failed: expected ${expectedUrl}, got ${check.freshState.url}`);
+              const reachedUrl = check.freshState.fullUrl || check.freshState.url;
+              lastFailure = `Reached ${reachedUrl}, expected ${expectedUrl}`;
+              tag('warning').log(`URL verification failed: expected ${expectedUrl}, got ${reachedUrl}`);
             }
             batchFailures.push({
               code: codeBlock,

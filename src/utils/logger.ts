@@ -215,7 +215,7 @@ class SpanDestination implements LogDestination {
     if (!step?.toCode) {
       return;
     }
-    const stepName = step?.name ? `I.${step.name}` : 'I.step';
+    const stepName = step?.title ? `I.${step.title}` : 'I.step';
     const stepInput = typeof step?.toCode === 'function' ? step.toCode() : entry.content;
     const errorFromStep = step?.error;
     const errorMessage =
