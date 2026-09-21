@@ -8,8 +8,7 @@ import * as playwright from 'playwright';
 import type { Browser } from 'playwright';
 import { z } from 'zod';
 import { ActionResult } from '../../../src/action-result.ts';
-import type { Judge } from '../../../src/ai/judge.ts';
-import type { SettledExpectation } from '../../../src/ai/pilot.ts';
+import { JUDGE_PAGE_CAP, UNDECIDED } from '../../../src/ai/judge.ts';
 import { getPreviousResearch } from '../../../src/ai/researcher/cache.ts';
 import { actionRule, locatorRule } from '../../../src/ai/rules.ts';
 import { createAgentTools, createCodeceptJSTools, createRefTools } from '../../../src/ai/tools.ts';
@@ -370,17 +369,10 @@ export class Prima {
     const routine = recorded.length - failed.length;
     if (routine) envelope.steps.push({ label: `${routine} further ${pluralize(routine, 'step')} ran without failing — prima status ${envelope.status} for the full log`, ok: true, proof: '' });
 
-    const settled = await this.bot.agentPilot().settleExpectations(test, result);
-    envelope.expectations = downgradeWeakExpectations(settled);
+    envelope.expectations = await this.bot.agentPilot().settleExpectations(test, result);
 
     if (!result.screenshot || !this.visionEnabled()) {
       envelope.warning = 'These outcomes were settled from the run log alone — no screenshot backed them. Set ai.visionModel, or check anything visual with prima ask.';
-    }
-
-    const downgraded = envelope.expectations.filter((expectation, index) => expectation.status !== settled[index].status).length;
-    if (downgraded) {
-      const note = `${downgraded} ${pluralize(downgraded, 'outcome')} settled with low confidence and downgraded to unverified.`;
-      envelope.warning = [envelope.warning, note].filter(Boolean).join('\n');
     }
 
     const unreached = envelope.expectations.filter((expectation) => expectation.status === 'failed');
@@ -942,16 +934,15 @@ export class Prima {
 
   private async judgedGo(target: string, previousState: WebPageState | null): Promise<EnvelopeData | null> {
     if (!previousState) return null;
+    const judge = this.bot.judge?.();
+    if (!judge) return null;
 
-    const judge = this.bot.judge?.() || undefined;
-    if (!judge?.directEnabled) return null;
+    const refs = parseAriaRefs((await this.refAriaSnapshot(ActionResult.fromState(previousState))) || '').filter((entry) => entry.name);
+    const labels = refs.map((entry) => `${entry.role} named "${entry.name}"`);
+    const pick = await judge.decide(`Which listed control leads to: ${target}`, [...labels, UNDECIDED], { target });
+    if (!pick.value) return null;
 
-    const refSnapshot = await this.refAriaSnapshot(ActionResult.fromState(previousState));
-    if (!refSnapshot) return null;
-
-    const ref = await judgeNavigationRef(judge, target, refSnapshot);
-    if (!ref) return null;
-
+    const ref = refs[labels.indexOf(pick.value)].ref;
     const explorer = this.bot.getExplorer();
     if (await refIsGone(explorer, ref)) return null;
 
@@ -963,13 +954,13 @@ export class Prima {
     if (!newState) return null;
     if (newState.hash === previousState.hash && newState.url === previousState.url) return null;
 
-    const confirmSnapshot = await this.refAriaSnapshot(ActionResult.fromState(newState));
-    if (!confirmSnapshot) return null;
-    if (!(await judgeArrivedAtTarget(judge, target, confirmSnapshot))) return null;
+    const page = ((await this.refAriaSnapshot(ActionResult.fromState(newState))) || '').slice(0, JUDGE_PAGE_CAP);
+    const arrived = await judge.decide(`The page now shows: ${target}`, null, { target, page });
+    if (arrived.rejected) return null;
 
-    const code = named ? `I.click(${JSON.stringify(named)})` : run;
-    const result = await this.capturedResult(newState);
-    return this.successEnvelope(`go ${target}`, [code], result, previousState);
+    let code = run;
+    if (named) code = `I.click(${JSON.stringify(named)})`;
+    return this.successEnvelope(`go ${target}`, [code], await this.capturedResult(newState), previousState);
   }
 
   private executedCodes(code: unknown): string[] {
@@ -1180,50 +1171,6 @@ export class Prima {
   private instanceName(): string {
     return this.options.instance || 'default';
   }
-}
-
-const EXPECTATION_CONFIDENCE = 0.6;
-
-export function downgradeWeakExpectations(expectations: SettledExpectation[]): SettledExpectation[] {
-  return expectations.map((expectation) => {
-    if (expectation.status !== 'passed' && expectation.status !== 'failed') return expectation;
-    if (expectation.confidence === undefined) return expectation;
-    if (expectation.confidence >= EXPECTATION_CONFIDENCE) return expectation;
-    return { ...expectation, status: 'unverified' };
-  });
-}
-
-const NAVIGATION_CONFIDENCE = 0.7;
-
-export async function judgeNavigationRef(judge: Judge | undefined, target: string, refSnapshot: string): Promise<string | null> {
-  if (!judge?.directEnabled) return null;
-
-  const options: Record<string, string> = { none: 'Nothing listed leads to the target.' };
-  for (const entry of parseAriaRefs(refSnapshot)) {
-    if (!entry.name) continue;
-    options[entry.ref] = `${entry.role} named "${entry.name}"`;
-  }
-  if (Object.keys(options).length < 2) return null;
-
-  const answers = await judge.ask({ task: `Reach: ${target}`, controls: options }, { target: { instructions: 'Which listed control leads to the target?', options } });
-
-  const pick = answers?.target;
-  if (!pick) return null;
-  if (pick.answer === 'none') return null;
-  if (pick.confidence < NAVIGATION_CONFIDENCE) return null;
-  return pick.answer;
-}
-
-export async function judgeArrivedAtTarget(judge: Judge | undefined, target: string, pageSnapshot: string): Promise<boolean> {
-  if (!judge?.directEnabled) return false;
-
-  const answers = await judge.ask({ task: `Reach: ${target}`, page: pageSnapshot }, { arrived: { instructions: 'Does the page now show the target?' } });
-
-  const arrived = answers?.arrived;
-  if (!arrived) return false;
-  if (arrived.answer !== 'yes') return false;
-  if (arrived.confidence < NAVIGATION_CONFIDENCE) return false;
-  return true;
 }
 
 interface Discovery {

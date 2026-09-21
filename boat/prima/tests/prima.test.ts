@@ -2,6 +2,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, spyOn, test } from 'b
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { Decision } from '../../../src/ai/judge.ts';
 import { Navigator } from '../../../src/ai/navigator.ts';
 import { getEndpointFilePath, listInstances } from '../../../src/browser-server.ts';
 import { ConfigParser } from '../../../src/config.ts';
@@ -1047,76 +1048,6 @@ describe('Prima.check', () => {
     expect(envelope.artifacts?.screenshot).toContain('page.png');
   });
 
-  test('downgrades a weakly settled pass to unverified', async () => {
-    const { downgradeWeakExpectations } = await import('../src/prima.ts');
-    const settled = [
-      { text: 'the row is listed', status: 'passed' as const, confidence: 0.35 },
-      { text: 'the dialog closed', status: 'passed' as const, confidence: 0.9 },
-      { text: 'the toast appeared', status: 'passed' as const },
-    ];
-
-    expect(downgradeWeakExpectations(settled)).toEqual([
-      { text: 'the row is listed', status: 'unverified', confidence: 0.35 },
-      { text: 'the dialog closed', status: 'passed', confidence: 0.9 },
-      { text: 'the toast appeared', status: 'passed' },
-    ]);
-  });
-
-  test('keeps ok true when a weak pass is the only doubt', async () => {
-    const { downgradeWeakExpectations } = await import('../src/prima.ts');
-    const downgraded = downgradeWeakExpectations([{ text: 'x', status: 'passed' as const, confidence: 0.2 }]);
-    const unreached = downgraded.filter((e) => e.status === 'failed');
-    const contradicted = downgraded.filter((e) => e.status === 'contradiction');
-
-    expect(!unreached.length && !contradicted.length).toBe(true);
-  });
-
-  test('downgrades a weakly settled fail to unverified', async () => {
-    const { downgradeWeakExpectations } = await import('../src/prima.ts');
-    const settled = [
-      { text: 'the row is removed', status: 'failed' as const, confidence: 0.35 },
-      { text: 'the dialog closed', status: 'failed' as const, confidence: 0.9 },
-      { text: 'the toast appeared', status: 'failed' as const },
-    ];
-
-    expect(downgradeWeakExpectations(settled)).toEqual([
-      { text: 'the row is removed', status: 'unverified', confidence: 0.35 },
-      { text: 'the dialog closed', status: 'failed', confidence: 0.9 },
-      { text: 'the toast appeared', status: 'failed' },
-    ]);
-  });
-
-  test('keeps ok true when a weak fail is the only doubt', async () => {
-    const { downgradeWeakExpectations } = await import('../src/prima.ts');
-    const downgraded = downgradeWeakExpectations([{ text: 'x', status: 'failed' as const, confidence: 0.2 }]);
-    const unreached = downgraded.filter((e) => e.status === 'failed');
-    const contradicted = downgraded.filter((e) => e.status === 'contradiction');
-
-    expect(!unreached.length && !contradicted.length).toBe(true);
-  });
-
-  test('a weakly settled pass is reported in the warning and does not fail the check', async () => {
-    const { prima } = fakePrima();
-    (prima as any).bot.agentTester = () => ({
-      test: async (test: any) => {
-        test.addNote('the row is listed', TestResult.PASSED);
-        test.finish(TestResult.PASSED);
-        return { success: true };
-      },
-    });
-    (prima as any).bot.agentPilot = () => ({
-      settleExpectations: async () => [{ text: 'the row is listed', status: 'passed', confidence: 0.35 }],
-    });
-
-    const envelope = await prima.check('add a row', ['the row is listed']);
-
-    expect(envelope.expectations).toEqual([{ text: 'the row is listed', status: 'unverified', confidence: 0.35 }]);
-    expect(envelope.warning).toContain('1 outcome settled with low confidence');
-    expect(envelope.ok).toBe(true);
-  });
-});
-
-describe('Prima.ask, verify, research', () => {
   test('ask defaults to vision via screenshot analysis', async () => {
     const { prima } = fakePrima();
     (prima as any).bot.getProvider = () => ({ hasVision: () => true });
@@ -1278,12 +1209,12 @@ describe('Prima.instanceInfo', () => {
   });
 });
 
-function refJudge(target: { answer: string; confidence: number }, arrived: { answer: string; confidence: number } = { answer: 'yes', confidence: 0.9 }) {
+function refJudge(pick: string | null, arrives = true) {
   return {
-    directEnabled: true,
-    ask: async (_state: unknown, questions: Record<string, unknown>) => {
-      if ('target' in questions) return { target: { ...target, probabilities: {} } };
-      return { arrived: { ...arrived, probabilities: {} } };
+    decide: async (_question: string, options: string[] | null) => {
+      if (Array.isArray(options)) return new Decision(options.find((option) => pick && option.includes(pick)) || null, 0.9);
+      if (arrives) return new Decision('yes', 0.9);
+      return new Decision(null, 0.9);
     },
   };
 }
@@ -1318,7 +1249,7 @@ describe('Prima.go', () => {
         visited = true;
       },
     });
-    (prima as any).bot.judge = () => refJudge({ answer: 'e7', confidence: 0.9 }, { answer: 'yes', confidence: 0.9 });
+    (prima as any).bot.judge = () => refJudge('Refreshed');
 
     let current = fakeState();
     (prima as any).bot.stateManager = () => ({ getCurrentState: () => current, getVisitCount: () => 1 });
@@ -1351,7 +1282,7 @@ describe('Prima.go', () => {
         visited.push(destination);
       },
     });
-    (prima as any).bot.judge = () => refJudge({ answer: 'e7', confidence: 0.3 });
+    (prima as any).bot.judge = () => refJudge(null);
 
     const envelope = await prima.go('billing settings');
     expect(visited).toEqual(['billing settings']);
@@ -1368,11 +1299,10 @@ describe('Prima.go', () => {
     });
     let arrivalAsked = false;
     (prima as any).bot.judge = () => ({
-      directEnabled: true,
-      ask: async (_state: unknown, questions: Record<string, unknown>) => {
-        if ('target' in questions) return { target: { answer: 'e7', confidence: 0.9, probabilities: {} } };
+      decide: async (_question: string, options: string[] | null) => {
+        if (Array.isArray(options)) return new Decision(options.find((option) => option.includes('Refreshed')) || null, 0.9);
         arrivalAsked = true;
-        return { arrived: { answer: 'yes', confidence: 0.9, probabilities: {} } };
+        return new Decision('yes', 0.9);
       },
     });
 
@@ -1396,7 +1326,7 @@ describe('Prima.go', () => {
         visited.push(destination);
       },
     });
-    (prima as any).bot.judge = () => refJudge({ answer: 'e7', confidence: 0.9 }, { answer: 'no', confidence: 0.9 });
+    (prima as any).bot.judge = () => refJudge('Refreshed', false);
 
     let current = fakeState();
     (prima as any).bot.stateManager = () => ({ getCurrentState: () => current, getVisitCount: () => 1 });
@@ -1425,7 +1355,7 @@ describe('Prima.go', () => {
         visited.push(destination);
       },
     });
-    (prima as any).bot.judge = () => refJudge({ answer: 'e7', confidence: 0.9 });
+    (prima as any).bot.judge = () => refJudge('Refreshed');
 
     const attempts: string[] = [];
     const baseExplorer = (prima as any).bot.getExplorer();
@@ -1449,7 +1379,7 @@ describe('Prima.go', () => {
         visited.push(destination);
       },
     });
-    (prima as any).bot.judge = () => refJudge({ answer: 'e7', confidence: 0.9 });
+    (prima as any).bot.judge = () => refJudge('Refreshed');
 
     const attempts: string[] = [];
     const baseExplorer = (prima as any).bot.getExplorer();
@@ -1481,7 +1411,7 @@ describe('Prima.go', () => {
     let judgeCalled = false;
     (prima as any).bot.judge = () => {
       judgeCalled = true;
-      return refJudge({ answer: 'e7', confidence: 0.9 });
+      return refJudge('Refreshed');
     };
 
     const envelope = await prima.go('the suites page');

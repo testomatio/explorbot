@@ -154,7 +154,7 @@ export class Captain extends CaptainBase implements Agent {
 
     const actionResult = ActionResult.fromState(state);
     const knowledge = this.getKnowledge(actionResult);
-    const experience = await this.getExperience(actionResult);
+    const experience = this.getExperience(actionResult);
 
     const headingLines = formatHeadings(state);
     const headingsBlock = headingLines.join('\n');

@@ -21,7 +21,7 @@ import { normalizeInlineText } from '../utils/strings.ts';
 import { extractStatePath, matchesNavigationUrl } from '../utils/url-matcher.js';
 import type { Agent, AgentDeps } from './agent.js';
 import type { Conversation } from './conversation.js';
-import { JUDGE_PAGE_CAP, type Judge } from './judge.ts';
+import { type Decision, JUDGE_PAGE_CAP, type Judge, UNDECIDED } from './judge.ts';
 import type { Provider } from './provider.js';
 import { Researcher } from './researcher.ts';
 import { actionRule, locatorRule, unexpectedPopupRule } from './rules.js';
@@ -699,10 +699,7 @@ class Navigator implements Agent {
     return suggestion;
   }
 
-  async verifyState(
-    message: string,
-    actionResult: ActionResult
-  ): Promise<{ verified: boolean; inexpressible: boolean; results: AssertionResult[]; successfulCodes: string[]; assertionSteps: Array<{ name: string; args: any[] }>; totalAttempted: number; judged?: { answer: string; confidence: number } }> {
+  async verifyState(message: string, actionResult: ActionResult): Promise<{ verified: boolean; inexpressible: boolean; results: AssertionResult[]; successfulCodes: string[]; assertionSteps: Array<{ name: string; args: any[] }>; totalAttempted: number; judged?: Decision }> {
     tag('info').log('AI Navigator verifying state at', actionResult.url);
     debugLog('Verification message:', message);
 
@@ -712,9 +709,10 @@ class Navigator implements Agent {
       return { verified: cachedVerification, inexpressible: false, results: [], successfulCodes: [], assertionSteps: [], totalAttempted: 0 };
     }
 
-    const judgeMatch = await judgeAlreadyVerified(this.judge, message, actionResult.verifications ?? {});
-    if (judgeMatch && actionResult.getVerification(judgeMatch) === true) {
-      tag('operation').log(`Judge matched claim to an already verified one: "${judgeMatch}"`);
+    const verifiedClaims = Object.keys(actionResult.verifications ?? {}).filter((claim) => actionResult.getVerification(claim) === true);
+    const same = await this.judge?.decide('Which already verified claim means the same as the claim under consideration?', [...verifiedClaims, UNDECIDED], { claim: message });
+    if (same?.approved) {
+      tag('operation').log(`Judge matched claim to an already verified one: "${same.value}"`);
       return { verified: true, inexpressible: false, results: [], successfulCodes: [], assertionSteps: [], totalAttempted: 0 };
     }
 
@@ -858,7 +856,7 @@ class Navigator implements Agent {
     const inexpressible = !alreadyVerified && totalAttempted === 0;
     if (inexpressible) {
       tag('warning').log('No assertion could express this claim');
-      const judged = await this.judgePageClaim(message, actionResult);
+      const judged = await this.judge?.decide('The page shows that this claim is true.', null, { claim: message, page: actionResult.getCompactARIA().slice(0, JUDGE_PAGE_CAP) });
       return { verified: false, inexpressible, results, successfulCodes, assertionSteps, totalAttempted, judged };
     }
 
@@ -874,40 +872,6 @@ class Navigator implements Agent {
     const claim = verifiedMatch[1].trim().replace(/^["']|["']$/g, '');
     return actionResult.getVerification(claim) === true;
   }
-
-  private async judgePageClaim(claim: string, actionResult: ActionResult): Promise<{ answer: string; confidence: number } | undefined> {
-    const judge = this.judge;
-    if (!judge?.directEnabled) return undefined;
-
-    const answers = await judge.ask({ claim, page: actionResult.getCompactARIA().slice(0, JUDGE_PAGE_CAP) }, { holds: { instructions: 'Does the page show that the claim is true?' } });
-
-    const holds = answers?.holds;
-    if (!holds) return undefined;
-    return { answer: holds.answer, confidence: holds.confidence };
-  }
-}
-
-const CLAIM_CONFIDENCE = 0.7;
-
-export async function judgeAlreadyVerified(judge: Judge | undefined, claim: string, prior: Record<string, boolean>): Promise<string | null> {
-  if (!judge?.directEnabled) return null;
-
-  const claims = Object.keys(prior);
-  if (!claims.length) return null;
-
-  const options: Record<string, string> = { none: 'None of these means the same thing.' };
-  claims.forEach((text, index) => {
-    options[`c${index + 1}`] = text;
-  });
-
-  const answers = await judge.ask({ claim, already_checked: claims }, { same: { instructions: 'Which already-checked claim means the same as the claim under consideration?', options } });
-  const same = answers?.same;
-  if (!same) return null;
-  if (same.answer === 'none') return null;
-  if (same.confidence < CLAIM_CONFIDENCE) return null;
-
-  const index = Number(same.answer.replace('c', '')) - 1;
-  return claims[index] ?? null;
 }
 
 type BatchFailure = { code: string; error: string; ariaChanges?: string | null; urlAfter?: string };

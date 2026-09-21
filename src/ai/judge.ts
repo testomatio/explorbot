@@ -5,14 +5,27 @@ import { createDebug } from '../utils/logger.ts';
 
 const debugLog = createDebug('explorbot:judge');
 
-const YES_NO: Record<string, string> = {
-  yes: 'The statement is true.',
-  no: 'The statement is false.',
-};
-
+const APPROVAL_THRESHOLD = 0.7;
 const REQUEST_TIMEOUT_MS = 15000;
+const YES_NO_CRITERIA = { yes: 'The statement is true.', no: 'The statement is false.' };
 
+export const UNDECIDED = 'undecided';
 export const JUDGE_PAGE_CAP = 12000;
+
+export class Decision {
+  constructor(
+    readonly value: string | null,
+    readonly confidence: number
+  ) {}
+
+  get approved(): boolean {
+    return this.value !== null;
+  }
+
+  get rejected(): boolean {
+    return this.value === null;
+  }
+}
 
 export class Judge {
   private fetchImpl: typeof fetch = fetch;
@@ -24,109 +37,68 @@ export class Judge {
     return this.settings.tool;
   }
 
-  get directEnabled(): boolean {
-    return this.settings.direct;
+  async decide(question: string, options: string[] | boolean | null, state: unknown): Promise<Decision> {
+    if (!this.settings.direct) return new Decision(null, 0);
+    return this.consult(question, options, state);
   }
 
-  async ask(state: unknown, questions: Record<string, JudgeQuestion>): Promise<Record<string, JudgeAnswer> | null> {
-    if (!Object.keys(questions).length) return null;
-
-    return Observability.run('judge.ask', { tags: ['judge'] }, async () => {
+  async consult(question: string, options: string[] | boolean | null, state: unknown): Promise<Decision> {
+    if (Array.isArray(options) && options.length < 2) return new Decision(null, 0);
+    return Observability.run('judge.decide', { tags: ['judge'] }, async () => {
       setActivity('⚖️ Asking judge...', 'ai');
-      try {
-        const { answers, errorClass } = await this.post(state, questions);
-        const span = Observability.getSpan();
-        if (answers) {
-          const withConfidence = Object.fromEntries(Object.entries(answers).map(([id, answer]) => [id, { answer: answer.answer, confidence: answer.confidence }]));
-          span?.setAttribute('ai.telemetry.metadata.judgeAsk', JSON.stringify({ questions: Object.keys(questions), answers: withConfidence }));
-          return answers;
-        }
-        debugLog('judge declined, caller falls through');
-        span?.setAttribute('ai.telemetry.metadata.judgeAsk', JSON.stringify({ questions: Object.keys(questions), answers: null, errorClass }));
-        return null;
-      } finally {
-        clearActivity();
-      }
+      const decision = await this.request(question, options, state).finally(() => clearActivity());
+      Observability.getSpan()?.setAttribute('ai.telemetry.metadata.judgeDecision', JSON.stringify({ question, value: decision.value, confidence: decision.confidence }));
+      return decision;
     });
   }
 
-  private async post(state: unknown, questions: Record<string, JudgeQuestion>): Promise<JudgePostResult> {
-    const body = {
-      model: this.settings.model,
-      state,
-      questions: Object.fromEntries(Object.entries(questions).map(([id, question]) => [id, { type: 'choice', instructions: question.instructions, criteria: question.options || YES_NO }])),
-    };
+  private async request(question: string, options: string[] | boolean | null, state: unknown): Promise<Decision> {
+    const isList = Array.isArray(options);
+    let criteria: Record<string, string> = YES_NO_CRITERIA;
+    if (isList) criteria = Object.fromEntries(options.map((option, index) => [String(index), option]));
 
-    let requestBody: string;
+    let body: string;
     try {
-      requestBody = JSON.stringify(body);
-    } catch (error) {
-      debugLog('failed to serialize request body: %s', error);
-      return { answers: null, errorClass: 'unserializable_state' };
+      body = JSON.stringify({ model: this.settings.model, state, questions: { q: { type: 'choice', instructions: question, criteria } } });
+    } catch {
+      return this.fail('unserializable_state');
     }
 
+    let failure = 'transport';
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), this.requestTimeoutMs);
-    const timedOut = new Promise<null>((resolve) => {
-      controller.signal.addEventListener('abort', () => resolve(null), { once: true });
-    });
+    const timer = setTimeout(() => controller.abort(), this.requestTimeoutMs);
+    const payload = await this.fetchImpl(this.settings.baseUrl, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${this.settings.apiKey}`, 'Content-Type': 'application/json' },
+      body,
+      signal: controller.signal,
+    })
+      .then((response) => {
+        failure = `http_${response.status}`;
+        if (!response.ok) return null;
+        failure = 'malformed_body';
+        return response.json();
+      })
+      .catch(() => null)
+      .finally(() => clearTimeout(timer));
 
-    const response = await Promise.race([
-      this.fetchImpl(this.settings.baseUrl, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${this.settings.apiKey}`, 'Content-Type': 'application/json' },
-        body: requestBody,
-        signal: controller.signal,
-      }).catch((error: unknown) => {
-        debugLog('transport failed: %s', error);
-        return null;
-      }),
-      timedOut,
-    ]).finally(() => clearTimeout(timeoutId));
+    if (controller.signal.aborted) return this.fail('timeout');
 
-    if (!response) {
-      if (controller.signal.aborted) return { answers: null, errorClass: 'timeout' };
-      return { answers: null, errorClass: 'transport' };
-    }
-    if (!response.ok) {
-      debugLog('endpoint returned %d', response.status);
-      return { answers: null, errorClass: `http_${response.status}` };
-    }
+    const choice = payload?.answers?.q?.choice;
+    const probability = payload?.answers?.q?.probabilities?.[choice];
+    if (typeof choice !== 'string' || typeof probability !== 'number') return this.fail(failure);
+    if (probability <= APPROVAL_THRESHOLD) return new Decision(null, probability);
+    if (!isList && choice !== 'yes') return new Decision(null, probability);
+    if (!isList) return new Decision(choice, probability);
 
-    const payload = await response.json().catch(() => null);
-    const answers = normalizeAnswers(payload);
-    if (!answers) return { answers: null, errorClass: 'malformed_body' };
-    return { answers };
-  }
-}
-
-function normalizeAnswers(payload: any): Record<string, JudgeAnswer> | null {
-  const answers = payload?.answers;
-  if (!answers || typeof answers !== 'object') return null;
-
-  const normalized: Record<string, JudgeAnswer> = {};
-  for (const [id, answer] of Object.entries<any>(answers)) {
-    if (typeof answer?.choice !== 'string') continue;
-    if (typeof answer?.confidence !== 'number') continue;
-    normalized[id] = { answer: answer.choice, confidence: answer.confidence, probabilities: answer.probabilities || {} };
+    const value = options[Number(choice)];
+    if (value === undefined || value === UNDECIDED) return new Decision(null, probability);
+    return new Decision(value, probability);
   }
 
-  if (!Object.keys(normalized).length) return null;
-  return normalized;
-}
-
-export interface JudgeQuestion {
-  instructions: string;
-  options?: Record<string, string>;
-}
-
-export interface JudgeAnswer {
-  answer: string;
-  confidence: number;
-  probabilities: Record<string, number>;
-}
-
-interface JudgePostResult {
-  answers: Record<string, JudgeAnswer> | null;
-  errorClass?: string;
+  private fail(reason: string): Decision {
+    debugLog('judge declined: %s', reason);
+    Observability.getSpan()?.setAttribute('ai.telemetry.metadata.judgeError', reason);
+    return new Decision(null, 0);
+  }
 }

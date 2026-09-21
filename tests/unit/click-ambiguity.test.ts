@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'bun:test';
-import { createCodeceptJSTools, failedToolResult, resolveAmbiguousElement } from '../../src/ai/tools.ts';
+import { Decision } from '../../src/ai/judge.ts';
+import { createCodeceptJSTools, failedToolResult } from '../../src/ai/tools.ts';
 import { ConfigParser } from '../../src/config.ts';
 
 function multipleElementsError(visibility: boolean[] = [], texts: string[] = ['First control', 'Second control']): Error {
@@ -92,74 +93,32 @@ describe('click on an ambiguous locator', () => {
     expect(result.multipleElementsDetected).toBe(true);
     expect(result.elements).toContain('Element 2:');
   });
-
-  it('names the judged element and points at elementIndex when the judge is confident', async () => {
-    const { deps } = fakeDeps(() => multipleElementsError());
-    const judge: any = { directEnabled: true, ask: async () => ({ pick: { answer: '2', confidence: 0.92, probabilities: { '1': 0.05, '2': 0.92, none: 0.03 } } }) };
-    const tools = createCodeceptJSTools({ ...deps, judge }, fakeTask());
-
-    const result = await tools.click.execute({ commands: [`I.click({"role":"switch"})`], explanation: 'Toggle the control' }, {} as any);
-
-    expect(result.judgedElement).toBe(2);
-    expect(result.suggestion).toContain('elementIndex');
-    expect(result.matchedElements).toBeUndefined();
-  });
 });
 
-describe('hover on an ambiguous locator', () => {
-  it('hands the matched elements back to the model without leaking raw element data', async () => {
-    const { deps } = fakeDeps(() => multipleElementsError());
-    const tools = createCodeceptJSTools(deps, fakeTask());
+describe('judging an ambiguous match', () => {
+  const judgePicking = (index: number) => ({ decide: async (_question: string, options: string[]) => new Decision(options[index], 0.9) });
 
-    const result = await tools.hover.execute({ commands: [`I.moveCursorTo({"role":"switch"})`], explanation: 'Reveal the row actions' }, {} as any);
-
-    expect(result.success).toBe(false);
-    expect(result.multipleElementsDetected).toBe(true);
-    expect(result.elements).toContain('Element 1:');
-    expect(result.matchedElements).toBeUndefined();
+  it('names the element the judge picks, by elementIndex', async () => {
+    const result = await failedToolResult('click', 'Multiple elements (2) found', {}, multipleElementsError(), judgePicking(1) as any, 'Toggle the control');
+    expect(result.suggestion).toContain('elementIndex: 2');
   });
 
-  it('names the judged element and points at elementIndex when the judge is confident', async () => {
-    const { deps } = fakeDeps(() => multipleElementsError());
-    const judge: any = { directEnabled: true, ask: async () => ({ pick: { answer: '1', confidence: 0.85, probabilities: { '1': 0.85, '2': 0.1, none: 0.05 } } }) };
-    const tools = createCodeceptJSTools({ ...deps, judge }, fakeTask());
-
-    const result = await tools.hover.execute({ commands: [`I.moveCursorTo({"role":"switch"})`], explanation: 'Reveal the row actions' }, {} as any);
-
-    expect(result.judgedElement).toBe(1);
-    expect(result.suggestion).toContain('elementIndex');
-    expect(result.matchedElements).toBeUndefined();
-  });
-});
-
-describe('resolveAmbiguousElement', () => {
-  it('picks the intended match when judge is confident', async () => {
-    const judge: any = { directEnabled: true, ask: async () => ({ pick: { answer: '2', confidence: 0.92, probabilities: { '1': 0.05, '2': 0.92, none: 0.03 } } }) };
-    const result = await failedToolResult('click', 'Multiple elements (2) found', {}, multipleElementsError());
-
-    const judged = await resolveAmbiguousElement(judge, result, 'Toggle the control');
-
-    expect(judged).toBe(2);
-  });
-
-  it('leaves the numbered list alone when judge is uncertain', async () => {
-    const judge: any = { directEnabled: true, ask: async () => ({ pick: { answer: '1', confidence: 0.2, probabilities: { '1': 0.5, '2': 0.48, none: 0.02 } } }) };
-    const result = await failedToolResult('click', 'Multiple elements (2) found', {}, multipleElementsError());
-
-    const judged = await resolveAmbiguousElement(judge, result, 'Toggle the control');
-
-    expect(judged).toBeNull();
-    expect(result.multipleElementsDetected).toBe(true);
-    expect(result.elements).toContain('Element 1:');
+  it('keeps the numbered list when the judge rejects', async () => {
+    const judge = { decide: async () => new Decision(null, 0.5) };
+    const result = await failedToolResult('click', 'Multiple elements (2) found', {}, multipleElementsError(), judge as any, 'Toggle the control');
+    expect(result.suggestion).not.toContain('is the one meant');
     expect(result.elements).toContain('Element 2:');
   });
 
-  it('leaves the numbered list alone with no judge', async () => {
+  it('emits no key main does not emit when there is no judge', async () => {
     const result = await failedToolResult('click', 'Multiple elements (2) found', {}, multipleElementsError());
+    expect(Object.keys(result).sort()).toEqual(['action', 'elements', 'message', 'multipleElementsDetected', 'success', 'suggestion']);
+  });
 
-    const judged = await resolveAmbiguousElement(undefined, result, 'Toggle the control');
-
-    expect(judged).toBeNull();
-    expect(result.multipleElementsDetected).toBe(true);
+  it('passes the judge through from the click tool', async () => {
+    const { deps } = fakeDeps(() => multipleElementsError());
+    const tools = createCodeceptJSTools({ ...deps, judge: judgePicking(0) } as any, fakeTask());
+    const result = await tools.click.execute({ commands: [`I.click({"role":"switch"})`], explanation: 'Toggle the control' }, {} as any);
+    expect(result.suggestion).toContain('elementIndex: 1');
   });
 });

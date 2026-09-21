@@ -1,21 +1,17 @@
 import type { ActionResult } from '../action-result.js';
 import type { ExplorbotConfig } from '../config.ts';
 import { executionController } from '../execution-controller.ts';
-import { renderExperienceToc, type ExperienceTracker, type ExperienceTocEntry } from '../experience-tracker.js';
+import type { ExperienceTracker } from '../experience-tracker.js';
 import type Explorer from '../explorer.ts';
 import type { KnowledgeTracker } from '../knowledge-tracker.js';
 import type { StateManager } from '../state-manager.ts';
 import { HooksRunner } from '../utils/hooks-runner.ts';
-import { pluralize, tag } from '../utils/logger.ts';
 import type { AgentDeps, ToolDeps } from './agent.ts';
 import { Historian } from './historian.js';
-import { JUDGE_PAGE_CAP, type Judge, type JudgeQuestion } from './judge.ts';
+import type { Judge } from './judge.ts';
 import type { Navigator } from './navigator.js';
 import type { Provider } from './provider.js';
 import { Quartermaster } from './quartermaster.js';
-
-const EXPERIENCE_CONFIDENCE = 0.7;
-const EXPERIENCE_BLOCK_CAP = 600;
 
 export function isInteractive(): boolean {
   if (process.env.INK_RUNNING === 'true') return true;
@@ -85,13 +81,8 @@ export abstract class TaskAgent {
     return this.getKnowledgeTracker().renderRelevantContext(actionResult);
   }
 
-  protected async getExperience(actionResult: ActionResult): Promise<string> {
-    const toc = this.getExperienceTracker().getExperienceTableOfContents(actionResult);
-    if (toc.length === 0) return '';
-
-    const page = actionResult.getCompactARIA().slice(0, JUDGE_PAGE_CAP);
-    const filteredToc = await filterExperienceToc(this.judge, toc, page);
-    return renderExperienceToc(filteredToc);
+  protected getExperience(actionResult: ActionResult): string {
+    return this.getExperienceTracker().renderExperienceTocFor(actionResult);
   }
 
   protected getHistorian(): Historian {
@@ -135,47 +126,4 @@ export abstract class TaskAgent {
     this.consecutiveEmptyResults = 0;
     this.recentToolCalls = [];
   }
-}
-
-export async function filterExperienceBlocks(judge: Judge | undefined, blocks: string[], page: string): Promise<string[]> {
-  if (!judge?.directEnabled) return blocks;
-  if (blocks.length < 2) return blocks;
-
-  const questions: Record<string, JudgeQuestion> = {};
-  blocks.forEach((block, index) => {
-    questions[`b${index}`] = { instructions: `Does this recorded note apply to the current page? Note: ${block.slice(0, EXPERIENCE_BLOCK_CAP)}` };
-  });
-
-  const answers = await judge.ask({ page }, questions);
-  if (!answers) return blocks;
-
-  return blocks.filter((_, index) => {
-    const answer = answers[`b${index}`];
-    if (!answer) return true;
-    if (answer.answer !== 'no') return true;
-    return answer.confidence < EXPERIENCE_CONFIDENCE;
-  });
-}
-
-export async function filterExperienceToc(judge: Judge | undefined, toc: ExperienceTocEntry[], page: string): Promise<ExperienceTocEntry[]> {
-  if (toc.length === 0) return toc;
-
-  const blocks = toc.map(renderTocEntryBlock);
-  const kept = await filterExperienceBlocks(judge, blocks, page);
-  const keptBlocks = new Set(kept);
-  const filtered = toc.filter((_, index) => keptBlocks.has(blocks[index]));
-
-  logExperienceToc(filtered);
-  return filtered;
-}
-
-function renderTocEntryBlock(entry: ExperienceTocEntry): string {
-  const titles = entry.sections.map((section) => section.title).join('; ');
-  return `${entry.url}: ${titles}`;
-}
-
-function logExperienceToc(toc: ExperienceTocEntry[]): void {
-  if (toc.length === 0) return;
-  const totalSections = toc.reduce((sum, entry) => sum + entry.sections.length, 0);
-  tag('operation').log(`Found ${toc.length} experience ${pluralize(toc.length, 'file')} (${totalSections} sections)`);
 }

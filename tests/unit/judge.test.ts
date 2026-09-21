@@ -1,79 +1,102 @@
 import { describe, expect, it } from 'bun:test';
-import { Judge } from '../../src/ai/judge.ts';
+import { Judge, UNDECIDED } from '../../src/ai/judge.ts';
 
 const settings = { model: 'm', baseUrl: 'https://example.test/decisions', apiKey: 'k', tool: true, direct: true };
 
-function judgeWith(responder: (body: any) => Response | Promise<Response>): Judge {
+function answering(choice: string, probabilities: Record<string, number>, overrides: Partial<typeof settings> = {}) {
+  const sent: any[] = [];
+  const judge = new Judge({ ...settings, ...overrides });
+  (judge as any).fetchImpl = async (_url: string, init: any) => {
+    sent.push(JSON.parse(init.body));
+    return new Response(JSON.stringify({ answers: { q: { type: 'choice', choice, probabilities } } }));
+  };
+  return { judge, sent };
+}
+
+function failing(fetchImpl: (url: string, init: any) => Promise<Response>) {
   const judge = new Judge(settings);
-  (judge as any).fetchImpl = async (_url: string, init: any) => responder(JSON.parse(init.body));
+  (judge as any).fetchImpl = fetchImpl;
   return judge;
 }
 
-describe('Judge.ask', () => {
-  it('sends yes/no questions as a two-option choice', async () => {
-    let sent: any = null;
-    const judge = judgeWith((body) => {
-      sent = body;
-      return new Response(JSON.stringify({ answers: { q: { type: 'choice', choice: 'yes', probabilities: { yes: 0.9, no: 0.1 }, confidence: 0.8 } } }));
-    });
-
-    const answers = await judge.ask({ page: 'x' }, { q: { instructions: 'The form is submitted.' } });
-
-    expect(sent.model).toBe('m');
-    expect(sent.questions.q.type).toBe('choice');
-    expect(Object.keys(sent.questions.q.criteria)).toEqual(['yes', 'no']);
-    expect(answers?.q).toEqual({ answer: 'yes', confidence: 0.8, probabilities: { yes: 0.9, no: 0.1 } });
+describe('Judge.decide', () => {
+  it('approves a yes/no question answered yes above 70%', async () => {
+    const { judge, sent } = answering('yes', { yes: 0.9, no: 0.1 });
+    const decision = await judge.decide('The form is submitted.', null, { page: 'x' });
+    expect(decision.approved).toBe(true);
+    expect(decision.value).toBe('yes');
+    expect(sent[0].questions.q.criteria).toEqual({ yes: 'The statement is true.', no: 'The statement is false.' });
   });
 
-  it('passes supplied options through as criteria', async () => {
-    let sent: any = null;
-    const judge = judgeWith((body) => {
-      sent = body;
-      return new Response(JSON.stringify({ answers: { pick: { type: 'choice', choice: 'a', probabilities: { a: 0.6, b: 0.4 }, confidence: 0.2 } } }));
-    });
-
-    const answers = await judge.ask('state', { pick: { instructions: 'Which one?', options: { a: 'The first', b: 'The second' } } });
-
-    expect(sent.questions.pick.criteria).toEqual({ a: 'The first', b: 'The second' });
-    expect(answers?.pick.confidence).toBe(0.2);
+  it('treats a boolean the same as null', async () => {
+    const { judge } = answering('yes', { yes: 0.9, no: 0.1 });
+    expect((await judge.decide('The form is submitted.', true, {})).approved).toBe(true);
   });
 
-  it('returns null on a non-2xx response', async () => {
-    const judge = judgeWith(() => new Response('{"error":{"message":"no endpoints"}}', { status: 404 }));
-    expect(await judge.ask('s', { q: { instructions: 'x' } })).toBeNull();
+  it('rejects a confident no — rejected means not approved, never a confident negative to act on', async () => {
+    const { judge } = answering('no', { yes: 0.05, no: 0.95 });
+    const decision = await judge.decide('The form is submitted.', null, {});
+    expect(decision.rejected).toBe(true);
+    expect(decision.value).toBeNull();
   });
 
-  it('returns null when the transport throws', async () => {
-    const judge = new Judge(settings);
-    (judge as any).fetchImpl = async () => {
-      throw new Error('ECONNREFUSED');
-    };
-    expect(await judge.ask('s', { q: { instructions: 'x' } })).toBeNull();
+  it('rejects when the winning answer is not above 70%', async () => {
+    const { judge } = answering('yes', { yes: 0.7, no: 0.3 });
+    expect((await judge.decide('The form is submitted.', null, {})).rejected).toBe(true);
   });
 
-  it('returns null on a malformed body', async () => {
-    const judge = judgeWith(() => new Response('{"answers":null}'));
-    expect(await judge.ask('s', { q: { instructions: 'x' } })).toBeNull();
+  it('returns the chosen option from a list', async () => {
+    const { judge, sent } = answering('1', { 0: 0.1, 1: 0.85, 2: 0.05 });
+    const decision = await judge.decide('Which tab is active?', ['Details', 'History', UNDECIDED], {});
+    expect(decision.value).toBe('History');
+    expect(sent[0].questions.q.criteria).toEqual({ 0: 'Details', 1: 'History', 2: UNDECIDED });
   });
 
-  it('reports both toggles', () => {
-    expect(new Judge({ ...settings, tool: false }).toolEnabled).toBe(false);
-    expect(new Judge({ ...settings, direct: false }).directEnabled).toBe(false);
+  it('rejects when the undecided option wins', async () => {
+    const { judge } = answering('2', { 0: 0.05, 1: 0.05, 2: 0.9 });
+    expect((await judge.decide('Which tab is active?', ['Details', 'History', UNDECIDED], {})).rejected).toBe(true);
   });
 
-  it('returns null instead of throwing when the state cannot be serialized', async () => {
-    const judge = judgeWith(() => new Response(JSON.stringify({ answers: {} })));
-    const circular: any = {};
+  it('rejects a list of fewer than two options without calling out', async () => {
+    const { judge, sent } = answering('0', { 0: 1 });
+    expect((await judge.decide('Which tab is active?', [UNDECIDED], {})).rejected).toBe(true);
+    expect(sent).toHaveLength(0);
+  });
+
+  it('rejects on the direct path when direct is disabled, while consult still answers', async () => {
+    const { judge, sent } = answering('yes', { yes: 0.9, no: 0.1 }, { direct: false });
+    expect((await judge.decide('The form is submitted.', null, {})).rejected).toBe(true);
+    expect(sent).toHaveLength(0);
+    expect((await judge.consult('The form is submitted.', null, {})).approved).toBe(true);
+  });
+
+  it('rejects instead of throwing on a non-2xx, a transport error, or a malformed body', async () => {
+    const statuses = [
+      failing(async () => new Response('{}', { status: 404 })),
+      failing(async () => {
+        throw new Error('ECONNREFUSED');
+      }),
+      failing(async () => new Response('{"answers":null}')),
+    ];
+    for (const judge of statuses) expect((await judge.decide('x', null, {})).rejected).toBe(true);
+  });
+
+  it('rejects instead of throwing when the state cannot be serialized', async () => {
+    const { judge, sent } = answering('yes', { yes: 0.9, no: 0.1 });
+    const circular: Record<string, unknown> = {};
     circular.self = circular;
-
-    await expect(judge.ask(circular, { q: { instructions: 'x' } })).resolves.toBeNull();
+    expect((await judge.decide('x', null, circular)).rejected).toBe(true);
+    expect(sent).toHaveLength(0);
   });
 
-  it('returns null when the request times out', async () => {
-    const judge = new Judge(settings);
+  it('rejects when the request times out', async () => {
+    const judge = failing(
+      (_url, init) =>
+        new Promise((_resolve, reject) => {
+          init.signal.addEventListener('abort', () => reject(new Error('aborted')));
+        })
+    );
     (judge as any).requestTimeoutMs = 20;
-    (judge as any).fetchImpl = () => new Promise(() => {});
-
-    expect(await judge.ask('s', { q: { instructions: 'x' } })).toBeNull();
+    expect((await judge.decide('x', null, {})).rejected).toBe(true);
   });
 });

@@ -78,34 +78,3 @@ describe('Tester.getReviewTrigger', () => {
     expect((tester as any).getReviewTrigger(interval, state)).toBeNull();
   });
 });
-
-describe('Tester.applyReviewOutcome', () => {
-  it('leaves the failure, empty-result and state-hash trackers untouched when the review was skipped', () => {
-    const tester = buildTester();
-    (tester as any).consecutiveFailures = 3;
-    (tester as any).consecutiveEmptyResults = 2;
-    (tester as any).lastAnalyzedStateHash = 'stale-hash';
-    (tester as any).applyReviewOutcome(null, buildState());
-    expect((tester as any).consecutiveFailures).toBe(3);
-    expect((tester as any).consecutiveEmptyResults).toBe(2);
-    expect((tester as any).lastAnalyzedStateHash).toBe('stale-hash');
-  });
-
-  it('resets the trackers once a review actually ran', () => {
-    const tester = buildTester();
-    (tester as any).consecutiveFailures = 3;
-    const state = buildState();
-    (tester as any).applyReviewOutcome('NEXT: keep going', state);
-    expect((tester as any).consecutiveFailures).toBe(0);
-    expect((tester as any).lastAnalyzedStateHash).toBe(state.hash);
-  });
-
-  it('treats an empty-string guidance as a review that ran', () => {
-    const tester = buildTester();
-    (tester as any).consecutiveFailures = 3;
-    const state = buildState();
-    (tester as any).applyReviewOutcome('', state);
-    expect((tester as any).consecutiveFailures).toBe(0);
-    expect((tester as any).lastAnalyzedStateHash).toBe(state.hash);
-  });
-});

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, mock } from 'bun:test';
 import { ActionResult } from '../../src/action-result.ts';
-import { Pilot, shouldSkipReview } from '../../src/ai/pilot.ts';
+import { Decision } from '../../src/ai/judge.ts';
+import { Pilot } from '../../src/ai/pilot.ts';
 import { ConfigParser } from '../../src/config.ts';
 import { Test } from '../../src/test-plan.ts';
 
@@ -9,47 +10,7 @@ beforeEach(() => {
   ConfigParser.setupTestConfig();
 });
 
-const base = { task: 't', page: 'p', recentActions: ['click - ok'], deadLoop: false, allFailed: false, ariaUnchanged: false, skippedLast: false };
-const judgeReturning = (needed: any, progressing: any) => ({
-  directEnabled: true,
-  ask: async () => ({ pilot_needed: needed, progressing: progressing }),
-});
-
-describe('shouldSkipReview', () => {
-  it('skips a healthy round', async () => {
-    const judge = judgeReturning({ answer: 'no', confidence: 0.85, probabilities: {} }, { answer: 'yes', confidence: 0.9, probabilities: {} });
-    expect(await shouldSkipReview(judge as any, base)).toBe(true);
-  });
-
-  it('reviews when progress is unclear even if supervision seems unneeded', async () => {
-    const judge = judgeReturning({ answer: 'no', confidence: 0.8, probabilities: {} }, { answer: 'yes', confidence: 0.4, probabilities: {} });
-    expect(await shouldSkipReview(judge as any, base)).toBe(false);
-  });
-
-  it('reviews when supervision is wanted', async () => {
-    const judge = judgeReturning({ answer: 'yes', confidence: 0.9, probabilities: {} }, { answer: 'no', confidence: 0.9, probabilities: {} });
-    expect(await shouldSkipReview(judge as any, base)).toBe(false);
-  });
-
-  it('never skips on a deterministic veto', async () => {
-    const judge = judgeReturning({ answer: 'no', confidence: 0.99, probabilities: {} }, { answer: 'yes', confidence: 0.99, probabilities: {} });
-    expect(await shouldSkipReview(judge as any, { ...base, deadLoop: true })).toBe(false);
-    expect(await shouldSkipReview(judge as any, { ...base, allFailed: true })).toBe(false);
-    expect(await shouldSkipReview(judge as any, { ...base, ariaUnchanged: true })).toBe(false);
-  });
-
-  it('never skips twice in a row', async () => {
-    const judge = judgeReturning({ answer: 'no', confidence: 0.99, probabilities: {} }, { answer: 'yes', confidence: 0.99, probabilities: {} });
-    expect(await shouldSkipReview(judge as any, { ...base, skippedLast: true })).toBe(false);
-  });
-
-  it('never skips without a judge or when judge declines', async () => {
-    expect(await shouldSkipReview(undefined, base)).toBe(false);
-    expect(await shouldSkipReview({ directEnabled: true, ask: async () => null } as any, base)).toBe(false);
-  });
-});
-
-function buildPilotWithJudge(askSpy: ReturnType<typeof mock>) {
+function buildPilotWithJudge(decideSpy: ReturnType<typeof mock>) {
   const invokeConversation = mock(async () => ({ response: { text: 'NEXT: keep going' }, toolExecutions: [] }));
   const conversation: any = {
     addUserText: mock(() => {}),
@@ -70,7 +31,7 @@ function buildPilotWithJudge(askSpy: ReturnType<typeof mock>) {
     },
     requestStore: { getFailedRequests: () => [] },
     playwrightRecorder: {},
-    judge: { directEnabled: true, ask: askSpy },
+    judge: { decide: decideSpy },
   };
   const researcher: any = {};
   return new Pilot(deps, {}, researcher);
@@ -84,28 +45,35 @@ function buildTestTask(): Test {
   return new Test('check page', 'normal', 'page works', '/page');
 }
 
-const healthyAnswers = async () => ({ pilot_needed: { answer: 'no', confidence: 0.9, probabilities: {} }, progressing: { answer: 'yes', confidence: 0.9, probabilities: {} } });
+const healthy = async () => new Decision('yes', 0.9);
+const unsure = async () => new Decision(null, 0.6);
+const actingTester: any = { getToolExecutions: () => [{ toolName: 'click', wasSuccessful: true, output: {} }] };
 
 describe('Pilot.analyzeProgress — scheduled gating', () => {
-  it('always reviews on a reactive trigger, even when the judge reads the run as healthy', async () => {
-    const askSpy = mock(healthyAnswers);
-    const pilot = buildPilotWithJudge(askSpy);
-    const testerConversation: any = { getToolExecutions: () => [] };
-
-    const guidance = await pilot.analyzeProgress(buildTestTask(), buildState(), testerConversation, false);
-
-    expect(guidance).toBe('NEXT: keep going');
-    expect(askSpy).not.toHaveBeenCalled();
+  it('skips a scheduled review when the judge approves the run as healthy', async () => {
+    const decideSpy = mock(healthy);
+    const guidance = await buildPilotWithJudge(decideSpy).analyzeProgress(buildTestTask(), buildState(), actingTester, true);
+    expect(guidance).toBeNull();
+    expect(decideSpy).toHaveBeenCalledTimes(1);
   });
 
-  it('consults the judge and can skip on the scheduled trigger', async () => {
-    const askSpy = mock(healthyAnswers);
-    const pilot = buildPilotWithJudge(askSpy);
-    const testerConversation: any = { getToolExecutions: () => [{ toolName: 'click', wasSuccessful: true, output: { pageDiff: { ariaChanges: 'added button' } } }] };
+  it('reviews when the judge rejects', async () => {
+    const guidance = await buildPilotWithJudge(mock(unsure)).analyzeProgress(buildTestTask(), buildState(), actingTester, true);
+    expect(guidance).toBe('NEXT: keep going');
+  });
 
-    const guidance = await pilot.analyzeProgress(buildTestTask(), buildState(), testerConversation, true);
+  it('always reviews on a reactive trigger, without asking the judge', async () => {
+    const decideSpy = mock(healthy);
+    const guidance = await buildPilotWithJudge(decideSpy).analyzeProgress(buildTestTask(), buildState(), actingTester, false);
+    expect(guidance).toBe('NEXT: keep going');
+    expect(decideSpy).not.toHaveBeenCalled();
+  });
 
-    expect(guidance).toBeNull();
-    expect(askSpy).toHaveBeenCalledTimes(1);
+  it('never skips two scheduled reviews in a row', async () => {
+    const decideSpy = mock(healthy);
+    const pilot = buildPilotWithJudge(decideSpy);
+    expect(await pilot.analyzeProgress(buildTestTask(), buildState(), actingTester, true)).toBeNull();
+    expect(await pilot.analyzeProgress(buildTestTask(), buildState(), actingTester, true)).toBe('NEXT: keep going');
+    expect(decideSpy).toHaveBeenCalledTimes(1);
   });
 });

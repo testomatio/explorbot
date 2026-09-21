@@ -831,7 +831,7 @@ export function resolveDecisionModel(ai?: AIConfig): DecisionModelSettings | nul
   const configured = ai?.decisionModel;
   if (!configured) return null;
 
-  let spec: DecisionModelConfig = configured;
+  let spec = configured as DecisionModelConfig;
   if (typeof configured === 'string') spec = { model: configured };
   if (!spec.model) return null;
 

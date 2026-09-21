@@ -4,9 +4,7 @@ import { z } from 'zod';
 import { ActionResult } from '../action-result.ts';
 import type { RequestStore } from '../api/request-store.ts';
 import { ConfigParser } from '../config.ts';
-import { renderExperienceToc } from '../experience-tracker.ts';
 import type Explorer from '../explorer.ts';
-import { Observability } from '../observability.ts';
 import type { PlaywrightRecorder } from '../playwright-recorder.ts';
 import type { StateManager } from '../state-manager.ts';
 import { Stats } from '../stats.ts';
@@ -21,12 +19,12 @@ import type { Agent, AgentDeps } from './agent.ts';
 import type { Conversation } from './conversation.ts';
 import type { Fisherman } from './fisherman.ts';
 import { createAskApiTool } from './fisherman/tools.ts';
-import { JUDGE_PAGE_CAP, type Judge, type JudgeQuestion } from './judge.ts';
+import { type Judge, UNDECIDED } from './judge.ts';
 import type { Navigator } from './navigator.ts';
 import type { Provider } from './provider.ts';
 import type { Researcher } from './researcher.ts';
 import { capabilityGroundingRule, dataProtectionRules } from './rules.ts';
-import { filterExperienceToc, isInteractive } from './task-agent.ts';
+import { isInteractive } from './task-agent.ts';
 import { withdrawVisionTools } from './tools.ts';
 
 const CHECK_TOOLS = ['verify', 'see', 'research'];
@@ -36,7 +34,10 @@ const PILOT_REASONING_LIMIT = 500;
 const PILOT_MESSAGE_LIMIT = 2;
 const PILOT_MESSAGE_MAX_LENGTH = 160;
 const PILOT_REQUEST_LIMIT = 5;
-const SUPERVISION_CONFIDENCE = 0.7;
+const OUTCOME_STATUS: Record<string, SettledStatus> = {
+  'The run shows this outcome happened.': 'passed',
+  'The run shows this outcome did not happen.': 'failed',
+};
 
 export class Pilot implements Agent {
   emoji = '🧭';
@@ -111,7 +112,6 @@ export class Pilot implements Agent {
     const stateContext = this.buildStateContext(currentState);
     const successfulAssertions = this.formatSuccessfulAssertions(currentState, testerConversation);
     const notes = task.notesToString() || 'No notes recorded.';
-    const presumedState = await judgePresumedState(this.judge, task.scenario, stateContext, task.getPrintableNotes());
 
     let visualAnalysis = '';
     let screenshotState: ActionResult | null = null;
@@ -185,7 +185,6 @@ export class Pilot implements Agent {
 
       const result = response?.object;
       if (!result) {
-        await recordJudgeShadow(presumedState, 'fail').catch(() => {});
         task.finish(TestResult.FAILED);
         return false;
       }
@@ -199,7 +198,6 @@ export class Pilot implements Agent {
       }
 
       tag('info').log(`Pilot: ${result.decision} - ${result.reason}`);
-      await recordJudgeShadow(presumedState, result.decision);
       task.summary = result.reason;
 
       const verdictState = screenshotState || currentState;
@@ -228,7 +226,6 @@ export class Pilot implements Agent {
       return true;
     } catch (error: any) {
       tag('warning').log(`Pilot verdict failed: ${error.message}`);
-      await recordJudgeShadow(presumedState, 'fail').catch(() => {});
       task.finish(TestResult.FAILED);
       return false;
     }
@@ -544,35 +541,25 @@ export class Pilot implements Agent {
   async analyzeProgress(task: Test, currentState: ActionResult, testerConversation: Conversation, scheduled: boolean): Promise<string | null> {
     tag('substep').log('Pilot analyzing progress...');
 
-    const toolCalls = testerConversation.getToolExecutions().slice(-this.stepsToReview);
-    const stateContext = this.buildStateContext(currentState);
-
-    if (scheduled) {
-      const supervisionState: SupervisionState = {
-        task: task.scenario,
-        page: stateContext,
-        recentActions: toolCalls.map((t) => {
-          if (t.wasSuccessful) return `${t.toolName} - ok`;
-          return `${t.toolName} - failed`;
-        }),
-        deadLoop: this.stateManager.isInDeadLoop(),
-        allFailed: toolCalls.length === 0 || toolCalls.every((t) => !t.wasSuccessful),
-        ariaUnchanged: toolCalls.every((t) => !t.output?.pageDiff?.ariaChanges),
-        skippedLast: this.skippedLastReview,
-      };
-
-      const skipReview = await shouldSkipReview(this.judge, supervisionState);
-      this.skippedLastReview = skipReview;
-      if (skipReview) return null;
-    }
-
     if (!this.conversation) {
       const agenticModel = this.provider.getAgenticModel('pilot');
       this.conversation = this.provider.startConversation(this.getSystemPrompt(task, currentState), 'pilot', agenticModel);
       this.conversation.markLastMessageCacheable();
     }
 
+    const toolCalls = testerConversation.getToolExecutions().slice(-this.stepsToReview);
     const actionsContext = this.formatActions(toolCalls);
+    const stateContext = this.buildStateContext(currentState);
+
+    if (scheduled && !this.skippedLastReview) {
+      const healthy = await this.judge?.decide('The run is moving toward the goal and can continue without a supervisor reviewing it now.', null, { scenario: task.scenario, state: stateContext, recentActions: actionsContext });
+      if (healthy?.approved) {
+        this.skippedLastReview = true;
+        tag('substep').log(`Pilot review skipped: run reads as healthy (${healthy.confidence.toFixed(2)})`);
+        return null;
+      }
+    }
+    this.skippedLastReview = false;
 
     const hasFailures = toolCalls.length === 0 || toolCalls.some((t) => !t.wasSuccessful);
 
@@ -618,17 +605,18 @@ export class Pilot implements Agent {
 
     let undecided = task.expected.filter((text) => !task.getCheckedExpectations().includes(text));
     if (image) undecided = task.expected;
-    if (!undecided.length) return task.expected.map((text) => ({ text, status: decided(text) }));
 
-    if (!image) {
-      const judged = await this.judgeOutcomes(undecided, task);
-      if (judged) {
-        return task.expected.map((text) => {
-          if (!undecided.includes(text)) return { text, status: decided(text) };
-          return judged[text] || { text, status: 'unverified' as SettledStatus };
-        });
-      }
+    const settledByJudge = new Map<string, SettledStatus>();
+    if (!image && this.judge) {
+      const state = { scenario: task.scenario, runLog: task.notesToString() || 'No steps recorded.' };
+      const decisions = await Promise.all(undecided.map((text) => this.judge!.decide(`What did this run establish about the expected outcome: ${text}`, [...Object.keys(OUTCOME_STATUS), UNDECIDED], state)));
+      undecided.forEach((text, index) => {
+        const status = OUTCOME_STATUS[decisions[index].value ?? ''];
+        if (status) settledByJudge.set(text, status);
+      });
+      undecided = undecided.filter((text) => !settledByJudge.has(text));
     }
+    if (!undecided.length) return task.expected.map((text) => ({ text, status: settledByJudge.get(text) || decided(text) }));
 
     const schema = z.object({
       outcomes: z.array(
@@ -701,40 +689,13 @@ export class Pilot implements Agent {
 
     const judged = new Map((response?.object?.outcomes || []).map((outcome: any) => [outcome.expectation, outcome]));
     return task.expected.map((text) => {
+      const byJudge = settledByJudge.get(text);
+      if (byJudge) return { text, status: byJudge };
       if (!undecided.includes(text)) return { text, status: decided(text) };
       const outcome = judged.get(text) as { status: SettledStatus; evidence?: string } | undefined;
       if (!outcome) return { text, status: 'unverified' as SettledStatus };
       return { text, status: outcome.status || 'unverified', evidence: outcome.evidence };
     });
-  }
-
-  private async judgeOutcomes(undecided: string[], task: Test): Promise<Record<string, SettledExpectation> | null> {
-    const judge = this.judge;
-    if (!judge?.directEnabled) return null;
-
-    const options = {
-      passed: 'The run shows the outcome happened.',
-      failed: 'The run shows the outcome did not happen.',
-      unverified: 'The run neither shows it happening nor shows it failing.',
-    };
-
-    const questions: Record<string, JudgeQuestion> = {};
-    undecided.forEach((text, index) => {
-      questions[`o${index}`] = { instructions: `What did this run establish about the expected outcome: ${text}`, options };
-    });
-
-    const answers = await judge.ask({ task: task.scenario, run_log: task.notesToString() || 'No steps recorded.' }, questions);
-    if (!answers) return null;
-
-    const settled: Record<string, SettledExpectation> = {};
-    undecided.forEach((text, index) => {
-      const answer = answers[`o${index}`];
-      if (!answer) return;
-      let status: SettledExpectation['status'] = 'unverified';
-      if (answer.answer in options) status = answer.answer as SettledExpectation['status'];
-      settled[text] = { text, status, confidence: answer.confidence };
-    });
-    return settled;
   }
 
   private formatExpectations(task: Test): string {
@@ -749,7 +710,7 @@ export class Pilot implements Agent {
     let finalUserText = userText;
     if (opts.tools) {
       this.conversation!.cleanupTag('experience', '...cleaned experience index...');
-      const tocBlock = await this.getExperienceToc();
+      const tocBlock = this.getExperienceToc();
       if (tocBlock) finalUserText = `${tocBlock}\n\n${userText}`;
     }
     this.conversation!.addUserText(finalUserText);
@@ -779,17 +740,10 @@ export class Pilot implements Agent {
     `;
   }
 
-  private async getExperienceToc(): Promise<string> {
+  private getExperienceToc(): string {
     const state = this.stateManager.getCurrentState();
     if (!state) return '';
-
-    const actionResult = ActionResult.fromState(state);
-    const toc = this.stateManager.getExperienceTracker().getExperienceTableOfContents(actionResult);
-    if (toc.length === 0) return '';
-
-    const page = actionResult.getCompactARIA().slice(0, JUDGE_PAGE_CAP);
-    const filteredToc = await filterExperienceToc(this.judge, toc, page);
-    return renderExperienceToc(filteredToc);
+    return this.stateManager.getExperienceTracker().renderExperienceTocFor(ActionResult.fromState(state));
   }
 
   private pickPlanningTools() {
@@ -1280,71 +1234,10 @@ export class Pilot implements Agent {
   }
 }
 
-export async function shouldSkipReview(judge: Judge | undefined, state: SupervisionState): Promise<boolean> {
-  if (!judge?.directEnabled) return false;
-  if (state.deadLoop) return false;
-  if (state.allFailed) return false;
-  if (state.ariaUnchanged) return false;
-  if (state.skippedLast) return false;
-
-  const answers = await judge.ask(
-    { task: state.task, page: state.page, recentActions: state.recentActions },
-    {
-      pilot_needed: { instructions: 'A supervisor should review this run now.' },
-      progressing: { instructions: 'The recent actions moved the run closer to completing the task.' },
-    }
-  );
-  if (!answers) return false;
-
-  const needed = answers.pilot_needed;
-  const progressing = answers.progressing;
-  if (!needed || !progressing) return false;
-  if (needed.answer !== 'no') return false;
-  if (needed.confidence < SUPERVISION_CONFIDENCE) return false;
-  if (progressing.answer !== 'yes') return false;
-  if (progressing.confidence < SUPERVISION_CONFIDENCE) return false;
-
-  tag('substep').log(`Skipping scheduled review — pilot_needed=no (${needed.confidence.toFixed(2)}), progressing=yes (${progressing.confidence.toFixed(2)}), vetoes clear (deadLoop=${state.deadLoop}, allFailed=${state.allFailed}, ariaUnchanged=${state.ariaUnchanged})`);
-  return true;
-}
-
-export async function judgePresumedState(judge: Judge | undefined, scenario: string, page: string, notes: string[]): Promise<{ answer: string; confidence: number } | null> {
-  if (!judge?.directEnabled) return null;
-
-  const answers = await judge.ask({ task: scenario, page, notes }, { held: { instructions: 'The application held the data and prior state the task assumes were already there.' } });
-
-  const held = answers?.held;
-  if (!held) return null;
-  return { answer: held.answer, confidence: held.confidence };
-}
-
-export async function recordJudgeShadow(presumedState: { answer: string; confidence: number } | null, verdict: string): Promise<void> {
-  if (!presumedState) return;
-
-  tag('substep').log(`Judge shadow: presumed-state=${presumedState.answer} (${presumedState.confidence.toFixed(2)}) verdict=${verdict}`);
-
-  await Observability.run('judge.shadow.presumed_state', { tags: ['judge', 'shadow'] }, async () => {
-    const span = Observability.getSpan();
-    if (!span) return;
-    span.setAttribute('ai.telemetry.metadata.judgeShadow', JSON.stringify({ question: 'held', answer: presumedState.answer, confidence: presumedState.confidence, verdict }));
-  });
-}
-
 export type SettledStatus = 'passed' | 'failed' | 'unverified' | 'contradiction';
 
 export interface SettledExpectation {
   text: string;
   status: SettledStatus;
   evidence?: string;
-  confidence?: number;
-}
-
-export interface SupervisionState {
-  task: string;
-  page: string;
-  recentActions: string[];
-  deadLoop: boolean;
-  allFailed: boolean;
-  ariaUnchanged: boolean;
-  skippedLast: boolean;
 }

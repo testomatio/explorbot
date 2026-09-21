@@ -328,7 +328,10 @@ export class Tester extends TaskAgent implements Agent {
               if (reviewTrigger) {
                 const guidance = await this.pilot.analyzeProgress(task, currentState, conversation, reviewTrigger === 'scheduled');
                 if (guidance) nextStep += `\n\n${guidance}`;
-                this.applyReviewOutcome(guidance, currentState);
+                if (guidance !== null) {
+                  this.consecutiveFailures = 0;
+                  this.lastAnalyzedStateHash = currentState.hash;
+                }
               }
             }
             conversation.addUserText(nextStep);
@@ -493,12 +496,6 @@ export class Tester extends TaskAgent implements Agent {
     if (iteration % this.progressCheckInterval !== 0) return null;
     if (this.lastAnalyzedStateHash === currentState.hash) return null;
     return 'scheduled';
-  }
-
-  private applyReviewOutcome(guidance: string | null, currentState: ActionResult): void {
-    if (guidance === null) return;
-    this.consecutiveFailures = 0;
-    this.lastAnalyzedStateHash = currentState.hash;
   }
 
   private shouldStopForStalledExecution(task: Test, previousState: ActionResult, toolExecutions: any[]): boolean {

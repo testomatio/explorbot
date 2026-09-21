@@ -16,7 +16,7 @@ import { compactErrorMessage, normalizeInlineText, truncate } from '../utils/str
 import { WebElement } from '../utils/web-element.ts';
 import type { ToolDeps } from './agent.ts';
 import { createJudgeTool } from './judge-tool.ts';
-import { JUDGE_PAGE_CAP, type Judge } from './judge.ts';
+import { JUDGE_PAGE_CAP, type Judge, UNDECIDED } from './judge.ts';
 import { Navigator } from './navigator.ts';
 import { Researcher } from './researcher.ts';
 import { sectionContextRule } from './rules.ts';
@@ -150,7 +150,7 @@ export function createCodeceptJSTools({ explorer, stateManager, judge }: ToolDep
 
         const suggestion = clickFailureSuggestion(attempts);
 
-        const clickResult = await failedToolResult(
+        return failedToolResult(
           'click',
           'All click commands failed',
           {
@@ -158,9 +158,10 @@ export function createCodeceptJSTools({ explorer, stateManager, judge }: ToolDep
             attempts,
             suggestion,
           },
-          ambiguityError || action.lastError
+          ambiguityError || action.lastError,
+          judge,
+          explanation
         );
-        return attachJudgedElement(judge, clickResult, explanation);
       },
     }),
 
@@ -227,7 +228,7 @@ export function createCodeceptJSTools({ explorer, stateManager, judge }: ToolDep
 
         const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, commands[0]);
         activeNote.commit(TestResult.FAILED);
-        const hoverResult = await failedToolResult(
+        return failedToolResult(
           'hover',
           'All hover commands failed',
           {
@@ -235,9 +236,10 @@ export function createCodeceptJSTools({ explorer, stateManager, judge }: ToolDep
             attempts,
             suggestion: 'Use xpathCheck() to locate the row/card/tree node, or visualClick() if the hover target is only visually identifiable.',
           },
-          action.lastError
+          action.lastError,
+          judge,
+          explanation
         );
-        return attachJudgedElement(judge, hoverResult, explanation);
       },
     }),
 
@@ -432,7 +434,7 @@ export function createCodeceptJSTools({ explorer, stateManager, judge }: ToolDep
 
             const formSuggestion = 'Commands after the failing one never ran. Retry only those, using click() or form().';
 
-            const formResult = await failedToolResult(
+            return failedToolResult(
               'form',
               `Form execution FAILED! ${message}\n${formatExecutedSteps(action.executedSteps, codeLines.length)}`,
               {
@@ -441,9 +443,10 @@ export function createCodeceptJSTools({ explorer, stateManager, judge }: ToolDep
                 attempts: action.executedSteps,
                 suggestion: formSuggestion,
               },
-              action.lastError
+              action.lastError,
+              judge,
+              explanation
             );
-            return attachJudgedElement(judge, formResult, explanation);
           }
 
           if (!hasObservablePageChange(toolResult)) {
@@ -729,11 +732,10 @@ export function createAgentTools({ explorer, stateManager, ai, judge, researcher
           }
 
           if (result.inexpressible) {
-            if (result.judged) {
-              return failedToolResult('verify', `No assertion could express this claim: ${assertion}. Judge opinion (not a passed assertion): ${result.judged.answer} (confidence ${result.judged.confidence.toFixed(2)})`, {
+            if (result.judged?.approved) {
+              return failedToolResult('verify', `No assertion could express this claim, but the page appears to confirm it: ${assertion}`, {
                 inexpressible: true,
-                judged: result.judged,
-                suggestion: 'This is a judgement about the page, not an assertion that ran in the browser — treat it as a hint, not proof. Restate the claim in terms of what is visible or of a control state to get a real assertion, or check it with see().',
+                suggestion: 'This is a judgement about the page, not an assertion that ran in the browser — a hint, not proof. Restate the claim in terms of what is visible or of a control state to get a real assertion.',
               });
             }
 
@@ -1295,7 +1297,7 @@ function hasObservablePageChange(data?: Record<string, any>): boolean {
   return Array.isArray(data.pageDiff.htmlParts) && data.pageDiff.htmlParts.length > 0;
 }
 
-export async function failedToolResult(action: string, message: string, data?: Record<string, any>, error?: Error | null) {
+export async function failedToolResult(action: string, message: string, data?: Record<string, any>, error?: Error | null, judge?: Judge, intent?: string) {
   const result: Record<string, any> = { success: false, action, message, ...data };
   if (data?.pageDiff) {
     result.suggestion = data.suggestion ? `${data.suggestion} ${PAGE_DIFF_SUGGESTION}` : PAGE_DIFF_SUGGESTION;
@@ -1307,7 +1309,11 @@ export async function failedToolResult(action: string, message: string, data?: R
     result.suggestion = getMultipleElementsSuggestion();
     result.multipleElementsDetected = true;
     result.elements = formatElementList(matched);
-    if (matched) result.matchedElements = matched;
+    const labels = (matched || []).map((element) => `${element.text || 'no text'} — ${element.html}`);
+    const pick = await judge?.decide('Which listed element does the intent name?', [...labels, UNDECIDED], { intent });
+    if (!pick?.value) return result;
+    const index = labels.indexOf(pick.value) + 1;
+    result.suggestion = `Element ${index} is the one meant. Repeat the action with step.opts({ elementIndex: ${index} }) as the last argument.`;
     return result;
   }
 
@@ -1372,7 +1378,6 @@ export function clickFailureSuggestion(attempts: Array<{ error?: string }>): str
 const MAX_DISAMBIGUATE_ELEMENTS = 10;
 const MAX_DISAMBIGUATE_TEXT = 80;
 const MAX_DISAMBIGUATE_HTML = 300;
-const ELEMENT_CONFIDENCE = 0.7;
 const MULTIPLE_ELEMENTS_PATTERN = 'multiple elements';
 
 async function extractWebElements(error: Error | null | undefined): Promise<MatchedElement[] | null> {
@@ -1418,44 +1423,6 @@ function formatElementList(matched: MatchedElement[] | null): string {
 
 export async function formatMatchedElements(error: Error | null | undefined): Promise<string | null> {
   return formatElementList(await extractWebElements(error));
-}
-
-export async function resolveAmbiguousElement(judge: Judge | undefined, result: Record<string, any>, intent?: string): Promise<number | null> {
-  if (!judge?.directEnabled) return null;
-
-  const matched = result.matchedElements as MatchedElement[] | undefined;
-  if (!matched || matched.length < 2) return null;
-
-  const options: Record<string, string> = { none: 'None of these is the element meant.' };
-  matched.forEach((element, index) => {
-    options[String(index + 1)] = `${element.text || 'no text'} — ${element.html}`;
-  });
-
-  const answers = await judge.ask({ intent: intent || 'the element the last action aimed at', matches: options }, { pick: { instructions: 'Which listed element does the intent name?', options } });
-
-  const pick = answers?.pick;
-  if (!pick) return null;
-  if (pick.answer === 'none') return null;
-  if (pick.confidence < ELEMENT_CONFIDENCE) return null;
-
-  const index = Number(pick.answer);
-  if (!Number.isInteger(index)) return null;
-  if (index < 1 || index > matched.length) return null;
-  return index;
-}
-
-async function attachJudgedElement(judge: Judge | undefined, result: Record<string, any>, intent?: string): Promise<Record<string, any>> {
-  if (!result.multipleElementsDetected) return result;
-
-  const judged = await resolveAmbiguousElement(judge, result, intent);
-  if (judged) {
-    const element = (result.matchedElements as MatchedElement[])[judged - 1];
-    result.judgedElement = judged;
-    result.suggestion = `Element ${judged} ("${element.text || 'no text'}") is the one meant. Repeat the action with step.opts({ elementIndex: ${judged} }) as the last argument.`;
-  }
-
-  Reflect.deleteProperty(result, 'matchedElements');
-  return result;
 }
 
 function getNotFoundSuggestion(errorMessage: string): string | null {
