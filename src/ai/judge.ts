@@ -34,11 +34,7 @@ export class Judge {
 
   static fromConfig(config: AIConfig['decisionModel']): Judge | null {
     if (!config) return null;
-    if (typeof config === 'string') return Judge.fromConfig({ model: config });
-
-    const provider = JudgeProvider.create(config.model);
-    if (!provider) return null;
-    return new Judge(provider, { tool: config.tool !== false, direct: config.direct !== false });
+    return new Judge(new JudgeProvider(config.provider, config.model), { tool: config.tool !== false, direct: config.direct !== false });
   }
 
   get toolEnabled(): boolean {

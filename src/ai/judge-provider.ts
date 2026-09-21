@@ -3,23 +3,18 @@ const REQUEST_TIMEOUT_MS = 15000;
 export class JudgeProvider {
   private fetchImpl: typeof fetch = fetch;
   private requestTimeoutMs = REQUEST_TIMEOUT_MS;
+  private url: string;
+  private apiKey: string;
 
   constructor(
-    readonly model: string,
-    private endpoint: string,
-    private apiKey: string
-  ) {}
-
-  static create(spec: string): JudgeProvider | null {
-    const separator = spec.indexOf('/');
-    if (separator < 1) return null;
-
-    const target = JudgeProvider.endpointFor(spec.slice(0, separator));
-    if (!target) return null;
-
-    const apiKey = process.env[target.envKey];
-    if (!apiKey) return null;
-    return new JudgeProvider(spec.slice(separator + 1), target.url, apiKey);
+    provider: string,
+    readonly model: string
+  ) {
+    const { url, keyName } = JudgeProvider.endpointFor(provider);
+    const apiKey = process.env[keyName];
+    if (!apiKey) throw new Error(`Set ${keyName} to use the decision model`);
+    this.url = url;
+    this.apiKey = apiKey;
   }
 
   async decide(state: unknown, question: string, options?: string[]): Promise<ProviderDecision> {
@@ -29,7 +24,7 @@ export class JudgeProvider {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.requestTimeoutMs);
     try {
-      const response = await this.fetchImpl(this.endpoint, {
+      const response = await this.fetchImpl(this.url, {
         method: 'POST',
         headers: { Authorization: `Bearer ${this.apiKey}`, 'Content-Type': 'application/json' },
         body,
@@ -49,14 +44,14 @@ export class JudgeProvider {
     }
   }
 
-  private static endpointFor(provider: string): ProviderEndpoint | null {
+  private static endpointFor(provider: string): { url: string; keyName: string } {
     switch (provider) {
       case 'openrouter':
-        return { url: 'https://openrouter.ai/api/alpha/decisions', envKey: 'OPENROUTER_API_KEY' };
+        return { url: 'https://openrouter.ai/api/alpha/decisions', keyName: 'OPENROUTER_API_KEY' };
       case 'typesafe':
-        return { url: 'https://api.typesafe.ai/v1/systemone', envKey: 'TYPESAFE_API_KEY' };
+        return { url: 'https://api.typesafe.ai/v1/systemone', keyName: 'TYPESAFE_API_KEY' };
       default:
-        return null;
+        throw new Error(`Unknown decision model provider "${provider}" — use "openrouter" or "typesafe"`);
     }
   }
 }
@@ -64,9 +59,4 @@ export class JudgeProvider {
 export interface ProviderDecision {
   value: string;
   probability: number;
-}
-
-interface ProviderEndpoint {
-  url: string;
-  envKey: string;
 }

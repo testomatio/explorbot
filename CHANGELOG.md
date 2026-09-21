@@ -3,7 +3,7 @@
 ## 2026-09-20
 
 ### Configuration
-- **`ai.decisionModel`** — Opt in to a decision model: a cheap model that answers one narrow question. Explorbot acts on its answer only when it is more than 70% sure, and otherwise does exactly what it does today. Written as `provider/model-id`, either through OpenRouter or direct to TypeSafe, for example `openrouter/typesafe/jev-1.13` or `typesafe/jev-latest`. Accepts an object to turn either half off. Default: unset, and with it unset nothing changes.
+- **`ai.decisionModel`** — Opt in to a decision model: a cheap model that answers one narrow question. Explorbot acts on its answer only when it is more than 70% sure, and otherwise does exactly what it does today. Set as `{ provider, model }`, through OpenRouter or direct to TypeSafe — for example `{ provider: 'openrouter', model: 'typesafe/jev-1.13' }` or `{ provider: 'typesafe', model: 'jev-latest' }`. Default: unset, and with it unset nothing changes.
 - **`ai.decisionModel.tool`** — Whether the AI can ask the decision model itself, mid-run. Default: `true`.
 - **`ai.decisionModel.direct`** — Whether Explorbot consults it at the fixed points listed below. Default: `true`.
 

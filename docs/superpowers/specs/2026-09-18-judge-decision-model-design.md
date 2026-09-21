@@ -33,14 +33,14 @@ The threshold and every failure mode live in one place. A call site only ever se
 ## Configuration
 
 ```js
-ai: { decisionModel: 'openrouter/typesafe/jev-1.13' }                          // via OpenRouter
-ai: { decisionModel: 'typesafe/jev-latest' }                                   // TypeSafe API directly
-ai: { decisionModel: { model: 'openrouter/typesafe/jev-1.13', tool: false } }  // direct sites only
+ai: { decisionModel: { provider: 'openrouter', model: 'typesafe/jev-1.13' } }             // via OpenRouter
+ai: { decisionModel: { provider: 'typesafe', model: 'jev-latest' } }                       // TypeSafe API directly
+ai: { decisionModel: { provider: 'openrouter', model: 'typesafe/jev-1.13', tool: false } } // direct sites only
 ```
 
-The model is written `provider/model-id`, the same convention as every other model in Explorbot. `config.ts` holds only the field type.
+`config.ts` holds only the field type. An unknown provider or a missing API key throws at startup, naming what to fix.
 
-Everything transport-specific lives in `src/ai/judge-provider.ts`: the spec parse, `endpointFor()` (a `switch` over `openrouter` and `typesafe`, each with its endpoint and API-key variable), the HTTP call, timeout, and the Noul/Choice wire format. That file is temporary. When the Vercel AI SDK supports decision models it is deleted, `decisionModel` joins `MODEL_ROLES`, and existing configs keep working because the spec format already matches.
+Everything transport-specific lives in `src/ai/judge-provider.ts`: `endpointFor()` (a `switch` over `openrouter` and `typesafe`, each with its endpoint and API-key variable), the HTTP call, timeout, and the Noul/Choice wire format. That file is temporary: when the Vercel AI SDK supports decision models it is deleted and `decisionModel` becomes a regular provider-built model.
 
 `Judge.fromConfig()` builds the judge; it reaches agents through `AgentDeps` and tools through `ToolDeps`.
 

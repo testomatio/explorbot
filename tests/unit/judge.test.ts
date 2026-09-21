@@ -86,13 +86,12 @@ describe('Judge.fromConfig', () => {
     if (saved !== undefined) process.env.OPENROUTER_API_KEY = saved;
   });
 
-  it('builds nothing when unset or when the provider cannot be resolved', () => {
+  it('builds nothing when unset', () => {
     expect(Judge.fromConfig(undefined)).toBeNull();
-    expect(Judge.fromConfig('unknown/model')).toBeNull();
   });
 
-  it('enables both paths from a bare spec, and honours each toggle', () => {
-    expect(Judge.fromConfig('openrouter/typesafe/jev-1.13')?.toolEnabled).toBe(true);
-    expect(Judge.fromConfig({ model: 'openrouter/typesafe/jev-1.13', tool: false })?.toolEnabled).toBe(false);
+  it('enables both paths by default, and honours each toggle', () => {
+    expect(Judge.fromConfig({ provider: 'openrouter', model: 'typesafe/jev-1.13' })?.toolEnabled).toBe(true);
+    expect(Judge.fromConfig({ provider: 'openrouter', model: 'typesafe/jev-1.13', tool: false })?.toolEnabled).toBe(false);
   });
 });
