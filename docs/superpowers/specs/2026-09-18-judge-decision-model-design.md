@@ -49,7 +49,7 @@ Everything transport-specific lives in `src/ai/judge-provider.ts`: `endpointFor(
 | Site | Question | Approved means |
 |---|---|---|
 | `failedToolResult`, multi-element branch | Which listed element does the intent name? | suggest that element by `elementIndex` |
-| `Pilot.analyzeProgress`, scheduled trigger only | The run is moving toward the goal and can continue without a supervisor now. | skip the review |
+| `Pilot.analyzeProgress` | The run is moving toward the goal and can continue without a supervisor now. | skip the review silently |
 | `Pilot.settleExpectations`, text-only path | What did this run establish about the expected outcome? | settle it; the rest go to the agentic model |
 | `Navigator.verifyState`, before the prompt | Which already verified claim means the same as this one? | treat it as verified, skip the HTML-bearing prompt |
 | `Navigator.verifyState`, inexpressible branch | The page shows that this claim is true. | report it as a judgement, not an assertion |
@@ -58,7 +58,6 @@ Everything transport-specific lives in `src/ai/judge-provider.ts`: `endpointFor(
 
 Invariants the sites keep:
 
-- **Reactive reviews are never gated.** Pilot is summoned reactively on a region change, three consecutive failures or two empty results. Those always review. A skipped scheduled review does not reset the tester's counters, and two scheduled reviews are never skipped in a row.
 - **A judge answer never enters `verifications`.** A dedup match skips the work but writes no cache entry for the new claim, because a cache entry stands in for a proof.
 - **Prima confirms arrival** before returning a success envelope. `cli.ts` exits on `envelope.ok`.
 - **The tool assembles its own state**: scenario, compact ARIA capped at `JUDGE_PAGE_CAP`, and recent steps. The model supplies only the question.

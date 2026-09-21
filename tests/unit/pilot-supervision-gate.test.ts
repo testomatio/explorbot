@@ -49,31 +49,16 @@ const healthy = async () => new Decision('yes', 0.9);
 const unsure = async () => new Decision(null, 0.6);
 const actingTester: any = { getToolExecutions: () => [{ toolName: 'click', wasSuccessful: true, output: {} }] };
 
-describe('Pilot.analyzeProgress — scheduled gating', () => {
-  it('skips a scheduled review when the judge approves the run as healthy', async () => {
+describe('Pilot.analyzeProgress — judge gate', () => {
+  it('skips the review silently when the judge approves the run as healthy', async () => {
     const decideSpy = mock(healthy);
-    const guidance = await buildPilotWithJudge(decideSpy).analyzeProgress(buildTestTask(), buildState(), actingTester, true);
-    expect(guidance).toBeNull();
+    const guidance = await buildPilotWithJudge(decideSpy).analyzeProgress(buildTestTask(), buildState(), actingTester);
+    expect(guidance).toBe('');
     expect(decideSpy).toHaveBeenCalledTimes(1);
   });
 
   it('reviews when the judge rejects', async () => {
-    const guidance = await buildPilotWithJudge(mock(unsure)).analyzeProgress(buildTestTask(), buildState(), actingTester, true);
+    const guidance = await buildPilotWithJudge(mock(unsure)).analyzeProgress(buildTestTask(), buildState(), actingTester);
     expect(guidance).toBe('NEXT: keep going');
-  });
-
-  it('always reviews on a reactive trigger, without asking the judge', async () => {
-    const decideSpy = mock(healthy);
-    const guidance = await buildPilotWithJudge(decideSpy).analyzeProgress(buildTestTask(), buildState(), actingTester, false);
-    expect(guidance).toBe('NEXT: keep going');
-    expect(decideSpy).not.toHaveBeenCalled();
-  });
-
-  it('never skips two scheduled reviews in a row', async () => {
-    const decideSpy = mock(healthy);
-    const pilot = buildPilotWithJudge(decideSpy);
-    expect(await pilot.analyzeProgress(buildTestTask(), buildState(), actingTester, true)).toBeNull();
-    expect(await pilot.analyzeProgress(buildTestTask(), buildState(), actingTester, true)).toBe('NEXT: keep going');
-    expect(decideSpy).toHaveBeenCalledTimes(1);
   });
 });

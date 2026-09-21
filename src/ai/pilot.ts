@@ -51,7 +51,6 @@ export class Pilot implements Agent {
   private playwrightRecorder: PlaywrightRecorder;
   private fisherman: Fisherman | null = null;
   private judge?: Judge;
-  private skippedLastReview = false;
 
   constructor(deps: AgentDeps, agentTools: any, researcher: Researcher) {
     this.provider = deps.ai;
@@ -74,7 +73,6 @@ export class Pilot implements Agent {
 
   reset(): void {
     this.conversation = null;
-    this.skippedLastReview = false;
   }
 
   getLastAnalysis(): string | null {
@@ -544,7 +542,7 @@ export class Pilot implements Agent {
     );
   }
 
-  async analyzeProgress(task: Test, currentState: ActionResult, testerConversation: Conversation, scheduled: boolean): Promise<string | null> {
+  async analyzeProgress(task: Test, currentState: ActionResult, testerConversation: Conversation): Promise<string> {
     tag('substep').log('Pilot analyzing progress...');
 
     if (!this.conversation) {
@@ -557,15 +555,8 @@ export class Pilot implements Agent {
     const actionsContext = this.formatActions(toolCalls);
     const stateContext = this.buildStateContext(currentState);
 
-    if (scheduled && !this.skippedLastReview) {
-      const healthy = await this.judge?.decide('The run is moving toward the goal and can continue without a supervisor reviewing it now.', null, { scenario: task.scenario, state: stateContext, recentActions: actionsContext });
-      if (healthy?.approved) {
-        this.skippedLastReview = true;
-        tag('substep').log(`Pilot review skipped: run reads as healthy (${healthy.confidence.toFixed(2)})`);
-        return null;
-      }
-    }
-    this.skippedLastReview = false;
+    const healthy = await this.judge?.decide('The run is moving toward the goal and can continue without a supervisor reviewing it now.', null, { scenario: task.scenario, state: stateContext, recentActions: actionsContext });
+    if (healthy?.approved) return '';
 
     const hasFailures = toolCalls.length === 0 || toolCalls.some((t) => !t.wasSuccessful);
 
