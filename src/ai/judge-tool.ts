@@ -11,13 +11,7 @@ export function createJudgeTool(deps: ToolDeps, buildState: () => Promise<Record
   return {
     judge: tool({
       description: dedent`
-        Confirm one statement about the current page, or pick one option from a list, instead of guessing.
-
-        Without options, state what you want confirmed; it is confirmed only when the page clearly shows it.
-        With options, it picks the one the page clearly supports. State the condition literally and concretely.
-
-        Not confirmed means the page does not settle it — never that the statement is false.
-        Do not ask for what code can establish exactly, such as whether a URL changed or an element exists.
+        Settle one judgement about the current page instead of guessing. Phrase it literally and concretely.
       `,
       inputSchema: z.object({
         question: z.string().describe('The statement to confirm, or the question the options answer'),
