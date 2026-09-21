@@ -185,7 +185,7 @@ interface AIConfig {
   vision?: boolean;
   visionModel?: any;
   agenticModel?: any;
-  decisionModel?: string | DecisionModelConfig;
+  decisionModel?: string | { model: string; tool?: boolean; direct?: boolean };
   retryAttempts?: number;
   retryDelay?: number;
   maxParallelRequests?: number;
@@ -825,31 +825,6 @@ export function modelProvider(model: unknown): string {
   return '';
 }
 
-const DECISION_ENDPOINT = 'https://openrouter.ai/api/alpha/decisions';
-
-export function resolveDecisionModel(ai?: AIConfig): DecisionModelSettings | null {
-  const configured = ai?.decisionModel;
-  if (!configured) return null;
-
-  let spec = configured as DecisionModelConfig;
-  if (typeof configured === 'string') spec = { model: configured };
-  if (!spec.model) return null;
-
-  const baseUrl = spec.baseUrl || DECISION_ENDPOINT;
-  let envKey = process.env.OPENROUTER_API_KEY;
-  if (baseUrl.includes('typesafe.ai')) envKey = process.env.TYPESAFE_API_KEY;
-  const apiKey = spec.apiKey || envKey;
-  if (!apiKey) return null;
-
-  return {
-    model: spec.model,
-    baseUrl,
-    apiKey,
-    tool: spec.tool !== false,
-    direct: spec.direct !== false,
-  };
-}
-
 export function configuredModels(ai?: AIConfig): Record<string, ConfiguredModel> {
   if (!ai?.model) return {};
 
@@ -858,8 +833,6 @@ export function configuredModels(ai?: AIConfig): Record<string, ConfiguredModel>
   const models: Record<string, ConfiguredModel> = { model: describe(ai.model) };
   if (ai.agenticModel) models.agenticModel = describe(ai.agenticModel);
   if (ai.visionModel) models.visionModel = describe(ai.visionModel);
-  const decision = resolveDecisionModel(ai);
-  if (decision) models.decisionModel = { name: decision.model, provider: 'decisions' };
   for (const [agent, agentConfig] of Object.entries(ai.agents || {})) {
     if (agentConfig?.model) models[agent] = describe(agentConfig.model);
   }
@@ -970,22 +943,6 @@ interface EnvVar {
   description: string;
   required?: boolean;
   secret?: boolean;
-}
-
-export interface DecisionModelConfig {
-  model: string;
-  baseUrl?: string;
-  apiKey?: string;
-  tool?: boolean;
-  direct?: boolean;
-}
-
-export interface DecisionModelSettings {
-  model: string;
-  baseUrl: string;
-  apiKey: string;
-  tool: boolean;
-  direct: boolean;
 }
 
 export type { ModelRole, EnvVar, ProviderInfo, ConfiguredModel };

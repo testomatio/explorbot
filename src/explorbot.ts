@@ -25,7 +25,7 @@ import { RequestStore } from './api/request-store.ts';
 import { loadSpec } from './api/spec-reader.ts';
 import { resolveSpecBundlePath } from './application-spec.ts';
 import type { ExplorbotConfig, ReporterConfig } from './config.js';
-import { ConfigParser, resolveDecisionModel } from './config.ts';
+import { ConfigParser } from './config.ts';
 import { ExperienceTracker } from './experience-tracker.ts';
 import Explorer from './explorer.ts';
 import { KnowledgeTracker } from './knowledge-tracker.ts';
@@ -195,10 +195,7 @@ export class ExplorBot {
   }
 
   judge(): Judge | null {
-    if (this.judgeInstance !== undefined) return this.judgeInstance;
-    const settings = resolveDecisionModel(this.config.ai);
-    this.judgeInstance = null;
-    if (settings) this.judgeInstance = new Judge(settings);
+    if (this.judgeInstance === undefined) this.judgeInstance = Judge.fromConfig(this.config.ai?.decisionModel);
     return this.judgeInstance;
   }
 

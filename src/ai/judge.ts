@@ -1,13 +1,12 @@
 import { clearActivity, setActivity } from '../activity.ts';
-import type { DecisionModelSettings } from '../config.ts';
+import type { AIConfig } from '../config.ts';
 import { Observability } from '../observability.ts';
 import { createDebug } from '../utils/logger.ts';
+import { JudgeProvider } from './judge-provider.ts';
 
 const debugLog = createDebug('explorbot:judge');
 
 const APPROVAL_THRESHOLD = 0.7;
-const REQUEST_TIMEOUT_MS = 15000;
-const YES_NO_CRITERIA = { yes: 'The statement is true.', no: 'The statement is false.' };
 
 export const UNDECIDED = 'undecided';
 export const JUDGE_PAGE_CAP = 12000;
@@ -28,17 +27,26 @@ export class Decision {
 }
 
 export class Judge {
-  private fetchImpl: typeof fetch = fetch;
-  private requestTimeoutMs = REQUEST_TIMEOUT_MS;
+  constructor(
+    private provider: JudgeProvider,
+    private enabled: { tool: boolean; direct: boolean }
+  ) {}
 
-  constructor(private settings: DecisionModelSettings) {}
+  static fromConfig(config: AIConfig['decisionModel']): Judge | null {
+    if (!config) return null;
+    if (typeof config === 'string') return Judge.fromConfig({ model: config });
+
+    const provider = JudgeProvider.create(config.model);
+    if (!provider) return null;
+    return new Judge(provider, { tool: config.tool !== false, direct: config.direct !== false });
+  }
 
   get toolEnabled(): boolean {
-    return this.settings.tool;
+    return this.enabled.tool;
   }
 
   async decide(question: string, options: string[] | boolean | null, state: unknown): Promise<Decision> {
-    if (!this.settings.direct) return new Decision(null, 0);
+    if (!this.enabled.direct) return new Decision(null, 0);
     return this.consult(question, options, state);
   }
 
@@ -53,52 +61,19 @@ export class Judge {
   }
 
   private async request(question: string, options: string[] | boolean | null, state: unknown): Promise<Decision> {
-    const isList = Array.isArray(options);
-    let criteria: Record<string, string> = YES_NO_CRITERIA;
-    if (isList) criteria = Object.fromEntries(options.map((option, index) => [String(index), option]));
+    let list: string[] | undefined;
+    if (Array.isArray(options)) list = options;
 
-    let body: string;
-    try {
-      body = JSON.stringify({ model: this.settings.model, state, questions: { q: { type: 'choice', instructions: question, criteria } } });
-    } catch {
-      return this.fail('unserializable_state');
-    }
-
-    let failure = 'transport';
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.requestTimeoutMs);
-    const payload = await this.fetchImpl(this.settings.baseUrl, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${this.settings.apiKey}`, 'Content-Type': 'application/json' },
-      body,
-      signal: controller.signal,
-    })
-      .then((response) => {
-        failure = `http_${response.status}`;
-        if (!response.ok) return null;
-        failure = 'malformed_body';
-        return response.json();
-      })
-      .catch(() => null)
-      .finally(() => clearTimeout(timer));
-
-    if (controller.signal.aborted) return this.fail('timeout');
-
-    const choice = payload?.answers?.q?.choice;
-    const probability = payload?.answers?.q?.probabilities?.[choice];
-    if (typeof choice !== 'string' || typeof probability !== 'number') return this.fail(failure);
-    if (probability <= APPROVAL_THRESHOLD) return new Decision(null, probability);
-    if (!isList && choice !== 'yes') return new Decision(null, probability);
-    if (!isList) return new Decision(choice, probability);
-
-    const value = options[Number(choice)];
-    if (value === undefined || value === UNDECIDED) return new Decision(null, probability);
-    return new Decision(value, probability);
+    const answer = await this.provider.decide(state, question, list).catch((error: unknown) => this.recordFailure(error));
+    if (!answer) return new Decision(null, 0);
+    if (answer.probability <= APPROVAL_THRESHOLD) return new Decision(null, answer.probability);
+    if (answer.value === UNDECIDED) return new Decision(null, answer.probability);
+    return new Decision(answer.value, answer.probability);
   }
 
-  private fail(reason: string): Decision {
-    debugLog('judge declined: %s', reason);
-    Observability.getSpan()?.setAttribute('ai.telemetry.metadata.judgeError', reason);
-    return new Decision(null, 0);
+  private recordFailure(error: unknown): null {
+    debugLog('judge declined: %s', error);
+    Observability.getSpan()?.setAttribute('ai.telemetry.metadata.judgeError', String(error));
+    return null;
   }
 }

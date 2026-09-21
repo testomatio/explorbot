@@ -1,6 +1,6 @@
 # Judge — a decision model tier — Design
 
-An optional *decision model* answers one narrow question with a probability over the answers offered. Explorbot uses it where it would otherwise guess: a code call site asks, and a confident answer lets the site skip its own, more expensive decision. The model is `typesafe/jev-1.13` (TypeSafe's "System One" class), served at `POST https://openrouter.ai/api/alpha/decisions`.
+An optional *decision model* answers one narrow question with a probability over the answers offered. Explorbot uses it where it would otherwise guess: a code call site asks, and a confident answer lets the site skip its own, more expensive decision. The model is TypeSafe's Jev (a "System One" model), reached through OpenRouter or TypeSafe's own API.
 
 With `ai.decisionModel` unset, nothing registers and nothing calls out.
 
@@ -11,15 +11,15 @@ judge.decide(question: string, options: string[] | boolean | null, state: unknow
 
 class Decision {
   readonly value: string | null;   // the winning option; 'yes' for an approved yes/no
-  readonly confidence: number;     // the winning option's probability
+  readonly confidence: number;     // P(yes) for a yes/no, the chosen option's probability for a list
   get approved(): boolean;         // value !== null
   get rejected(): boolean;         // value === null
 }
 ```
 
-- **An array is a categorization.** `value` is the chosen option. Including `UNDECIDED` lets the model say none fits.
-- **A boolean or `null` is a yes/no.** Only a confident yes approves.
-- **Approved means the winning option's probability is above 70%**, and it isn't `UNDECIDED`, and (for yes/no) it is `yes`.
+- **An array is a categorization**, sent as a Choice. `value` is the chosen option. Including `UNDECIDED` lets the model say none fits.
+- **A boolean or `null` is a yes/no**, sent as a Noul, whose single number is P(yes). Only a confident yes approves.
+- **Approved means the answer's probability is above 70%** and it isn't `UNDECIDED`.
 - **Everything else is rejected**: a confident no, a low probability, `UNDECIDED`, a timeout, a failed request, a list with fewer than two options, or the direct path being disabled. `decide` never throws and never returns `null`.
 
 The threshold and every failure mode live in one place. A call site only ever sees a confident decision or a rejection, so it cannot misread uncertainty.
@@ -33,12 +33,16 @@ The threshold and every failure mode live in one place. A call site only ever se
 ## Configuration
 
 ```js
-ai: { decisionModel: 'typesafe/jev-1.13' }                          // both paths
-ai: { decisionModel: { model: 'typesafe/jev-1.13', tool: false } }  // direct sites only
-ai: { decisionModel: { model: 'typesafe/jev-1.13', direct: false } } // tool only
+ai: { decisionModel: 'openrouter/typesafe/jev-1.13' }                          // via OpenRouter
+ai: { decisionModel: 'typesafe/jev-latest' }                                   // TypeSafe API directly
+ai: { decisionModel: { model: 'openrouter/typesafe/jev-1.13', tool: false } }  // direct sites only
 ```
 
-Authenticates with `OPENROUTER_API_KEY`, or `TYPESAFE_API_KEY` when `baseUrl` points at TypeSafe. It is not a `MODEL_ROLES` entry, because it isn't a Vercel AI SDK model. `Judge` reaches agents through `AgentDeps` and tools through `ToolDeps`.
+The model is written `provider/model-id`, the same convention as every other model in Explorbot. `config.ts` holds only the field type.
+
+Everything transport-specific lives in `src/ai/judge-provider.ts`: the spec parse, `endpointFor()` (a `switch` over `openrouter` and `typesafe`, each with its endpoint and API-key variable), the HTTP call, timeout, and the Noul/Choice wire format. That file is temporary. When the Vercel AI SDK supports decision models it is deleted, `decisionModel` joins `MODEL_ROLES`, and existing configs keep working because the spec format already matches.
+
+`Judge.fromConfig()` builds the judge; it reaches agents through `AgentDeps` and tools through `ToolDeps`.
 
 ## Where it is used
 

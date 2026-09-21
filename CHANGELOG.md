@@ -3,13 +3,11 @@
 ## 2026-09-20
 
 ### Configuration
-- **`ai.decisionModel`** — Opt in to a decision model: a cheap model that answers one narrow question. Explorbot acts on its answer only when it is more than 70% sure, and otherwise does exactly what it does today. Accepts a model name, or an object to turn either half off. Default: unset, and with it unset nothing changes.
+- **`ai.decisionModel`** — Opt in to a decision model: a cheap model that answers one narrow question. Explorbot acts on its answer only when it is more than 70% sure, and otherwise does exactly what it does today. Written as `provider/model-id`, either through OpenRouter or direct to TypeSafe, for example `openrouter/typesafe/jev-1.13` or `typesafe/jev-latest`. Accepts an object to turn either half off. Default: unset, and with it unset nothing changes.
 - **`ai.decisionModel.tool`** — Whether the AI can ask the decision model itself, mid-run. Default: `true`.
 - **`ai.decisionModel.direct`** — Whether Explorbot consults it at the fixed points listed below. Default: `true`.
-- **`ai.decisionModel.baseUrl`** — Endpoint to call. Default: `https://openrouter.ai/api/alpha/decisions`.
-- **`ai.decisionModel.apiKey`** — Key to authenticate with. Default: `OPENROUTER_API_KEY`, or `TYPESAFE_API_KEY` when the endpoint is TypeSafe's own.
 
-`explorbot config` now lists the decision model alongside the other configured models.
+Authenticates with `OPENROUTER_API_KEY` or `TYPESAFE_API_KEY`, depending on the provider.
 
 ### Changes
 - [Tester] New `judge` tool. When a decision depends on reading the page rather than running a command, the tester can ask it to confirm a statement or pick one option instead of guessing. "Not confirmed" means the page doesn't settle it, never that the statement is false. Available to Pilot as well.

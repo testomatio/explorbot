@@ -1,102 +1,98 @@
-import { describe, expect, it } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { Judge, UNDECIDED } from '../../src/ai/judge.ts';
 
-const settings = { model: 'm', baseUrl: 'https://example.test/decisions', apiKey: 'k', tool: true, direct: true };
-
-function answering(choice: string, probabilities: Record<string, number>, overrides: Partial<typeof settings> = {}) {
-  const sent: any[] = [];
-  const judge = new Judge({ ...settings, ...overrides });
-  (judge as any).fetchImpl = async (_url: string, init: any) => {
-    sent.push(JSON.parse(init.body));
-    return new Response(JSON.stringify({ answers: { q: { type: 'choice', choice, probabilities } } }));
+function answering(value: string, probability: number, enabled = { tool: true, direct: true }) {
+  const asked: Array<{ question: string; options?: string[] }> = [];
+  const provider: any = {
+    decide: async (_state: unknown, question: string, options?: string[]) => {
+      asked.push({ question, options });
+      return { value, probability };
+    },
   };
-  return { judge, sent };
-}
-
-function failing(fetchImpl: (url: string, init: any) => Promise<Response>) {
-  const judge = new Judge(settings);
-  (judge as any).fetchImpl = fetchImpl;
-  return judge;
+  return { judge: new Judge(provider, enabled), asked };
 }
 
 describe('Judge.decide', () => {
   it('approves a yes/no question answered yes above 70%', async () => {
-    const { judge, sent } = answering('yes', { yes: 0.9, no: 0.1 });
-    const decision = await judge.decide('The form is submitted.', null, { page: 'x' });
+    const { judge, asked } = answering('yes', 0.9);
+    const decision = await judge.decide('The form is submitted.', null, {});
     expect(decision.approved).toBe(true);
     expect(decision.value).toBe('yes');
-    expect(sent[0].questions.q.criteria).toEqual({ yes: 'The statement is true.', no: 'The statement is false.' });
+    expect(asked[0].options).toBeUndefined();
   });
 
   it('treats a boolean the same as null', async () => {
-    const { judge } = answering('yes', { yes: 0.9, no: 0.1 });
-    expect((await judge.decide('The form is submitted.', true, {})).approved).toBe(true);
+    expect((await answering('yes', 0.9).judge.decide('x', true, {})).approved).toBe(true);
   });
 
   it('rejects a confident no — rejected means not approved, never a confident negative to act on', async () => {
-    const { judge } = answering('no', { yes: 0.05, no: 0.95 });
-    const decision = await judge.decide('The form is submitted.', null, {});
+    const decision = await answering('yes', 0.05).judge.decide('x', null, {});
     expect(decision.rejected).toBe(true);
     expect(decision.value).toBeNull();
   });
 
   it('rejects when the winning answer is not above 70%', async () => {
-    const { judge } = answering('yes', { yes: 0.7, no: 0.3 });
-    expect((await judge.decide('The form is submitted.', null, {})).rejected).toBe(true);
+    expect((await answering('yes', 0.7).judge.decide('x', null, {})).rejected).toBe(true);
   });
 
   it('returns the chosen option from a list', async () => {
-    const { judge, sent } = answering('1', { 0: 0.1, 1: 0.85, 2: 0.05 });
-    const decision = await judge.decide('Which tab is active?', ['Details', 'History', UNDECIDED], {});
-    expect(decision.value).toBe('History');
-    expect(sent[0].questions.q.criteria).toEqual({ 0: 'Details', 1: 'History', 2: UNDECIDED });
+    const { judge, asked } = answering('History', 0.85);
+    expect((await judge.decide('Which tab is active?', ['Details', 'History', UNDECIDED], {})).value).toBe('History');
+    expect(asked[0].options).toEqual(['Details', 'History', UNDECIDED]);
   });
 
   it('rejects when the undecided option wins', async () => {
-    const { judge } = answering('2', { 0: 0.05, 1: 0.05, 2: 0.9 });
-    expect((await judge.decide('Which tab is active?', ['Details', 'History', UNDECIDED], {})).rejected).toBe(true);
+    expect((await answering(UNDECIDED, 0.9).judge.decide('x', ['Details', 'History', UNDECIDED], {})).rejected).toBe(true);
   });
 
-  it('rejects a list of fewer than two options without calling out', async () => {
-    const { judge, sent } = answering('0', { 0: 1 });
-    expect((await judge.decide('Which tab is active?', [UNDECIDED], {})).rejected).toBe(true);
-    expect(sent).toHaveLength(0);
+  it('rejects a list of fewer than two options without asking', async () => {
+    const { judge, asked } = answering(UNDECIDED, 1);
+    expect((await judge.decide('x', [UNDECIDED], {})).rejected).toBe(true);
+    expect(asked).toHaveLength(0);
   });
 
   it('rejects on the direct path when direct is disabled, while consult still answers', async () => {
-    const { judge, sent } = answering('yes', { yes: 0.9, no: 0.1 }, { direct: false });
-    expect((await judge.decide('The form is submitted.', null, {})).rejected).toBe(true);
-    expect(sent).toHaveLength(0);
-    expect((await judge.consult('The form is submitted.', null, {})).approved).toBe(true);
+    const { judge, asked } = answering('yes', 0.9, { tool: true, direct: false });
+    expect((await judge.decide('x', null, {})).rejected).toBe(true);
+    expect(asked).toHaveLength(0);
+    expect((await judge.consult('x', null, {})).approved).toBe(true);
   });
 
-  it('rejects instead of throwing on a non-2xx, a transport error, or a malformed body', async () => {
-    const statuses = [
-      failing(async () => new Response('{}', { status: 404 })),
-      failing(async () => {
-        throw new Error('ECONNREFUSED');
-      }),
-      failing(async () => new Response('{"answers":null}')),
-    ];
-    for (const judge of statuses) expect((await judge.decide('x', null, {})).rejected).toBe(true);
+  it('rejects instead of throwing when the provider fails', async () => {
+    const provider: any = {
+      decide: async () => {
+        throw new Error('http_500');
+      },
+    };
+    expect((await new Judge(provider, { tool: true, direct: true }).decide('x', null, {})).rejected).toBe(true);
   });
 
   it('rejects instead of throwing when the state cannot be serialized', async () => {
-    const { judge, sent } = answering('yes', { yes: 0.9, no: 0.1 });
     const circular: Record<string, unknown> = {};
     circular.self = circular;
-    expect((await judge.decide('x', null, circular)).rejected).toBe(true);
-    expect(sent).toHaveLength(0);
+    const provider: any = { decide: async (state: unknown) => JSON.stringify(state) };
+    expect((await new Judge(provider, { tool: true, direct: true }).decide('x', null, circular)).rejected).toBe(true);
+  });
+});
+
+describe('Judge.fromConfig', () => {
+  let saved: string | undefined;
+  beforeEach(() => {
+    saved = process.env.OPENROUTER_API_KEY;
+    process.env.OPENROUTER_API_KEY = 'k';
+  });
+  afterEach(() => {
+    if (saved === undefined) Reflect.deleteProperty(process.env, 'OPENROUTER_API_KEY');
+    if (saved !== undefined) process.env.OPENROUTER_API_KEY = saved;
   });
 
-  it('rejects when the request times out', async () => {
-    const judge = failing(
-      (_url, init) =>
-        new Promise((_resolve, reject) => {
-          init.signal.addEventListener('abort', () => reject(new Error('aborted')));
-        })
-    );
-    (judge as any).requestTimeoutMs = 20;
-    expect((await judge.decide('x', null, {})).rejected).toBe(true);
+  it('builds nothing when unset or when the provider cannot be resolved', () => {
+    expect(Judge.fromConfig(undefined)).toBeNull();
+    expect(Judge.fromConfig('unknown/model')).toBeNull();
+  });
+
+  it('enables both paths from a bare spec, and honours each toggle', () => {
+    expect(Judge.fromConfig('openrouter/typesafe/jev-1.13')?.toolEnabled).toBe(true);
+    expect(Judge.fromConfig({ model: 'openrouter/typesafe/jev-1.13', tool: false })?.toolEnabled).toBe(false);
   });
 });
