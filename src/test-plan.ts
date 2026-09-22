@@ -5,7 +5,8 @@ import figures from 'figures';
 import type { ActionResult } from './action-result.ts';
 import { listSitePlanDirs } from './global-config.ts';
 import { WebPageState } from './state-manager.ts';
-import { tag } from './utils/logger.ts';
+import { createDebug, pluralize, tag } from './utils/logger.ts';
+import { truncate } from './utils/strings.ts';
 import { parsePlanFromMarkdown, planToAiContext, savePlanToMarkdown, savePlansToMarkdown } from './utils/test-plan-markdown.ts';
 import { uniqSessionName } from './utils/unique-names.ts';
 
@@ -480,17 +481,34 @@ export class Plan {
   static listFiles(plansDir: string): PlanFile[] {
     if (!existsSync(plansDir)) return [];
 
-    return readdirSync(plansDir)
+    const files = readdirSync(plansDir)
       .filter((file) => file.endsWith('.md'))
       .map((file) => {
         const filePath = path.join(plansDir, file);
+        const modifiedAt = statSync(filePath).mtimeMs;
+        const plan = readPlanFile(filePath, modifiedAt);
         return {
           name: file,
           path: filePath,
-          modifiedAt: statSync(filePath).mtimeMs,
+          modifiedAt,
+          title: plan.title,
+          url: plan.startUrl || '',
+          testCount: plan.tests.length,
+          label: '',
         };
       })
       .sort((left, right) => right.modifiedAt - left.modifiedAt);
+
+    if (files.length === 0) return files;
+
+    const nameWidth = Math.min(MAX_PLAN_NAME_WIDTH, Math.max(...files.map((file) => file.name.length)));
+    const urlWidth = Math.min(MAX_PLAN_URL_WIDTH, Math.max(...files.map((file) => file.url.length)));
+    for (const file of files) {
+      const name = truncate(file.name, nameWidth).padEnd(nameWidth);
+      const url = truncate(file.url, urlWidth).padEnd(urlWidth);
+      file.label = `${name}  ${url}  ${file.testCount} ${pluralize(file.testCount, 'test')}`;
+    }
+    return files;
   }
 
   static resolveFile(file: string, plansDir?: string): string | null {
@@ -600,4 +618,27 @@ export interface PlanFile {
   name: string;
   path: string;
   modifiedAt: number;
+  title: string;
+  url: string;
+  testCount: number;
+  label: string;
+}
+
+const debugLog = createDebug('explorbot:test-plan');
+const MAX_PLAN_NAME_WIDTH = 38;
+const MAX_PLAN_URL_WIDTH = 24;
+const planFileCache = new Map<string, { modifiedAt: number; plan: Plan }>();
+
+function readPlanFile(filePath: string, modifiedAt: number): Plan {
+  const cached = planFileCache.get(filePath);
+  if (cached?.modifiedAt === modifiedAt) return cached.plan;
+
+  let plan = new Plan(path.basename(filePath));
+  try {
+    plan = parsePlanFromMarkdown(filePath);
+  } catch (error) {
+    debugLog(`Failed to read plan file ${filePath}:`, error);
+  }
+  planFileCache.set(filePath, { modifiedAt, plan });
+  return plan;
 }

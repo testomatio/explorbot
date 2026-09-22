@@ -21,6 +21,6 @@ export class PlanLoadCommand extends BaseCommand {
   }
 
   completeArguments(): ArgumentCompletion[] {
-    return Plan.listFiles(this.explorBot.getPlansDir()).map((file) => ({ value: file.name }));
+    return Plan.listFiles(this.explorBot.getPlansDir()).map((file) => ({ value: file.name, display: file.label }));
   }
 }

@@ -77,7 +77,7 @@ export class TestCommand extends BaseCommand {
   }
 
   completeArguments(): ArgumentCompletion[] {
-    return Plan.listFiles(this.explorBot.getPlansDir()).map((file) => ({ value: `--from-plan ${file.name}`, display: file.name }));
+    return Plan.listFiles(this.explorBot.getPlansDir()).map((file) => ({ value: `--from-plan ${file.name}`, display: file.label }));
   }
 }
 

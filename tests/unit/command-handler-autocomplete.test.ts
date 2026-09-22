@@ -4,13 +4,16 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { CommandHandler } from '../../src/command-handler.js';
 import type { ExplorBot } from '../../src/explorbot.js';
+import { Plan, Test } from '../../src/test-plan.js';
 
 let plansDir = '';
 
 beforeEach(() => {
   plansDir = mkdtempSync(path.join(tmpdir(), 'explorbot-autocomplete-'));
-  writeFileSync(path.join(plansDir, 'checkout.md'), '# Checkout\n');
-  writeFileSync(path.join(plansDir, 'login.md'), '# Login\n');
+  new Plan('/checkout').saveToMarkdown(path.join(plansDir, 'checkout.md'));
+  const loginPlan = new Plan('/login');
+  loginPlan.addTest(new Test('Sign in with a valid password', 'high', ['The dashboard opens'], '/login'));
+  loginPlan.saveToMarkdown(path.join(plansDir, 'login.md'));
   utimesSync(path.join(plansDir, 'checkout.md'), new Date(1000), new Date(1000));
 });
 
@@ -32,8 +35,8 @@ describe('CommandHandler argument autocomplete', () => {
 
     expect(autocomplete.visible).toBe(true);
     expect(autocomplete.completesArgument).toBe(true);
-    expect(autocomplete.suggestions.map((suggestion) => suggestion.display)).toEqual(['login.md', 'checkout.md']);
-    expect(autocomplete.suggestions[0].value).toBe('--from-plan login.md');
+    expect(autocomplete.suggestions.map((suggestion) => suggestion.value)).toEqual(['--from-plan login.md', '--from-plan checkout.md']);
+    expect(autocomplete.suggestions[0].display).toBe('login.md     /login     1 test');
     expect(autocomplete.replaceFrom).toBe(input.length);
     expect(autocomplete.replaceTo).toBe(input.length);
   });

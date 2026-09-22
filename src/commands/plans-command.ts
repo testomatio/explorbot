@@ -26,7 +26,7 @@ export class PlansCommand extends BaseCommand {
   }
 
   completeArguments(): ArgumentCompletion[] {
-    return Plan.listFiles(this.explorBot.getPlansDir()).map((file) => ({ value: file.name }));
+    return Plan.listFiles(this.explorBot.getPlansDir()).map((file) => ({ value: file.name, display: file.label }));
   }
 
   private printPlans(files: PlanFile[]): void {
@@ -38,8 +38,7 @@ export class PlansCommand extends BaseCommand {
     tag('info').log('Saved plans:');
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-      const plan = Plan.fromMarkdown(file.path);
-      tag('info').log(`${i + 1}. ${plan.title} (${plan.tests.length} tests) - ${file.name}`);
+      tag('info').log(`${i + 1}. ${file.title} (${file.testCount} tests) - ${file.name}`);
     }
     tag('info').log('');
     tag('info').log(`View plan tests: ${getCliName()} plans <number>`);
@@ -69,10 +68,15 @@ export class PlansCommand extends BaseCommand {
       throw new Error(`Plan file not found: ${target}`);
     }
 
+    const name = path.basename(plan.filePath);
     const file = {
-      name: path.basename(plan.filePath),
+      name,
       path: plan.filePath,
       modifiedAt: statSync(plan.filePath).mtimeMs,
+      title: plan.title,
+      url: plan.startUrl || '',
+      testCount: plan.tests.length,
+      label: name,
     };
     return { plan, file };
   }

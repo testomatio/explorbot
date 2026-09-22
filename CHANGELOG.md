@@ -19,7 +19,8 @@
 - TUI: commands that take an argument now suggest one as soon as the command is picked. `/test` lists saved plans
   and inserts `--from-plan <file>`, `/plan:load` and `/plans` list saved plans, `/rerun` lists generated test files,
   and `/navigate`, `/research` and `/explore` list the pages visited in this run followed by pages Explorbot learned
-  in earlier runs. Typing narrows the list.
+  in earlier runs. Typing narrows the list. Each plan is listed on its own line with the page it starts from and how
+  many tests it holds; short suggestions such as command names stay in columns.
 - TUI: while argument suggestions are shown, Enter runs what you typed. Move through the list with the arrow keys to
   run a suggestion with Enter, or press Tab to insert it. Completing a command name with Tab now adds a space after
   it, so its suggestions appear right away.
