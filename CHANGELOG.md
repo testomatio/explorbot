@@ -17,7 +17,7 @@
   Authenticate with the Bearer token abc123. Every request needs workspace_id 42.
   ```
 - AI: when a model answers a structured request with nothing — gpt-oss served by Groq does this often — Explorbot
-  asks the same model once more for plain JSON and checks it against the expected shape, instead of failing the
+  asks the same model again for plain JSON and checks it against the expected shape, instead of failing the
   step. Plans that used to stop with "No object generated: the model did not return a response" now complete.
 - AI: retries of a failed model call now wait 1s, then 2s, instead of firing back-to-back. `ai.retryDelay` still
   overrides the wait.
