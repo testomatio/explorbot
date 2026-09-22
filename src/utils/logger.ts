@@ -103,7 +103,12 @@ class ConsoleDestination implements LogDestination {
     if (entry.type === 'debug') return;
     if (entry.type === 'html') return;
     if (entry.type === 'operation' && !this.verboseMode) return;
-    if (entry.type === 'step' && !this.verboseMode && this.recentSteps.shouldSuppress(entry.content)) return;
+    if (entry.type === 'step' && !this.verboseMode) {
+      const step = entry.originalArgs?.[0];
+      const error = entry.originalArgs?.[1];
+      if (error || step?.failed === true || step?.status === 'failed') return;
+      if (this.recentSteps.shouldSuppress(entry.content)) return;
+    }
     let content = entry.content;
     if (entry.type === 'multiline' || entry.type === 'details') {
       const cleaned = stripAnsi(dedent(entry.content));
