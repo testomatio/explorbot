@@ -57,7 +57,8 @@ function dropVolatileColumns(markdown: string): string {
       const divider = `|${columns.map(() => '------').join('|')}|`;
       const body = rows.map((row) => `| ${columns.map((name) => row[name] || '-').join(' | ')} |`);
       return [header, divider, ...body, ''].join('\n');
-    });
+    })
+    .toString();
 }
 
 function cap(text: string, max: number): string {
