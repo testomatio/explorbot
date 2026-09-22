@@ -65,6 +65,19 @@ describe('ApiClient request defaults', () => {
     expect(JSON.parse(seen[0].body)).toEqual({ title: 'Mine', workspace_id: 42 });
   });
 
+  it('overrides knowledge headers whose name differs only in case', async () => {
+    const client = new ApiClient(origin, { authorization: 'Bearer config' });
+    client.addRequestDefaults({ pattern: '*', headers: { Authorization: 'Bearer knowledge', 'X-Trace': 'knowledge' }, query: {}, body: {} });
+    client.addRequestDefaults({ pattern: '*', headers: { 'x-trace': 'later-knowledge' }, query: {}, body: {} });
+
+    await client.request({ method: 'GET', path: '/notes' });
+    await client.request({ method: 'GET', path: '/notes', headers: { 'X-TRACE': 'request' } });
+
+    expect(seen[0].headers.authorization).toBe('Bearer config');
+    expect(seen[0].headers['x-trace']).toBe('later-knowledge');
+    expect(seen[1].headers['x-trace']).toBe('request');
+  });
+
   it('fills body fields only into JSON object bodies of writing methods', async () => {
     const client = new ApiClient(origin, {});
     client.addRequestDefaults({ pattern: '*', headers: {}, query: {}, body: { workspace_id: 42 } });

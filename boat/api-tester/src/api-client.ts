@@ -40,7 +40,13 @@ export class ApiClient extends BaseApiClient {
     const matching = this.requestDefaults.filter((defaults) => matchesUrl(defaults.pattern, path));
     if (!matching.length) return super.request(opts);
 
-    const headers = Object.assign({}, ...matching.map((defaults) => defaults.headers), this.getHeaders(), opts.headers);
+    const knowledgeHeaders: Record<string, string> = {};
+    for (const defaults of matching) {
+      for (const [name, value] of Object.entries(defaults.headers)) knowledgeHeaders[name.toLowerCase()] = value;
+    }
+    for (const name of Object.keys({ ...this.getHeaders(), ...opts.headers })) delete knowledgeHeaders[name.toLowerCase()];
+
+    const headers = { ...knowledgeHeaders, ...this.getHeaders(), ...opts.headers };
     const queryParams = Object.assign({}, ...matching.map((defaults) => defaults.query), opts.queryParams);
     let body = opts.body;
     if (BODY_METHODS.includes(opts.method.toUpperCase()) && body && typeof body === 'object' && !Array.isArray(body)) {
