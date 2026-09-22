@@ -136,8 +136,8 @@ export class Tester extends TaskAgent implements Agent {
     let initialState = ActionResult.fromState(state);
     const currentUrl = state.fullUrl || state.url;
     let startOnCurrentPage = opts.startOnCurrentPage;
-    if (isErrorPage(initialState) && !startOnCurrentPage && task.startUrl && normalizeUrl(currentUrl) !== normalizeUrl(task.startUrl)) {
-      debugLog(`Recovering from error page at ${currentUrl} by navigating to ${task.startUrl}`);
+    if (!startOnCurrentPage && task.startUrl && normalizeUrl(currentUrl) !== normalizeUrl(task.startUrl)) {
+      debugLog(`Opening test start URL ${task.startUrl} before building context (was at ${currentUrl})`);
       try {
         await this.explorer.visit(task.startUrl);
         state = this.stateManager.getCurrentState();
@@ -145,7 +145,7 @@ export class Tester extends TaskAgent implements Agent {
         initialState = ActionResult.fromState(state);
         startOnCurrentPage = true;
       } catch (error) {
-        debugLog(`Could not recover from error page: ${compactErrorMessage(error)}`);
+        debugLog(`Could not open test start URL: ${compactErrorMessage(error)}`);
       }
     }
     if (isErrorPage(initialState)) {
