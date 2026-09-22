@@ -241,6 +241,7 @@ export class Test extends Task {
   endTime?: number;
   resetCount = 0;
   appliedExperience: AppliedExperience[] = [];
+  preparedData: string[] = [];
 
   constructor(scenario: string, priority: 'critical' | 'important' | 'high' | 'normal' | 'low', expectedOutcome: string | string[], startUrl: string, plannedSteps: string[] = []) {
     super(scenario, startUrl);

@@ -381,7 +381,7 @@ export function createCodeceptJSTools({ explorer, stateManager, judge }: ToolDep
         - Performing multiple form actions in a single batch
         - Complex interactions requiring sequential commands
         - Reaching items further down a list (I.scrollTo)
-        - Reloading the page to prove a change outlived it (I.reloadPage)
+        - Reloading the page to prove a change outlived it (I.refreshPage)
 
         Example - filling a form with context (PREFERRED):
         I.fillField('Username', 'John', '.login-form')

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { RequestHaul } from '../../src/ai/fisherman/request-haul.ts';
 import { createFishermanTools } from '../../src/ai/fisherman/tools.ts';
+import { RequestResult } from '../../src/api/request-result.ts';
 
 describe('Fisherman tools', () => {
   it('does not present a rejected capture as a request example', async () => {
@@ -168,6 +169,18 @@ describe('ledger-derived results', () => {
     expect(result.success).toBe(true);
     expect(result.summary).toBe('Created the suite');
     expect(result.created[0].id).toBe('s1');
+  });
+
+  it('keeps the title of a JSON:API write when a text-only turn finishes the run', () => {
+    const made: any[] = [];
+    const { finishFromText, getResult } = fishermanTools({} as any, store(undefined, made), {});
+    const write = new RequestResult({ id: 'w1', method: 'POST', path: '/api/runs', fullUrl: '/api/runs', requestHeaders: {}, status: 200, statusText: '200', responseHeaders: {}, timing: 0, timestamp: new Date() });
+    write.rawResponseBodyValue = JSON.stringify({ data: { id: 'r1', type: 'runs', attributes: { title: 'Disposable Run' } } });
+    made.push(write);
+
+    finishFromText('Created the run');
+
+    expect(getResult().created[0]).toMatchObject({ id: 'r1', title: 'Disposable Run' });
   });
 
   it('keeps the honest failure summary when a text-only turn ends a run with no successful writes', () => {
