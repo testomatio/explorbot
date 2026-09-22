@@ -21,7 +21,7 @@ endpoint: "/users"
 CRUD for users. Admin role required for writes. IDs are UUIDs.
 ```
 
-Chief loads knowledge matching the endpoint it's planning, and Curler loads it again for the endpoint it's testing, so auth headers and payload rules reach the requests themselves. Running `know` again on the same endpoint appends to the file. See [knowledge](../workflow/knowledge.md) for how matching and files work.
+Chief loads knowledge matching the endpoint it's planning, and Curler loads it again for the endpoint it's testing. Before planning, Chief also picks out the headers, query parameters and body fields the knowledge says to send, and every request whose path matches the file's `endpoint:` pattern carries them, the sample data fetch included. Headers from `api.headers` or `-H` take precedence over knowledge. Running `know` again on the same endpoint appends to the file. See [knowledge](../workflow/knowledge.md) for how matching and files work.
 
 For a fact that should not be stored — a token, a one-off fixture — pass `--knowledge` instead. It applies to the run only:
 

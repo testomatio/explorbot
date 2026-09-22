@@ -3,7 +3,7 @@ import { LangfuseSpanProcessor } from '@langfuse/otel';
 import { NodeSDK } from '@opentelemetry/sdk-node';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import dedent from 'dedent';
-import { APICallError, generateObject, generateText, isStepCount, registerTelemetry, tool } from 'ai';
+import { APICallError, NoObjectGeneratedError, asSchema, extractJsonMiddleware, generateObject, generateText, isStepCount, parsePartialJson, registerTelemetry, tool, wrapLanguageModel } from 'ai';
 import type { ModelMessage } from 'ai';
 import { z } from 'zod';
 import { clearActivity, setActivity } from '../activity.ts';
@@ -87,7 +87,7 @@ export class Provider {
   private otelSdk: NodeSDK | null = null;
   private defaultRetryOptions: RetryOptions = {
     maxAttempts: 3,
-    baseDelay: 10,
+    baseDelay: 1000,
     maxDelay: 10000,
     retryCondition: (error: Error) => {
       return (
@@ -267,6 +267,24 @@ export class Provider {
     if (!reduced) throw new ContextLengthError(error.message || error.toString());
     tag('warning').log('Context length exceeded, retrying with reduced messages...');
     return retry(reduced.messages, { ...options, _contextRetryLevel: reduced.nextLevel });
+  }
+
+  private async recoverWithPlainJson(messages: ModelMessage[], schema: any, model: any, options: any): Promise<any> {
+    const target = asSchema(schema);
+    tag('warning').log(`${getModelName(model)} returned no structured output, asking for plain JSON instead`);
+    const instruction = dedent`
+      Respond with a single JSON object that matches this JSON Schema, and nothing else:
+      ${JSON.stringify(await target.jsonSchema)}
+    `;
+    const response = await this.chat([...messages, { role: 'user', content: instruction }], wrapLanguageModel({ model, middleware: extractJsonMiddleware() }), options);
+
+    const parsed = await parsePartialJson(response.text);
+    if (parsed.state !== 'successful-parse') throw new AiError('No object generated: plain JSON fallback returned no parsable JSON');
+    const validated = await target.validate?.(parsed.value);
+    if (validated && !validated.success) throw new AiError(`No object generated: plain JSON fallback did not match the schema: ${validated.error.message}`);
+
+    responseLog(parsed.value);
+    return { ...response, object: validated?.value ?? parsed.value };
   }
 
   private initLangfuse() {
@@ -527,6 +545,7 @@ export class Provider {
       if (Provider.isContextLengthError(error)) {
         return this.recoverFromContextLength(error, messages, options, (m, o) => this.generateObject(m, schema, model, o));
       }
+      if (NoObjectGeneratedError.isInstance(error)) return this.recoverWithPlainJson(messages, schema, modelToUse, options);
       throw new AiError(error.message || error.toString());
     }
   }
