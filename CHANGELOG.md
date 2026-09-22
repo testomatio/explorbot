@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-09-20
+
+### Configuration
+- **`ai.decisionModel`** — Opt in to a decision model: a cheap model that answers one narrow question. Explorbot acts on its answer only when it is more than 70% sure, and otherwise does exactly what it does today. Set as `{ provider, model }`, through OpenRouter or direct to TypeSafe — for example `{ provider: 'openrouter', model: 'typesafe/jev-1.13' }` or `{ provider: 'typesafe', model: 'jev-latest' }`. Default: unset, and with it unset nothing changes.
+- **`ai.decisionModel.tool`** — Whether the AI can ask the decision model itself, mid-run. Default: `true`.
+- **`ai.decisionModel.direct`** — Whether Explorbot consults it at the fixed points listed below. Default: `true`.
+
+Authenticates with `OPENROUTER_API_KEY` or `TYPESAFE_API_KEY`, depending on the provider.
+
+### Changes
+- [Tester] New `judge` tool. When a decision depends on reading the page rather than running a command, the tester can ask it to confirm a statement or pick one option instead of guessing. "Not confirmed" means the page doesn't settle it, never that the statement is false. Available to Pilot as well.
+- [Tester] When a locator matches several elements, Explorbot now tries to work out which one was meant and points the tester at it. If the matches genuinely cannot be told apart it falls back to the numbered list and the visual-click route, as before.
+- [Pilot] A progress review is skipped when the decision model is confident the run is healthy, saving the expensive model call. When it isn't sure, Pilot reviews as before.
+- [Navigator] A claim already checked on the page is recognised even when it is worded differently, skipping a repeat check. Claims that no assertion can express — previously a dead end — are now reported as confirmed when the page clearly shows them, kept separate from assertions that actually ran.
+- Prima: `prima go` with a page description rather than a URL can now pick the control that leads there directly. It confirms it arrived before reporting success, and otherwise falls back to the usual navigation.
+- Prima: `prima check` settles the expected outcomes the decision model is sure about without calling the larger model; the rest are settled as before.
 ## 2026-09-22
 
 ### Changes

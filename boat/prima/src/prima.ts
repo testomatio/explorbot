@@ -8,6 +8,7 @@ import * as playwright from 'playwright';
 import type { Browser } from 'playwright';
 import { z } from 'zod';
 import { ActionResult } from '../../../src/action-result.ts';
+import { JUDGE_PAGE_CAP, UNDECIDED } from '../../../src/ai/judge.ts';
 import { getPreviousResearch } from '../../../src/ai/researcher/cache.ts';
 import { actionRule, locatorRule } from '../../../src/ai/rules.ts';
 import { createAgentTools, createCodeceptJSTools, createRefTools } from '../../../src/ai/tools.ts';
@@ -20,7 +21,7 @@ import { Reporter } from '../../../src/reporter.ts';
 import type { WebPageState } from '../../../src/state-manager.ts';
 import { Stats } from '../../../src/stats.ts';
 import { Task, Test, TestResult } from '../../../src/test-plan.ts';
-import { ariaRefSnapshot } from '../../../src/utils/aria-ref.ts';
+import { ariaRefSelector, ariaRefSnapshot, describeRef, parseAriaRefs, refIsGone } from '../../../src/utils/aria-ref.ts';
 import { compactAriaSnapshot } from '../../../src/utils/aria.ts';
 import { browserErrorMessage } from '../../../src/utils/browser-errors.ts';
 import { pluralize } from '../../../src/utils/logger.ts';
@@ -447,6 +448,12 @@ export class Prima {
     }
 
     const previousState = this.bot.stateManager().getCurrentState();
+
+    if (!isUrl) {
+      const judged = await this.judgedGo(target, previousState);
+      if (judged) return judged;
+    }
+
     let navigationError: unknown = null;
 
     try {
@@ -924,6 +931,37 @@ export class Prima {
   private async refAriaSnapshot(result: ActionResult): Promise<string | null> {
     const snapshot = await Promise.resolve(this.bot.getExplorer()?.withPage?.(ariaRefSnapshot)).catch(() => null);
     return snapshot || result.ariaSnapshot;
+  }
+
+  private async judgedGo(target: string, previousState: WebPageState | null): Promise<EnvelopeData | null> {
+    if (!previousState) return null;
+    const judge = this.bot.judge?.();
+    if (!judge) return null;
+
+    const refs = parseAriaRefs((await this.refAriaSnapshot(ActionResult.fromState(previousState))) || '').filter((entry) => entry.name);
+    const labels = refs.map((entry) => `${entry.role} named "${entry.name}"`);
+    const pick = await judge.decide(`Which listed control leads to: ${target}`, [...labels, UNDECIDED], { target });
+    if (!pick.value) return null;
+
+    const ref = refs[labels.indexOf(pick.value)].ref;
+    const explorer = this.bot.getExplorer();
+    if (await refIsGone(explorer, ref)) return null;
+
+    const named = await describeRef(explorer, ref);
+    const run = `I.usePlaywrightTo(${JSON.stringify(`go to ${target}`)}, async ({ page }) => page.locator(${JSON.stringify(ariaRefSelector(ref))}).click())`;
+    if (!(await explorer.action().attempt(run, `go ${target}`))) return null;
+
+    const newState = this.bot.stateManager().getCurrentState();
+    if (!newState) return null;
+    if (newState.hash === previousState.hash && newState.url === previousState.url) return null;
+
+    const page = ((await this.refAriaSnapshot(ActionResult.fromState(newState))) || '').slice(0, JUDGE_PAGE_CAP);
+    const arrived = await judge.decide(`The page now shows: ${target}`, null, { target, page });
+    if (arrived.rejected) return null;
+
+    let code = run;
+    if (named) code = `I.click(${JSON.stringify(named)})`;
+    return this.successEnvelope(`go ${target}`, [code], await this.capturedResult(newState), previousState);
   }
 
   private executedCodes(code: unknown): string[] {

@@ -21,6 +21,7 @@ import { normalizeInlineText } from '../utils/strings.ts';
 import { extractStatePath, isSameHostFamily, matchesNavigationUrl } from '../utils/url-matcher.js';
 import type { Agent, AgentDeps } from './agent.js';
 import type { Conversation } from './conversation.js';
+import { type Decision, JUDGE_PAGE_CAP, type Judge, UNDECIDED } from './judge.ts';
 import type { Provider } from './provider.js';
 import { Researcher } from './researcher.ts';
 import { actionRule, locatorRule, unexpectedPopupRule } from './rules.js';
@@ -80,6 +81,7 @@ class Navigator implements Agent {
   private explorer: Explorer;
   private config: ExplorbotConfig;
   private stateManager: StateManager;
+  private judge?: Judge;
 
   constructor(deps: AgentDeps) {
     this.provider = deps.ai;
@@ -89,6 +91,7 @@ class Navigator implements Agent {
     this.knowledgeTracker = deps.knowledgeTracker;
     this.experienceTracker = deps.stateManager.getExperienceTracker();
     this.hooksRunner = new HooksRunner(deps.explorer, deps.config);
+    this.judge = deps.judge;
   }
 
   private get verifyAttempts(): number {
@@ -682,7 +685,7 @@ class Navigator implements Agent {
     return suggestion;
   }
 
-  async verifyState(message: string, actionResult: ActionResult): Promise<{ verified: boolean; inexpressible: boolean; results: AssertionResult[]; successfulCodes: string[]; assertionSteps: Array<{ name: string; args: any[] }>; totalAttempted: number }> {
+  async verifyState(message: string, actionResult: ActionResult): Promise<{ verified: boolean; inexpressible: boolean; results: AssertionResult[]; successfulCodes: string[]; assertionSteps: Array<{ name: string; args: any[] }>; totalAttempted: number; judged?: Decision }> {
     tag('info').log('AI Navigator verifying state at', actionResult.url);
     debugLog('Verification message:', message);
 
@@ -690,6 +693,13 @@ class Navigator implements Agent {
     if (cachedVerification !== null) {
       tag('operation').log(`Reusing cached verification: ${cachedVerification ? 'PASS' : 'FAIL'}`);
       return { verified: cachedVerification, inexpressible: false, results: [], successfulCodes: [], assertionSteps: [], totalAttempted: 0 };
+    }
+
+    const verifiedClaims = Object.keys(actionResult.verifications ?? {}).filter((claim) => actionResult.getVerification(claim) === true);
+    const same = await this.judge?.decide('Which already verified claim means the same as the claim under consideration?', [...verifiedClaims, UNDECIDED], { claim: message });
+    if (same?.approved) {
+      tag('operation').log(`Judge matched claim to an already verified one: "${same.value}"`);
+      return { verified: true, inexpressible: false, results: [], successfulCodes: [], assertionSteps: [], totalAttempted: 0 };
     }
 
     const knowledge = this.knowledgeTracker.renderRelevantContext(actionResult);
@@ -832,7 +842,8 @@ class Navigator implements Agent {
     const inexpressible = !alreadyVerified && totalAttempted === 0;
     if (inexpressible) {
       tag('warning').log('No assertion could express this claim');
-      return { verified: false, inexpressible, results, successfulCodes, assertionSteps, totalAttempted };
+      const judged = await this.judge?.decide('The page shows that this claim is true.', null, { claim: message, page: actionResult.getCompactARIA().slice(0, JUDGE_PAGE_CAP) });
+      return { verified: false, inexpressible, results, successfulCodes, assertionSteps, totalAttempted, judged };
     }
 
     actionResult.addVerification(message, verified);
