@@ -16,6 +16,14 @@ Authenticates with `OPENROUTER_API_KEY` or `TYPESAFE_API_KEY`, depending on the 
 - [Navigator] A claim already checked on the page is recognised even when it is worded differently, skipping a repeat check. Claims that no assertion can express — previously a dead end — are now reported as confirmed when the page clearly shows them, kept separate from assertions that actually ran.
 - Prima: `prima go` with a page description rather than a URL can now pick the control that leads there directly. It confirms it arrived before reporting success, and otherwise falls back to the usual navigation.
 - Prima: `prima check` settles the expected outcomes the decision model is sure about without calling the larger model; the rest are settled as before.
+## 2026-09-22
+
+### Changes
+
+- README: the Explorbot logo is replaced with the new design, and GitHub now shows a light-text version of it in
+  dark mode.
+- New logos for Explorbot, API bot, Doc bot and Prima are now kept in `assets/logos/`, one folder per product: the
+  app icon and the wordmark, each for light and dark backgrounds, in SVG and PNG. The old logo files are removed.
 
 ## 2026-09-18
 
@@ -46,6 +54,11 @@ Authenticates with `OPENROUTER_API_KEY` or `TYPESAFE_API_KEY`, depending on the 
 ## 2026-09-17
 
 ### Changes
+
+- [Tester] A test now opens its start URL before it reads the page, so its first action is chosen from the
+  page the scenario actually starts on. Previously the opening step was planned from whatever page the previous
+  test left open — a test starting on a create form could spend its whole run on the list page behind it,
+  never filling the form.
 
 - [Pilot] When the app reports an action succeeded but the record is not visible on the page, Pilot now asks
   the API whether it was stored instead of failing on what the screenshot shows. A record the API cannot find
@@ -98,8 +111,72 @@ Authenticates with `OPENROUTER_API_KEY` or `TYPESAFE_API_KEY`, depending on the 
   established the outcome on screen could still be failed with a vague "could not be confirmed" in place of
   the result it observed. Verdicts now cite what was seen, and the evidence takes less room for it, because
   a passed assertion is no longer repeated back several times over.
+- A slow browser action no longer causes the step running it to be abandoned and repeated. The AI
+  request timeout measured the whole turn, time spent in the browser included, so a field that took
+  longer than the timeout to fill looked like a model that had stopped responding: the turn was dropped
+  and retried while its commands were still running on the page. Up to three copies of the same step
+  then interleaved in one browser session and each reported the other's error, so work that had gone
+  through — a record created and saved — came back as a failed step and the test was reported as failed.
+  The timeout now counts only time spent waiting on the model.
 
 ## 2026-09-15
+
+### New CLI Options
+
+- **`mdq`** — A new command for reading and editing markdown from the shell, the way `jq` reads JSON.
+  It ships as its own npm package, so it runs without installing anything: `npx mdq 'h2' README.md`.
+  It also works as a library — `import { mdq } from 'mdq'` — on Node 18 or newer.
+  The first argument is a selector, the second an optional file (stdin is used when it is omitted).
+  Matched markdown is printed by default. Exit codes compose like `grep`: `0` when something matched,
+  `1` when nothing did, `2` for a bad selector or bad usage.
+
+  ```bash
+  mdq 'h2' README.md                             # print every h2
+  cat plan.md | mdq 'section("API") table'       # read from stdin
+  mdq 'comment(~"test")' plan.md --count         # how many test comments
+  ```
+
+- **`--json`, `--count`, `--text`, `--frontmatter`** — Change what is printed: table rows as JSON,
+  the number of matches, the text with its markdown stripped, or the file's frontmatter as JSON.
+
+  ```bash
+  mdq 'section("API") table' --json README.md
+  mdq 'h2' --count README.md
+  mdq --frontmatter knowledge/login.md
+  ```
+
+- **`--remove`, `--replace`, `--insert-before`, `--insert-after`, `--prepend`, `--append`, `--add-row`, `--add-item`, `--set`** —
+  Edit the file instead of reading it. The whole document is printed with the edit applied; one edit at a
+  time. `--add-row` takes a JSON object and lines the table's columns back up; `--add-item` copies the
+  list's existing bullet or numbering; `--set` takes `Key=value` and drops the entry when the value is empty.
+
+  ```bash
+  mdq 'section("FAQ")' doc.md --remove
+  mdq 'table[0]' api.md --add-row '{"Method":"GET","Path":"/users"}'
+  mdq 'list' plan.md --add-item 'check the dashboard'
+  ```
+
+- **`-i`, `--in-place`** — Write the edit back to the file instead of printing it.
+
+  ```bash
+  mdq 'section("Draft")' notes.md --remove -i
+  ```
+
+### Changes
+
+- Knowledge and experience files are now read correctly when they start with a `---` block. The
+  frontmatter used to be read as a heading titled `url: /login`, so the first fact in every such file
+  could be mistaken for a section title.
+- Blank lines are no longer lost or doubled when a block is deleted or inserted, and blank lines inside
+  fenced code blocks are left exactly as they were.
+- A mistyped selector now fails with a message naming the unknown word, instead of quietly matching
+  nothing and looking like an empty file.
+- A search written as `/pattern/` is now case-sensitive unless it ends with `i`, matching how quoted
+  searches already behaved. Previously every `/pattern/` ignored case whether it said so or not.
+- Searching a table now looks at its cells, not only its column titles.
+- Reading a file no longer waits on standard input. Passing a filename while standard input was an
+  open pipe used to abort with an `EAGAIN` error on Node; input is now read only when no filename
+  is given.
 
 ### Fixes
 
