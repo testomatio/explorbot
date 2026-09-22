@@ -6,9 +6,10 @@ import type { ActionResult } from './action-result.ts';
 import { listSitePlanDirs } from './global-config.ts';
 import { WebPageState } from './state-manager.ts';
 import { createDebug, pluralize, tag } from './utils/logger.ts';
-import { truncate } from './utils/strings.ts';
+import { truncateMiddle } from './utils/strings.ts';
 import { parsePlanFromMarkdown, planToAiContext, savePlanToMarkdown, savePlansToMarkdown } from './utils/test-plan-markdown.ts';
 import { uniqSessionName } from './utils/unique-names.ts';
+import { extractStatePath } from './utils/url-matcher.ts';
 
 export const TestResult = {
   PASSED: 'passed',
@@ -492,7 +493,7 @@ export class Plan {
           path: filePath,
           modifiedAt,
           title: plan.title,
-          url: plan.startUrl || '',
+          url: extractStatePath(plan.startUrl || ''),
           testCount: plan.tests.length,
           label: '',
         };
@@ -504,8 +505,8 @@ export class Plan {
     const nameWidth = Math.min(MAX_PLAN_NAME_WIDTH, Math.max(...files.map((file) => file.name.length)));
     const urlWidth = Math.min(MAX_PLAN_URL_WIDTH, Math.max(...files.map((file) => file.url.length)));
     for (const file of files) {
-      const name = truncate(file.name, nameWidth).padEnd(nameWidth);
-      const url = truncate(file.url, urlWidth).padEnd(urlWidth);
+      const name = truncateMiddle(file.name, nameWidth).padEnd(nameWidth);
+      const url = truncateMiddle(file.url, urlWidth).padEnd(urlWidth);
       file.label = `${name}  ${url}  ${file.testCount} ${pluralize(file.testCount, 'test')}`;
     }
     return files;
@@ -626,7 +627,7 @@ export interface PlanFile {
 
 const debugLog = createDebug('explorbot:test-plan');
 const MAX_PLAN_NAME_WIDTH = 38;
-const MAX_PLAN_URL_WIDTH = 24;
+const MAX_PLAN_URL_WIDTH = 26;
 const planFileCache = new Map<string, { modifiedAt: number; plan: Plan }>();
 
 function readPlanFile(filePath: string, modifiedAt: number): Plan {
