@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-09-22
+
+### Changes
+
+- README: the Explorbot logo is replaced with the new design, and GitHub now shows a light-text version of it in
+  dark mode.
+- New logos for Explorbot, API bot, Doc bot and Prima are now kept in `assets/logos/`, one folder per product: the
+  app icon and the wordmark, each for light and dark backgrounds, in SVG and PNG. The old logo files are removed.
+
 ## 2026-09-18
 
 ### Changes
