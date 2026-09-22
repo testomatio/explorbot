@@ -573,7 +573,7 @@ class Navigator implements Agent {
     const countVisit = (value?: string | null) => {
       if (!value) return;
       const normalized = normalizeUrl(value);
-      if (normalized) visitCounts.set(normalized, (visitCounts.get(normalized) || 0) + 1);
+      visitCounts.set(normalized, (visitCounts.get(normalized) || 0) + 1);
     };
 
     for (const transition of history) {
@@ -584,7 +584,7 @@ class Navigator implements Agent {
     if (opts?.visitedUrls) {
       for (const url of opts.visitedUrls) {
         const normalized = normalizeUrl(url);
-        if (normalized && !visitCounts.has(normalized)) {
+        if (!visitCounts.has(normalized)) {
           visitCounts.set(normalized, 1);
         }
       }
