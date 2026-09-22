@@ -1,10 +1,10 @@
-import { existsSync, readdirSync, statSync } from 'node:fs';
+import { statSync } from 'node:fs';
 import path from 'node:path';
-import { Plan } from '../test-plan.js';
+import { Plan, type PlanFile } from '../test-plan.js';
 import { getCliName } from '../utils/cli-name.js';
 import { tag } from '../utils/logger.js';
 import { relativeToCwd } from '../utils/next-steps.js';
-import { BaseCommand } from './base-command.js';
+import { type ArgumentCompletion, BaseCommand } from './base-command.js';
 
 export class PlansCommand extends BaseCommand {
   name = 'plans';
@@ -13,7 +13,7 @@ export class PlansCommand extends BaseCommand {
 
   async execute(args: string): Promise<void> {
     const { opts, args: remaining } = this.parseArgs(args);
-    const files = this.getPlanFiles();
+    const files = Plan.listFiles(this.explorBot.getPlansDir());
     const target = String(opts.fromPlan || remaining[0] || '').trim();
 
     if (!target) {
@@ -25,22 +25,8 @@ export class PlansCommand extends BaseCommand {
     this.printPlanDetails(plan, file);
   }
 
-  private getPlanFiles(): PlanFile[] {
-    const plansDir = this.explorBot.getPlansDir();
-    if (!existsSync(plansDir)) return [];
-
-    return readdirSync(plansDir)
-      .filter((file) => file.endsWith('.md'))
-      .map((file) => {
-        const filePath = path.join(plansDir, file);
-        const stat = statSync(filePath);
-        return {
-          name: file,
-          path: filePath,
-          modifiedAt: stat.mtimeMs,
-        };
-      })
-      .sort((left, right) => right.modifiedAt - left.modifiedAt);
+  completeArguments(): ArgumentCompletion[] {
+    return Plan.listFiles(this.explorBot.getPlansDir()).map((file) => ({ value: file.name }));
   }
 
   private printPlans(files: PlanFile[]): void {
@@ -90,10 +76,4 @@ export class PlansCommand extends BaseCommand {
     };
     return { plan, file };
   }
-}
-
-interface PlanFile {
-  name: string;
-  path: string;
-  modifiedAt: number;
 }

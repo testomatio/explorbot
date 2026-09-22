@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import figures from 'figures';
 import type { ActionResult } from './action-result.ts';
@@ -477,6 +477,22 @@ export class Plan {
 
   updateStatus(): void {}
 
+  static listFiles(plansDir: string): PlanFile[] {
+    if (!existsSync(plansDir)) return [];
+
+    return readdirSync(plansDir)
+      .filter((file) => file.endsWith('.md'))
+      .map((file) => {
+        const filePath = path.join(plansDir, file);
+        return {
+          name: file,
+          path: filePath,
+          modifiedAt: statSync(filePath).mtimeMs,
+        };
+      })
+      .sort((left, right) => right.modifiedAt - left.modifiedAt);
+  }
+
   static resolveFile(file: string, plansDir?: string): string | null {
     const names = [file];
     if (!file.endsWith('.md')) names.push(`${file}.md`);
@@ -578,4 +594,10 @@ interface UrlNoteState {
 interface AppliedExperience {
   url: string;
   content: string;
+}
+
+export interface PlanFile {
+  name: string;
+  path: string;
+  modifiedAt: number;
 }

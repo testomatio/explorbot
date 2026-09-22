@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import { ConfigParser } from '../config.ts';
 import { tag } from '../utils/logger.ts';
-import { BaseCommand, type Suggestion } from './base-command.js';
+import { type ArgumentCompletion, BaseCommand, type Suggestion } from './base-command.js';
 
 export class ResearchCommand extends BaseCommand {
   name = 'research';
@@ -50,5 +50,12 @@ export class ResearchCommand extends BaseCommand {
     if (!enableDeep) {
       this.suggestions = [{ command: 'research <page> --deep', hint: 'analyze page for all expandable elements and interactions' }];
     }
+  }
+
+  completeArguments(): ArgumentCompletion[] {
+    return this.explorBot
+      .stateManager()
+      .getKnownUrls()
+      .map((url) => ({ value: url }));
   }
 }

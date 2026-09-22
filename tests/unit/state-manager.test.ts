@@ -366,6 +366,23 @@ describe('StateManager', () => {
 
       expect(stateManager.getLastVisitToPath('/nonexistent')).toBeNull();
     });
+
+    it('should list known urls: session visits newest first, then experience urls by recency', () => {
+      const experienceTracker = {
+        getAllExperience: () => [
+          { data: { url: '/settings' }, mtime: new Date(1000) },
+          { data: { url: '/page2/' }, mtime: new Date(3000) },
+          { data: {}, mtime: new Date(4000) },
+          { data: { url: '/reports' }, mtime: new Date(2000) },
+        ],
+      } as unknown as ExperienceTracker;
+      const manager = new StateManager(experienceTracker, new KnowledgeTracker());
+      manager.updateStateFromBasic('https://example.com/page1', 'Page 1');
+      manager.updateStateFromBasic('https://example.com/page2', 'Page 2');
+      manager.updateStateFromBasic('https://example.com/page3', 'Page 3');
+
+      expect(manager.getKnownUrls()).toEqual(['/page3', '/page2', '/page1', '/reports', '/settings']);
+    });
   });
 
   describe('state history', () => {

@@ -1,5 +1,6 @@
+import { Plan } from '../test-plan.js';
 import { tag } from '../utils/logger.js';
-import { BaseCommand, type Suggestion } from './base-command.js';
+import { type ArgumentCompletion, BaseCommand, type Suggestion } from './base-command.js';
 
 export class PlanLoadCommand extends BaseCommand {
   name = 'plan:load';
@@ -17,5 +18,9 @@ export class PlanLoadCommand extends BaseCommand {
 
     const plan = this.explorBot.loadPlan(filename);
     tag('success').log(`Plan loaded: ${plan.title} with ${plan.tests.length} tests`);
+  }
+
+  completeArguments(): ArgumentCompletion[] {
+    return Plan.listFiles(this.explorBot.getPlansDir()).map((file) => ({ value: file.name }));
   }
 }

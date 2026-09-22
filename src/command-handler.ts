@@ -31,6 +31,7 @@ export interface CommandAutocomplete {
   replaceTo: number;
   visible: boolean;
   argumentHint?: string;
+  completesArgument?: boolean;
 }
 
 function parseCommand(input: string): ParsedCommand | null {
@@ -266,6 +267,31 @@ export class CommandHandler implements InputManager {
     const parsed = parseCommand(query);
     const exactCommand = parsed ? this.findCommand(parsed.name) : undefined;
     const hasArguments = commandEnd !== -1 && input.slice(commandEnd + 1).trim().length > 0;
+    const argumentHint = !insideCommand && exactCommand && !hasArguments && exactCommand.options.length > 0 ? exactCommand.options.map((option) => option.flags).join(' ') : undefined;
+
+    if (!insideCommand && exactCommand) {
+      const argumentQuery = input.slice(commandEnd + 1).trim();
+      const argumentEntries = exactCommand
+        .completeArguments()
+        .filter((completion) => completion.value !== argumentQuery)
+        .map((completion) => ({
+          aliases: [],
+          canonical: completion.value,
+          description: '',
+          value: completion.display || completion.value,
+        }));
+      const argumentSuggestions = this.rankSuggestions(argumentQuery, argumentEntries);
+
+      return {
+        suggestions: argumentSuggestions,
+        replaceFrom: commandEnd + 1,
+        replaceTo: input.length,
+        visible: argumentSuggestions.length > 0,
+        argumentHint,
+        completesArgument: true,
+      };
+    }
+
     const commandEntries = this.getSlashCommandEntries();
     let suggestions: CommandAutocompleteSuggestion[] = [];
     if (insideCommand) {
@@ -280,10 +306,9 @@ export class CommandHandler implements InputManager {
         suggestions = this.rankSuggestions(query, commandEntries);
       }
     }
-    const argumentHint = !insideCommand && exactCommand && !hasArguments && exactCommand.options.length > 0 ? exactCommand.options.map((option) => option.flags).join(' ') : undefined;
 
     return {
-      suggestions,
+      suggestions: suggestions.map((suggestion) => ({ ...suggestion, value: `${suggestion.value} ` })),
       replaceFrom: 0,
       replaceTo,
       visible: insideCommand && suggestions.length > 0,
@@ -378,7 +403,7 @@ export class CommandHandler implements InputManager {
   private rankSuggestions(query: string, entries: AutocompleteEntry[]): CommandAutocompleteSuggestion[] {
     if (!query) {
       return entries.slice(0, 20).map((entry) => ({
-        value: entry.value,
+        value: entry.canonical,
         display: entry.value,
         description: entry.description,
         argumentHint: entry.argumentHint,
