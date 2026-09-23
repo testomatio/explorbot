@@ -55,6 +55,23 @@ Authenticates with `OPENROUTER_API_KEY` or `TYPESAFE_API_KEY`, depending on the 
 
 ### Changes
 
+- [Chief] Apibot now sends the credentials and parameters your endpoint knowledge describes. Before planning, it
+  reads the knowledge files that match the endpoint and picks out the headers, query parameters and body fields they
+  say to send — an API token written in plain prose becomes an `Authorization` header. Each value is then sent with
+  every request whose path matches that file's `endpoint:` pattern, including the sample data fetched before
+  planning, which used to fail with 403. Values from `--header` or `api.headers` still win over knowledge, and a
+  request's own values win over both. Body fields fill in only what a JSON request body leaves out.
+  ```markdown
+  ---
+  endpoint: '*'
+  ---
+  Authenticate with the Bearer token abc123. Every request needs workspace_id 42.
+  ```
+- AI: when a model answers a structured request with nothing — gpt-oss served by Groq does this often — Explorbot
+  asks the same model again for plain JSON and checks it against the expected shape, instead of failing the
+  step. Plans that used to stop with "No object generated: the model did not return a response" now complete.
+- AI: retries of a failed model call now wait 1s, then 2s, instead of firing back-to-back. `ai.retryDelay` still
+  overrides the wait.
 - README: the Explorbot logo is replaced with the new design, and GitHub now shows a light-text version of it in
   dark mode.
 - New logos for Explorbot, API bot, Doc bot and Prima are now kept in `assets/logos/`, one folder per product: the
