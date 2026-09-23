@@ -510,4 +510,28 @@ priority: normal
       expect(Plan.resolveFile('missing')).toBeNull();
     });
   });
+
+  describe('listFiles', () => {
+    test('labels each plan with its page path and test count, keeping both ends of long names', () => {
+      const dir = mkdtempSync(join(tmpdir(), 'plan-list-'));
+      const url = 'https://beta.example.io/projects/zyntra/don_t_touch_cloned_1/runs';
+      const plan = new Plan(url);
+      plan.addTest(new Test('Open a run', 'normal', ['The run opens'], url));
+      plan.saveToMarkdown(join(dir, 'projects_zyntra_don_t_touch_cloned_1_runs.md'));
+      const short = new Plan('/users/sign_in');
+      short.saveToMarkdown(join(dir, 'users_sign_in.md'));
+
+      const [longFile, shortFile] = Plan.listFiles(dir).sort((left, right) => left.name.localeCompare(right.name));
+
+      expect(longFile.url).toBe('/projects/zyntra/don_t_touch_cloned_1/runs');
+      expect(longFile.testCount).toBe(1);
+      expect(longFile.label).toContain('projects_zyntra_do');
+      expect(longFile.label).toContain('_cloned_1_runs.md');
+      expect(longFile.label).toContain('1 test');
+      expect(shortFile.label).toContain('/users/sign_in');
+      expect(shortFile.label).toContain('0 tests');
+
+      rmSync(dir, { recursive: true, force: true });
+    });
+  });
 });

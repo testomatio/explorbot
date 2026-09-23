@@ -1,7 +1,7 @@
 import { Stats } from '../stats.js';
-import { Test } from '../test-plan.js';
+import { Plan, Test } from '../test-plan.js';
 import { tag } from '../utils/logger.js';
-import { BaseCommand, type Suggestion } from './base-command.js';
+import { type ArgumentCompletion, BaseCommand, type Suggestion } from './base-command.js';
 
 export class TestCommand extends BaseCommand {
   name = 'test';
@@ -74,6 +74,10 @@ export class TestCommand extends BaseCommand {
       await tester.test(test);
     }
     tag('success').log('Test execution finished');
+  }
+
+  completeArguments(): ArgumentCompletion[] {
+    return Plan.listFiles(this.explorBot.getPlansDir()).map((file) => ({ value: `--from-plan ${file.name}`, display: file.label }));
   }
 }
 

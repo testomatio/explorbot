@@ -1,13 +1,15 @@
 import { createHash } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import figures from 'figures';
 import type { ActionResult } from './action-result.ts';
 import { listSitePlanDirs } from './global-config.ts';
 import { WebPageState } from './state-manager.ts';
-import { tag } from './utils/logger.ts';
+import { createDebug, pluralize, tag } from './utils/logger.ts';
+import { truncateMiddle } from './utils/strings.ts';
 import { parsePlanFromMarkdown, planToAiContext, savePlanToMarkdown, savePlansToMarkdown } from './utils/test-plan-markdown.ts';
 import { uniqSessionName } from './utils/unique-names.ts';
+import { extractStatePath } from './utils/url-matcher.ts';
 
 export const TestResult = {
   PASSED: 'passed',
@@ -478,6 +480,39 @@ export class Plan {
 
   updateStatus(): void {}
 
+  static listFiles(plansDir: string): PlanFile[] {
+    if (!existsSync(plansDir)) return [];
+
+    const files = readdirSync(plansDir)
+      .filter((file) => file.endsWith('.md'))
+      .map((file) => {
+        const filePath = path.join(plansDir, file);
+        const modifiedAt = statSync(filePath).mtimeMs;
+        const plan = readPlanFile(filePath, modifiedAt);
+        return {
+          name: file,
+          path: filePath,
+          modifiedAt,
+          title: plan.title,
+          url: extractStatePath(plan.startUrl || ''),
+          testCount: plan.tests.length,
+          label: '',
+        };
+      })
+      .sort((left, right) => right.modifiedAt - left.modifiedAt);
+
+    if (files.length === 0) return files;
+
+    const nameWidth = Math.min(MAX_PLAN_NAME_WIDTH, Math.max(...files.map((file) => file.name.length)));
+    const urlWidth = Math.min(MAX_PLAN_URL_WIDTH, Math.max(...files.map((file) => file.url.length)));
+    for (const file of files) {
+      const name = truncateMiddle(file.name, nameWidth).padEnd(nameWidth);
+      const url = truncateMiddle(file.url, urlWidth).padEnd(urlWidth);
+      file.label = `${name}  ${url}  ${file.testCount} ${pluralize(file.testCount, 'test')}`;
+    }
+    return files;
+  }
+
   static resolveFile(file: string, plansDir?: string): string | null {
     const names = [file];
     if (!file.endsWith('.md')) names.push(`${file}.md`);
@@ -579,4 +614,33 @@ interface UrlNoteState {
 interface AppliedExperience {
   url: string;
   content: string;
+}
+
+export interface PlanFile {
+  name: string;
+  path: string;
+  modifiedAt: number;
+  title: string;
+  url: string;
+  testCount: number;
+  label: string;
+}
+
+const debugLog = createDebug('explorbot:test-plan');
+const MAX_PLAN_NAME_WIDTH = 38;
+const MAX_PLAN_URL_WIDTH = 26;
+const planFileCache = new Map<string, { modifiedAt: number; plan: Plan }>();
+
+function readPlanFile(filePath: string, modifiedAt: number): Plan {
+  const cached = planFileCache.get(filePath);
+  if (cached?.modifiedAt === modifiedAt) return cached.plan;
+
+  let plan = new Plan(path.basename(filePath));
+  try {
+    plan = parsePlanFromMarkdown(filePath);
+  } catch (error) {
+    debugLog(`Failed to read plan file ${filePath}:`, error);
+  }
+  planFileCache.set(filePath, { modifiedAt, plan });
+  return plan;
 }
