@@ -537,6 +537,7 @@ export default {
   ai: {
     model: groq('openai/gpt-oss-20b'),   // Default model instance (required)
     visionModel: groq('meta-llama/llama-4-scout-17b-16e-instruct'),  // Model for screenshot analysis; setting it enables vision features
+    decisionModel: { provider: 'openrouter', model: 'typesafe/jev-1.13' }, // Optional; see providers docs
     config: {},                    // Additional provider config
     langfuse: {                    // Observability settings
       enabled: true,

@@ -22,6 +22,8 @@ Explorbot uses three roles:
 
 Pick a fast, cheap model for the first two and a stronger one for the third. When a provider has no recommended model for one of these roles, combine it with another provider for that role.
 
+An optional [decision model](#decision-model) can answer narrow yes/no and pick-one questions so the other models are called less often.
+
 ### OpenRouter
 
 Start with OpenRouter. One key reaches [many providers and models](https://openrouter.ai/models).
@@ -308,6 +310,52 @@ Laguna XS is an agentic coding model — fast, cheap, and reliable at tool calli
 
 Keep `agenticModel` on another provider. Poolside's endpoint accepts `response_format: json_schema` but does not enforce it, so structured-output calls depend on the model volunteering valid JSON. Laguna XS usually does; Laguna S answers in prose instead, which makes it unusable for the Planner, Pilot, and Captain. Laguna S is also slow enough under page-sized prompts to hit Explorbot's request timeouts, so it is not a substitute for Laguna XS in the `model` role either.
 
+## Decision Model
+
+A decision model is an optional fourth role. It does not generate text or call tools. It receives the current state and one closed question, and returns an answer with a probability. Explorbot uses it for narrow choices that would otherwise take a call to a larger model or a guess.
+
+Explorbot supports TypeSafe's Jev, reached through OpenRouter or through TypeSafe's API directly:
+
+```javascript
+export default {
+  ai: {
+    // ...your model, visionModel, agenticModel...
+    decisionModel: { provider: 'openrouter', model: 'typesafe/jev-1.13' },
+    // or: decisionModel: { provider: 'typesafe', model: 'jev-latest' },
+  },
+};
+```
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `provider` | `'openrouter' \| 'typesafe'` | Authenticates with `OPENROUTER_API_KEY` or `TYPESAFE_API_KEY` |
+| `model` | `string` | Model ID at that provider |
+| `tool` | `boolean` | Give Tester and Pilot a `judge` tool to ask their own questions. Default: `true` |
+| `direct` | `boolean` | Consult the model at Explorbot's built-in decision points. Default: `true` |
+
+Leave `decisionModel` unset and Explorbot never calls it. An unknown provider or a missing API key stops Explorbot at startup.
+
+### How answers are used
+
+Every question is either a yes/no statement or a pick from a numbered list of options. Explorbot acts on an answer only when its probability is **above 70%**. A low probability, a "none of these" answer, a timeout, or a failed request all count as no answer, and Explorbot does what it would have done without the decision model. A wrong or uncertain answer can make Explorbot skip a shortcut. It never makes Explorbot skip a check.
+
+Built-in decision points (`direct`):
+
+| Where | Question | When the answer is confident |
+|---|---|---|
+| Tester, locator matches several elements | Which of these elements does the step mean? | The tester is pointed at that element |
+| Pilot, periodic progress review | Is the run moving toward its goal? | The review is skipped, saving an `agenticModel` call |
+| Navigator, verifying a claim | Is this claim already verified in other words? | The repeat check is skipped |
+| Navigator, claim no assertion can express | Does the page show this claim is true? | Reported as a judgement, kept apart from assertions that ran |
+| Prima `go` with a page description | Which control leads there? | Clicks it, then confirms arrival before reporting success |
+| Prima `check` | What did the run establish about each expected outcome? | Settled without the `agenticModel`; the rest go to it as before |
+
+With `tool` enabled, Tester and Pilot can call `judge` to confirm a statement or pick an option about the current page. "Not confirmed" means the page does not settle the question. It does not mean the statement is false.
+
+Pilot's final verdict on a test never goes through the decision model. Neither does anything that needs generation, screenshots or tool calling. The decision model supplements the other models and does not replace them.
+
+Each call is traced as a `judge.decide` span, with its question, answer and confidence. See [Observability](../contributing/observability.md).
+
 ## Multi-Provider Configuration
 
 Mix clients the same way you assign `model`, `visionModel`, and `agenticModel`. Each field can use a different provider instance — a fast provider does the token-heavy reading while a stronger one makes the decisions:
@@ -359,4 +407,5 @@ export OPENAI_API_KEY=your-key-here
 export ANTHROPIC_API_KEY=your-key-here
 export GOOGLE_API_KEY=your-key-here
 export MISTRAL_API_KEY=your-key-here
+export TYPESAFE_API_KEY=your-key-here
 ```
