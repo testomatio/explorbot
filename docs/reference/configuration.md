@@ -625,6 +625,7 @@ export default {
 
 - [API testing](../api-testing/basics.md) — API testing setup and commands
 - [AI providers](../basics/providers.md) — provider setup examples
+- [Decisions](../web-testing/decisions.md) — the optional decision model and its fallbacks
 - [Agents](../web-testing/agents.md) — agent descriptions and workflows
 - [Agent hooks](../web-testing/hooks.md) — custom code before and after an agent runs
 - [Researcher agent](../web-testing/researcher.md) — Researcher configuration and usage

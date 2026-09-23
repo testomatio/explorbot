@@ -335,26 +335,7 @@ export default {
 
 Leave `decisionModel` unset and Explorbot never calls it. An unknown provider or a missing API key stops Explorbot at startup.
 
-### How answers are used
-
-Every question is either a yes/no statement or a pick from a numbered list of options. Explorbot acts on an answer only when its probability is **above 70%**. A low probability, a "none of these" answer, a timeout, or a failed request all count as no answer, and Explorbot does what it would have done without the decision model. A wrong or uncertain answer can make Explorbot skip a shortcut. It never makes Explorbot skip a check.
-
-Built-in decision points (`direct`):
-
-| Where | Question | When the answer is confident |
-|---|---|---|
-| Tester, locator matches several elements | Which of these elements does the step mean? | The tester is pointed at that element |
-| Pilot, periodic progress review | Is the run moving toward its goal? | The review is skipped, saving an `agenticModel` call |
-| Navigator, verifying a claim | Is this claim already verified in other words? | The repeat check is skipped |
-| Navigator, claim no assertion can express | Does the page show this claim is true? | Reported as a judgement, kept apart from assertions that ran |
-| Prima `go` with a page description | Which control leads there? | Clicks it, then confirms arrival before reporting success |
-| Prima `check` | What did the run establish about each expected outcome? | Settled without the `agenticModel`; the rest go to it as before |
-
-With `tool` enabled, Tester and Pilot can call `judge` to confirm a statement or pick an option about the current page. "Not confirmed" means the page does not settle the question. It does not mean the statement is false.
-
-Pilot's final verdict on a test never goes through the decision model. Neither does anything that needs generation, screenshots or tool calling. The decision model supplements the other models and does not replace them.
-
-Each call is traced as a `judge.decide` span, with its question, answer and confidence. See [Observability](../contributing/observability.md).
+Explorbot acts on an answer only when it is more than 70% sure, and otherwise does what it would have done without the decision model. See [Decisions](../web-testing/decisions.md) for where it is consulted, the `judge` tool, and what happens when an answer is rejected.
 
 ## Multi-Provider Configuration
 
