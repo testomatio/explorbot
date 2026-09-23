@@ -1,8 +1,8 @@
 # Decisions
 
-A decision model answers one closed question about the current state: a yes/no statement, or a pick from a list of options. It returns the answer together with its probability. Explorbot uses it to settle narrow choices quickly and cheaply that would otherwise need a call to a larger model or a guess.
+Explorbot's decision model is **Jev** by [TypeSafe](https://typesafe.ai), the only decision model Explorbot supports. **Jev** answers one closed question about the current state, either a yes/no statement or a pick from a list of options, and returns the answer with its probability. Explorbot asks **Jev** to settle narrow choices quickly and cheaply that would otherwise need a call to a larger model or a guess.
 
-The decision model is optional. Without it Explorbot behaves exactly as described elsewhere in these docs. Setup is covered in [AI providers](../basics/providers.md#decision-model).
+**Jev** is optional. Without it Explorbot behaves exactly as described elsewhere in these docs. Connect **Jev** through OpenRouter (`typesafe/jev-1.13`) or TypeSafe's API (`jev-latest`), as described in [AI providers](../basics/providers.md#decision-model).
 
 ## Decision rules
 
@@ -13,9 +13,9 @@ Every question has one of two shapes:
 | **Statement** | "The page shows that this claim is true." | Probability that the statement holds |
 | **Choice** | "Which listed element does the intent name?" plus numbered options | The chosen option and its probability |
 
-A choice always includes an extra *undecided* option, so the model can say that none of the options fits.
+A choice always includes an extra *undecided* option, so **Jev** can say that none of the options fits.
 
-Explorbot acts on an answer only when it is **approved**:
+Explorbot acts on **Jev**'s answer only when it is **approved**:
 
 - a statement's probability is above **70%**, or
 - a choice picked a real option, not *undecided*, with a probability above **70%**.
@@ -32,7 +32,7 @@ A rejected answer never means "confidently no". It means Explorbot has no usable
 
 ## Built-in decision points
 
-These are fixed places in the code where Explorbot asks the decision model before doing the usual, more expensive work. Setting `direct: false` turns them off.
+These are fixed places in the code where Explorbot asks **Jev** before doing the usual, more expensive work. Setting `direct: false` turns them off.
 
 ### Tester: locator matches several elements
 
@@ -78,11 +78,11 @@ When `prima go` gets a description of a page instead of a URL, it asks which con
 When `prima check` settles the expected outcomes of a finished run without a screenshot, it asks what the run established about each outcome: that it happened, or that it did not.
 
 - **Approved:** that outcome is settled as passed or failed without calling the `agenticModel`.
-- **Fallback:** the remaining outcomes are settled by the `agenticModel` as usual. When a screenshot is available, all outcomes go to the vision model and the decision model is not asked.
+- **Fallback:** the remaining outcomes are settled by the `agenticModel` as usual. When a screenshot is available, all outcomes go to the vision model and **Jev** is not asked.
 
 ## The `judge` tool
 
-With `tool: true`, Tester and Pilot get a `judge` tool. They use it when a step depends on reading the page rather than running a command. The tool takes:
+With `tool: true`, Tester and Pilot get a `judge` tool that puts their own questions to **Jev**. They use it when a step depends on reading the page rather than running a command. The tool takes:
 
 | Argument | Description |
 |---|---|
@@ -90,19 +90,19 @@ With `tool: true`, Tester and Pilot get a `judge` tool. They use it when a step 
 | `options` | Possible answers. Leave it out to confirm a statement |
 | `context` | Anything the page itself doesn't show |
 
-The model supplies only the question. The tool gathers the rest of the state itself: the current scenario, the compact ARIA snapshot of the page (up to 12,000 characters), and the last eight test steps.
+The agent supplies only the question. The tool gathers the rest of the state itself: the current scenario, the compact ARIA snapshot of the page (up to 12,000 characters), and the last eight test steps.
 
 - **Approved:** the tool returns the answer and its confidence.
 - **Rejected:** the tool returns "Not confirmed" and tells the agent to gather more context or try another route. "Not confirmed" means the page doesn't settle the question. It does not mean the statement is false.
 
-`tool` and `direct` are independent. For example, `tool: false` keeps the built-in decision points but stops the agents from asking questions of their own.
+`tool` and `direct` are independent. For example, `tool: false` keeps the built-in decision points but stops the agents from asking **Jev** questions of their own.
 
-## Where it is not used
+## Where Jev is not used
 
 - **Pilot's verdict on a test.** Whether a scenario passed, failed or was impossible is always decided by the `agenticModel`.
 - **Filtering experience.** One question per stored experience block, on every prompt, would cost more than it saves.
-- **Generation, screenshots and tool calling.** The decision model reads text and answers questions. It does not write, look at images or act on the page.
+- **Generation, screenshots and tool calling.** **Jev** reads text and answers questions. It does not write, look at images or act on the page.
 
 ## Tracing
 
-Each question is recorded as a `judge.decide` span with the question, the answer and its confidence. A failed request also records the reason. The TUI shows `⚖️ Asking judge...` while a question is in flight. See [Observability](../contributing/observability.md) for setting up tracing.
+Each question to **Jev** is recorded as a `judge.decide` span with the question, the answer and its confidence. A failed request also records the reason. The TUI shows `⚖️ Asking judge...` while a question is in flight. See [Observability](../contributing/observability.md) for setting up tracing.

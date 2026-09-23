@@ -22,7 +22,7 @@ Explorbot uses three roles:
 
 Pick a fast, cheap model for the first two and a stronger one for the third. When a provider has no recommended model for one of these roles, combine it with another provider for that role.
 
-An optional [decision model](#decision-model) can answer narrow yes/no and pick-one questions so the other models are called less often.
+An optional [decision model](#decision-model), **Jev**, can answer narrow yes/no and pick-one questions so the other models are called less often.
 
 ### OpenRouter
 
@@ -314,7 +314,7 @@ Keep `agenticModel` on another provider. Poolside's endpoint accepts `response_f
 
 A decision model is an optional fourth role. It does not generate text or call tools. It receives the current state and one closed question, and returns an answer with a probability. Explorbot uses it for narrow choices that would otherwise take a call to a larger model or a guess.
 
-Explorbot supports TypeSafe's Jev, reached through OpenRouter or through TypeSafe's API directly:
+The decision model is **Jev** by TypeSafe, the only decision model Explorbot supports. Connect **Jev** through OpenRouter or through TypeSafe's API directly:
 
 ```javascript
 export default {
