@@ -5,7 +5,7 @@ import { ActionResult } from '../../src/action-result.ts';
 import { Pilot } from '../../src/ai/pilot.ts';
 import { Provider } from '../../src/ai/provider.ts';
 import { ConfigParser } from '../../src/config.ts';
-import { Test } from '../../src/test-plan.ts';
+import { Test, TestStatus } from '../../src/test-plan.ts';
 
 function toolCall(id: string, name: string, args: Record<string, any>) {
   return { id, name, arguments: JSON.stringify(args) };
@@ -108,5 +108,42 @@ describe('Pilot askApi', () => {
 
     expect(JSON.stringify(mock.getRequests()[1]?.body)).toContain('No read endpoints are known for this scope');
     expect(Object.values(task.notes)).toHaveLength(0);
+  });
+
+  describe('precondition', () => {
+    function preparingFisherman() {
+      return {
+        ...availableFisherman('One run exists'),
+        prepareData: async () => ({ success: true, summary: 'created', created: [{ type: 'runs', id: 'r1', title: 'Disposable Run', request: 'POST /api/runs' }], failed: [] }),
+      };
+    }
+
+    it('tells Tester what was created even when Pilot writes no plan text', async () => {
+      const { task, state } = planningTask();
+      mock.on({ sequenceIndex: 0 }, { toolCalls: [toolCall('p1', 'precondition', { description: '1 run' })] });
+      mock.on({}, { toolCalls: [toolCall('q1', 'askApi', { question: 'which runs exist?' })] });
+
+      const plan = await createPilot(preparingFisherman()).planTest(task, state);
+
+      expect(plan).toContain('<prepared_data>');
+      expect(plan).toContain('runs "Disposable Run" (id: r1)');
+      expect(plan).not.toContain('refreshPage');
+      expect(task.preparedData).toEqual(['runs "Disposable Run" (id: r1) via POST /api/runs']);
+    });
+
+    it('asks Tester to refresh the page when data is created mid-run', async () => {
+      const { task, state } = planningTask();
+      mock.on({ sequenceIndex: 0 }, { content: 'PROGRESS: ready\nNEXT: open the list' });
+      mock.on({ sequenceIndex: 1 }, { toolCalls: [toolCall('p1', 'precondition', { description: '1 run' })] });
+      mock.on({}, { content: 'PROGRESS: data ready\nNEXT: open the run' });
+
+      const pilot = createPilot(preparingFisherman());
+      await pilot.planTest(task, state);
+      task.status = TestStatus.IN_PROGRESS;
+      const guidance = await pilot.reviewNewPage(task, state, { getToolExecutions: () => [] } as any);
+
+      expect(guidance).toContain('runs "Disposable Run" (id: r1)');
+      expect(guidance).toContain('I.refreshPage()');
+    });
   });
 });

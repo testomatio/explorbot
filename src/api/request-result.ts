@@ -199,7 +199,8 @@ export class RequestResult {
     if (Array.isArray(data)) return {};
 
     const id = data.id ?? data._id ?? data.uuid;
-    const title = data.name ?? data.title ?? data.label;
+    const attributes = data.attributes || {};
+    const title = data.name ?? data.title ?? data.label ?? attributes.name ?? attributes.title ?? attributes.label;
 
     const result: { id?: string | number; title?: string } = {};
     if (id !== undefined) result.id = id;

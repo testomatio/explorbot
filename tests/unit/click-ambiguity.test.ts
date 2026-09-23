@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'bun:test';
-import { createCodeceptJSTools } from '../../src/ai/tools.ts';
+import { Decision } from '../../src/ai/judge.ts';
+import { createCodeceptJSTools, failedToolResult } from '../../src/ai/tools.ts';
 import { ConfigParser } from '../../src/config.ts';
 
 function multipleElementsError(visibility: boolean[] = [], texts: string[] = ['First control', 'Second control']): Error {
@@ -91,5 +92,33 @@ describe('click on an ambiguous locator', () => {
 
     expect(result.multipleElementsDetected).toBe(true);
     expect(result.elements).toContain('Element 2:');
+  });
+});
+
+describe('judging an ambiguous match', () => {
+  const judgePicking = (index: number) => ({ decide: async (_question: string, options: string[]) => new Decision(options[index], 0.9) });
+
+  it('names the element the judge picks, by elementIndex', async () => {
+    const result = await failedToolResult('click', 'Multiple elements (2) found', {}, multipleElementsError(), judgePicking(1) as any, 'Toggle the control');
+    expect(result.suggestion).toContain('elementIndex: 2');
+  });
+
+  it('keeps the numbered list when the judge rejects', async () => {
+    const judge = { decide: async () => new Decision(null, 0.5) };
+    const result = await failedToolResult('click', 'Multiple elements (2) found', {}, multipleElementsError(), judge as any, 'Toggle the control');
+    expect(result.suggestion).not.toContain('is the one meant');
+    expect(result.elements).toContain('Element 2:');
+  });
+
+  it('emits no key main does not emit when there is no judge', async () => {
+    const result = await failedToolResult('click', 'Multiple elements (2) found', {}, multipleElementsError());
+    expect(Object.keys(result).sort()).toEqual(['action', 'elements', 'message', 'multipleElementsDetected', 'success', 'suggestion']);
+  });
+
+  it('passes the judge through from the click tool', async () => {
+    const { deps } = fakeDeps(() => multipleElementsError());
+    const tools = createCodeceptJSTools({ ...deps, judge: judgePicking(0) } as any, fakeTask());
+    const result = await tools.click.execute({ commands: [`I.click({"role":"switch"})`], explanation: 'Toggle the control' }, {} as any);
+    expect(result.suggestion).toContain('elementIndex: 1');
   });
 });

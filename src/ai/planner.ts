@@ -301,13 +301,14 @@ export class Planner extends PlannerBase implements Agent {
         .replaceEach((section) => {
           const heading = section.query('heading').text().trim();
           const withoutHeadings = mdq(section.text()).query('heading').replace('');
-          const body = mdq(withoutHeadings).query('hr').replace('').trim();
+          const body = mdq(withoutHeadings).query('hr').replace('').toString().trim();
           if (body && !seenTitles.has(heading)) {
             seenTitles.add(heading);
             return section.text();
           }
           return '';
-        });
+        })
+        .toString();
     }
 
     const trimmedTitles = new Set<string>();
@@ -319,10 +320,11 @@ export class Planner extends PlannerBase implements Agent {
           if (trimmedTitles.has(heading)) return section.text();
           const count = section.query('blockquote').count();
           if (count <= 10) return section.text();
-          const kept = mdq(section.text()).query('blockquote[10:]').replace('');
+          const kept = mdq(section.text()).query('blockquote[10:]').replace('').toString();
           trimmedTitles.add(heading);
           return `${kept.trimEnd()}\n> ... and ${count - 10} more discoveries\n`;
-        });
+        })
+        .toString();
     }
 
     return result.trim() || null;
@@ -404,7 +406,7 @@ export class Planner extends PlannerBase implements Agent {
     if (this.scout && this.docsWeight > 0) {
       docsPromise = this.scout.collectDocs({ url: state.url, title: state.title, feature, excludeUrls: this.knowledgeTracker.applicationSpecUrls(state) });
     }
-    let plannerResearch = mdq(research).query('code').replace('');
+    let plannerResearch = mdq(research).query('code').replace('').toString();
     plannerResearch = mdq(plannerResearch)
       .query('table')
       .replaceEach((table) => {
@@ -415,7 +417,8 @@ export class Planner extends PlannerBase implements Agent {
           Type: r.Type || '',
         }));
         return jsonToTable(elementWithType, ['Element', 'Type']);
-      });
+      })
+      .toString();
 
     const hasFocusedOverlay = hasFocusedSection(plannerResearch);
     const focusNote = hasFocusedOverlay ? "IMPORTANT: One section is marked as **Focused** — this is the user's current focus area. Concentrate testing on the Focused section FIRST — test all interactions inside it before planning tests for the rest of the page." : '';

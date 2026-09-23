@@ -35,6 +35,10 @@ export abstract class BaseCommand<T = ExplorBot> {
     return this.name === commandName || this.aliases.includes(commandName);
   }
 
+  completeArguments(): ArgumentCompletion[] {
+    return [];
+  }
+
   printSuggestions(): void {
     if (this.suggestions.length === 0) return;
     const prefix = isInteractive() ? '/' : `${getCliName()} `;
@@ -62,4 +66,9 @@ export abstract class BaseCommand<T = ExplorBot> {
     cmd.parse(argv, { from: 'user' });
     return { opts: cmd.opts(), args: cmd.args };
   }
+}
+
+export interface ArgumentCompletion {
+  value: string;
+  display?: string;
 }

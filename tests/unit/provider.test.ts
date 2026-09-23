@@ -538,6 +538,48 @@ describe('Provider', () => {
 
       await expect(provider.generateObject(messages, schema)).rejects.toThrow(AiError);
     });
+
+    it('should ask for plain JSON when structured output comes back empty', async () => {
+      const calls: any[] = [];
+      const model = new MockLanguageModelV3({
+        provider: 'test',
+        modelId: 'empty-structured-model',
+        doGenerate: async (params: any) => {
+          calls.push(params);
+          if (params.responseFormat?.type === 'json') {
+            return { finishReason: 'other' as const, usage: { inputTokens: 1, outputTokens: 1 }, content: [] };
+          }
+          return { finishReason: 'stop' as const, usage: { inputTokens: 1, outputTokens: 1 }, content: [{ type: 'text' as const, text: '```json\n{"name":"suite"}\n```' }] };
+        },
+      });
+      aiConfig.retryDelay = 1;
+      const retrying = new Provider(aiConfig);
+
+      const response = await retrying.generateObject([{ role: 'user', content: 'Generate object' }], z.object({ name: z.string() }), model);
+
+      expect(response.object).toEqual({ name: 'suite' });
+      expect(calls).toHaveLength(4);
+      const fallback = calls[3];
+      expect(fallback.responseFormat?.type).not.toBe('json');
+      expect(JSON.stringify(fallback.prompt)).toContain('\\"name\\"');
+    });
+
+    it('should fail when the plain JSON fallback does not match the schema', async () => {
+      const model = new MockLanguageModelV3({
+        provider: 'test',
+        modelId: 'empty-structured-model',
+        doGenerate: async (params: any) => {
+          if (params.responseFormat?.type === 'json') {
+            return { finishReason: 'other' as const, usage: { inputTokens: 1, outputTokens: 1 }, content: [] };
+          }
+          return { finishReason: 'stop' as const, usage: { inputTokens: 1, outputTokens: 1 }, content: [{ type: 'text' as const, text: '{"title":"suite"}' }] };
+        },
+      });
+      aiConfig.retryDelay = 1;
+      const retrying = new Provider(aiConfig);
+
+      await expect(retrying.generateObject([{ role: 'user', content: 'Generate object' }], z.object({ name: z.string() }), model)).rejects.toThrow(AiError);
+    });
   });
 
   describe('conversation methods', () => {

@@ -60,7 +60,8 @@
     "check": "biome check .",
     "check:fix": "biome check --write .",
     "langfuse:export": "bun run .claude/skills/explorbot-debug/langfuse-export.ts",
-    "build:prima": "bun run scripts/build-prima-npm.ts"
+    "build:prima": "bun run scripts/build-prima-npm.ts",
+    "build:mdq": "bun run scripts/build-mdq-npm.ts"
   },
   "keywords": ["cli", "react", "ink", "codeceptjs", "playwright"],
   "repository": {
