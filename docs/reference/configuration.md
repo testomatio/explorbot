@@ -537,6 +537,7 @@ export default {
   ai: {
     model: groq('openai/gpt-oss-20b'),   // Default model instance (required)
     visionModel: groq('meta-llama/llama-4-scout-17b-16e-instruct'),  // Model for screenshot analysis; setting it enables vision features
+    decisionModel: { provider: 'openrouter', model: 'typesafe/jev-1.13' }, // Optional; see providers docs
     config: {},                    // Additional provider config
     langfuse: {                    // Observability settings
       enabled: true,
@@ -624,6 +625,7 @@ export default {
 
 - [API testing](../api-testing/basics.md) — API testing setup and commands
 - [AI providers](../basics/providers.md) — provider setup examples
+- [Decisions](../web-testing/decisions.md) — the optional decision model and its fallbacks
 - [Agents](../web-testing/agents.md) — agent descriptions and workflows
 - [Agent hooks](../web-testing/hooks.md) — custom code before and after an agent runs
 - [Researcher agent](../web-testing/researcher.md) — Researcher configuration and usage

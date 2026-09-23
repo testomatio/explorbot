@@ -10,6 +10,7 @@
 - [Tester] A scenario that deletes something is no longer told to create an item first when one was already prepared for it. It is told to delete only that item.
 - [Tester] Reloading a page works again: both the tester and Pilot were pointed at a command that does not exist.
 - The name of a created item is now read from APIs that nest it under `attributes`, so prepared data is referred to by name instead of by id alone.
+- Docs: new Decisions page on the optional decision model (`ai.decisionModel`): the 70% confidence rule, every built-in decision point and what Explorbot does when the answer is rejected, and the `judge` tool. Setup is in the AI providers guide.
 
 ## 2026-09-22
 
