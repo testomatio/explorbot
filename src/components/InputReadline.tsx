@@ -43,6 +43,7 @@ const InputReadline: React.FC<InputReadlineProps> = React.memo(({ commandHandler
   const cursorRef = useRef(cursorPosition);
   const showAutocompleteRef = useRef(showAutocomplete);
   const selectedIndexRef = useRef(selectedIndex);
+  const navigatedRef = useRef(false);
   const historyRef = useRef<string[]>([]);
   const historyIndexRef = useRef(-1);
   const historyDraftRef = useRef('');
@@ -85,6 +86,7 @@ const InputReadline: React.FC<InputReadlineProps> = React.memo(({ commandHandler
       cursorRef.current = 0;
       showAutocompleteRef.current = false;
       selectedIndexRef.current = 0;
+      navigatedRef.current = false;
       historyIndexRef.current = -1;
       historyDraftRef.current = '';
       setInputState({ value: '', cursor: 0, showAutocomplete: false, selectedIndex: 0 });
@@ -141,6 +143,7 @@ const InputReadline: React.FC<InputReadlineProps> = React.memo(({ commandHandler
       cursorRef.current = safeCursor;
       showAutocompleteRef.current = nextShowAutocomplete;
       selectedIndexRef.current = 0;
+      navigatedRef.current = false;
       historyIndexRef.current = -1;
       historyDraftRef.current = '';
 
@@ -235,6 +238,7 @@ const InputReadline: React.FC<InputReadlineProps> = React.memo(({ commandHandler
         if (showAutocompleteRef.current) {
           showAutocompleteRef.current = false;
           selectedIndexRef.current = 0;
+          navigatedRef.current = false;
           setInputState((prev) => ({ ...prev, showAutocomplete: false, selectedIndex: 0 }));
         }
         return;
@@ -247,7 +251,7 @@ const InputReadline: React.FC<InputReadlineProps> = React.memo(({ commandHandler
         }
         if (commandHandler && showAutocompleteRef.current) {
           const autocomplete = getAutocomplete(inputRef.current, cursorRef.current);
-          if (autocomplete.visible && autocomplete.suggestions.length > 0) {
+          if (autocomplete.visible && autocomplete.suggestions.length > 0 && (!autocomplete.completesArgument || navigatedRef.current)) {
             const chosen = applyAutocomplete(selectedIndexRef.current);
             if (chosen) {
               handleSubmit(chosen);
@@ -381,6 +385,7 @@ const InputReadline: React.FC<InputReadlineProps> = React.memo(({ commandHandler
         if (autocomplete.visible && autocomplete.suggestions.length > 0) {
           const nextIndex = selectedIndexRef.current > 0 ? selectedIndexRef.current - 1 : autocomplete.suggestions.length - 1;
           selectedIndexRef.current = nextIndex;
+          navigatedRef.current = true;
           setInputState((prev) => ({ ...prev, selectedIndex: nextIndex }));
           return;
         }
@@ -391,6 +396,7 @@ const InputReadline: React.FC<InputReadlineProps> = React.memo(({ commandHandler
         if (autocomplete.visible && autocomplete.suggestions.length > 0) {
           const nextIndex = selectedIndexRef.current < autocomplete.suggestions.length - 1 ? selectedIndexRef.current + 1 : 0;
           selectedIndexRef.current = nextIndex;
+          navigatedRef.current = true;
           setInputState((prev) => ({ ...prev, selectedIndex: nextIndex }));
           return;
         }
@@ -449,6 +455,7 @@ const InputReadline: React.FC<InputReadlineProps> = React.memo(({ commandHandler
         inputRef.current = nextValue;
         cursorRef.current = nextValue.length;
         selectedIndexRef.current = 0;
+        navigatedRef.current = false;
         showAutocompleteRef.current = nextShowAutocomplete;
         setInputState({ value: nextValue, cursor: nextValue.length, selectedIndex: 0, showAutocomplete: nextShowAutocomplete });
         return;
@@ -470,6 +477,7 @@ const InputReadline: React.FC<InputReadlineProps> = React.memo(({ commandHandler
           inputRef.current = nextValue;
           cursorRef.current = nextValue.length;
           selectedIndexRef.current = 0;
+          navigatedRef.current = false;
           showAutocompleteRef.current = nextShowAutocomplete;
           setInputState({ value: nextValue, cursor: nextValue.length, selectedIndex: 0, showAutocomplete: nextShowAutocomplete });
           return;
@@ -481,6 +489,7 @@ const InputReadline: React.FC<InputReadlineProps> = React.memo(({ commandHandler
         inputRef.current = nextValue;
         cursorRef.current = nextValue.length;
         selectedIndexRef.current = 0;
+        navigatedRef.current = false;
         showAutocompleteRef.current = nextShowAutocomplete;
         setInputState({ value: nextValue, cursor: nextValue.length, selectedIndex: 0, showAutocomplete: nextShowAutocomplete });
         return;

@@ -10,7 +10,7 @@ import { ErrorPageError, getStateErrorPageError } from '../utils/error-page.ts';
 import { tag } from '../utils/logger.js';
 import { type NextStepSection, printNextSteps, relativeToCwd } from '../utils/next-steps.ts';
 import { safeFilename } from '../utils/strings.ts';
-import { BaseCommand, type Suggestion } from './base-command.js';
+import { type ArgumentCompletion, BaseCommand, type Suggestion } from './base-command.js';
 
 const MAX_SUB_PAGE_ATTEMPTS = 30;
 const PRIORITY_ORDER: Record<string, number> = { critical: 0, important: 1, high: 2, normal: 3, low: 4 };
@@ -19,7 +19,7 @@ export const DEADLINE_TEST_ALLOWANCE_MS = 5 * 60_000;
 
 export class ExploreCommand extends BaseCommand {
   name = 'explore';
-  description = 'Start web exploration';
+  description = 'Start web exploration on the current page, or on the URL given as the first argument';
   options = [
     { flags: '--max-tests <number>', description: 'Maximum number of tests to run' },
     { flags: '--max-duration <minutes>', description: 'Wall-clock budget in minutes; wraps up the session before the limit is hit' },
@@ -61,6 +61,12 @@ export class ExploreCommand extends BaseCommand {
       this.hardDeadlineAt = Date.now() + this.maxDurationMinutes * 60_000 - DEADLINE_RESERVE_MS;
     }
 
+    const [target] = remaining;
+    if (target?.startsWith('/') || target?.startsWith('http://') || target?.startsWith('https://')) {
+      remaining.shift();
+      await this.explorBot.visit(target);
+    }
+
     const feature = (opts.focus as string) || remaining.join(' ') || undefined;
     const cfg = this.parseConfigure(opts.configure as string | undefined);
     if (cfg.priorities) this.priorityFilter = new Set(cfg.priorities);
@@ -95,6 +101,13 @@ export class ExploreCommand extends BaseCommand {
     } finally {
       if (!this.dryRun) await this.explorBot.printSessionAnalysis();
     }
+  }
+
+  completeArguments(): ArgumentCompletion[] {
+    return this.explorBot
+      .stateManager()
+      .getKnownUrls()
+      .map((url) => ({ value: url }));
   }
 
   private originLabel(test: Test): string {

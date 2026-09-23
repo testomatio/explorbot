@@ -47,6 +47,13 @@ export function truncate(text: string, max: number): string {
   return `${text.slice(0, max - 3)}...`;
 }
 
+export function truncateMiddle(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const head = Math.ceil((max - 3) / 2);
+  const tail = max - 3 - head;
+  return `${text.slice(0, head)}...${text.slice(text.length - tail)}`;
+}
+
 const MAX_COMPACT_ERROR = 400;
 
 export function compactErrorMessage(error: unknown): string {

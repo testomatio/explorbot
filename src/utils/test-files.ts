@@ -9,13 +9,16 @@ import store from 'codeceptjs/lib/store';
 import figureSet from 'figures';
 import { ConfigParser } from '../config.ts';
 
-export function loadTestSuites(testsDir: string): any[] {
+export function listTestFiles(testsDir: string): string[] {
   if (!existsSync(testsDir)) return [];
 
-  const jsFiles = readdirSync(testsDir)
+  return readdirSync(testsDir)
     .filter((f) => f.endsWith('.js'))
     .map((f) => path.resolve(testsDir, f));
+}
 
+export function loadTestSuites(testsDir: string): any[] {
+  const jsFiles = listTestFiles(testsDir);
   if (jsFiles.length === 0) return [];
 
   codeceptjs.container.createMocha();

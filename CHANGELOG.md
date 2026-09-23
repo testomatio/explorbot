@@ -1,5 +1,30 @@
 # Changelog
 
+## 2026-09-22
+
+### New TUI Commands
+
+- **`/explore <url>`** — `/explore` now takes the page to explore as its first argument, like
+  `explorbot explore <path>`. An argument starting with `/`, `http://` or `https://` opens that page first, and the
+  rest of the line is the focus. Without one, `/explore` explores the current page as before. `/start` accepts the
+  same argument.
+  ```
+  /explore /login
+  /explore /checkout guest payment
+  /explore https://app.example.com/settings
+  ```
+
+### Changes
+
+- TUI: commands that take an argument now suggest one as soon as the command is picked. `/test` lists saved plans
+  and inserts `--from-plan <file>`, `/plan:load` and `/plans` list saved plans, `/rerun` lists generated test files,
+  and `/navigate`, `/research` and `/explore` list the pages visited in this run followed by pages Explorbot learned
+  in earlier runs. Typing narrows the list. Each plan is listed on its own line with the page path it starts from and
+  how many tests it holds; a name too long for its column keeps its beginning and its end, so plans that share a
+  prefix stay apart. Short suggestions such as command names stay in columns.
+- TUI: while argument suggestions are shown, Enter runs what you typed. Move through the list with the arrow keys to
+  run a suggestion with Enter, or press Tab to insert it. Completing a command name with Tab now adds a space after
+  it, so its suggestions appear right away.
 ## 2026-09-20
 
 ### Configuration
