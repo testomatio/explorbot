@@ -185,6 +185,7 @@ interface AIConfig {
   vision?: boolean;
   visionModel?: any;
   agenticModel?: any;
+  decisionModel?: { provider: string; model: string; tool?: boolean; direct?: boolean };
   retryAttempts?: number;
   retryDelay?: number;
   maxParallelRequests?: number;

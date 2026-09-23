@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import type { SessionStep } from '../../src/experience-tracker.ts';
-import { getCodeceptToolNameFromCode, isCodeceptToolName, isNonReusableCode, mergeUniqueStepsByCode, stripComments, toReusableSessionStep } from '../../src/utils/step-analyzer.ts';
+import { getCodeceptToolNameFromCode, isCodeceptToolName, isInternalStep, isNonReusableCode, mergeUniqueStepsByCode, stripComments, toReusableSessionStep } from '../../src/utils/step-analyzer.ts';
 
 describe('step-analyzer', () => {
   it('maps CodeceptJS commands to agent tool names', () => {
@@ -10,6 +10,15 @@ describe('step-analyzer', () => {
     expect(getCodeceptToolNameFromCode('I.fillField("Title", "Item")')).toBe('form');
     expect(getCodeceptToolNameFromCode('I.selectOption("Role", "Admin")')).toBe('form');
     expect(getCodeceptToolNameFromCode('I.see("Done")')).toBe(null);
+  });
+
+  it('treats grabbers and savers as internal instrumentation', () => {
+    expect(isInternalStep({ title: 'grabBrowserLogs' })).toBe(true);
+    expect(isInternalStep({ title: 'grabSource' })).toBe(true);
+    expect(isInternalStep({ title: 'saveScreenshot' })).toBe(true);
+    expect(isInternalStep({ title: 'click' })).toBe(false);
+    expect(isInternalStep({ title: 'see' })).toBe(false);
+    expect(isInternalStep({})).toBe(false);
   });
 
   it('recognizes CodeceptJS agent tools by name', () => {

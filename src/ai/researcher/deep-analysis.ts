@@ -126,7 +126,7 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
       let updated: string;
       if (extQuery.count() > 0) {
         const existing = extQuery.text().trimEnd();
-        updated = extQuery.replace(`${existing}\n\n${sectionMarkdown}\n`);
+        updated = extQuery.replace(`${existing}\n\n${sectionMarkdown}\n`).toString();
       } else {
         updated = `${cached.trimEnd()}\n\n# Extended Research\n\n${sectionMarkdown}\n`;
       }
@@ -539,7 +539,7 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
       if (heading.count() === 0) heading = mdq(sectionMarkdown).query('h2[0]');
       if (heading.count() === 0) return sectionMarkdown;
 
-      return heading.replace(`${heading.text().trimEnd()}\n\n> Container: '${containerCss}'\n\n`);
+      return heading.replace(`${heading.text().trimEnd()}\n\n> Container: '${containerCss}'\n\n`).toString();
     }
 
     private _deduplicateExpandedSections(sections: string[]): string[] {

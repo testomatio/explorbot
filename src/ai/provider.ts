@@ -3,7 +3,7 @@ import { LangfuseSpanProcessor } from '@langfuse/otel';
 import { NodeSDK } from '@opentelemetry/sdk-node';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import dedent from 'dedent';
-import { APICallError, generateObject, generateText, isStepCount, registerTelemetry, tool } from 'ai';
+import { APICallError, NoObjectGeneratedError, asSchema, extractJsonMiddleware, generateObject, generateText, isStepCount, parsePartialJson, registerTelemetry, tool, wrapLanguageModel } from 'ai';
 import type { ModelMessage } from 'ai';
 import { z } from 'zod';
 import { clearActivity, setActivity } from '../activity.ts';
@@ -60,11 +60,11 @@ function extractCachedTokens(usage: any): number {
   return usage?.inputTokenDetails?.cacheReadTokens ?? 0;
 }
 
-function abortAfterIdle(ms: number, cancel: { cancelled: boolean }, controller: AbortController): Promise<never> {
+function abortAfterIdle(ms: number, cancel: { cancelled: boolean }, controller: AbortController, busy: { tools: number }): Promise<never> {
   return new Promise((_, reject) => {
     const tick = () => {
       if (cancel.cancelled) return;
-      if (executionController.isAwaitingInput()) {
+      if (executionController.isAwaitingInput() || busy.tools > 0) {
         setTimeout(tick, ms);
         return;
       }
@@ -87,7 +87,7 @@ export class Provider {
   private otelSdk: NodeSDK | null = null;
   private defaultRetryOptions: RetryOptions = {
     maxAttempts: 3,
-    baseDelay: 10,
+    baseDelay: 1000,
     maxDelay: 10000,
     retryCondition: (error: Error) => {
       return (
@@ -251,12 +251,12 @@ export class Provider {
     });
   }
 
-  private async raceWithIdleTimeout<T>(fn: (signal: AbortSignal) => Promise<T>, timeoutMs: number): Promise<T> {
+  private async raceWithIdleTimeout<T>(fn: (signal: AbortSignal) => Promise<T>, timeoutMs: number, busy: { tools: number } = { tools: 0 }): Promise<T> {
     const cancel = { cancelled: false };
     const controller = new AbortController();
     const combinedSignal = combinedAbortSignal(controller);
     try {
-      return await Promise.race([fn(combinedSignal), abortAfterIdle(timeoutMs, cancel, controller)]);
+      return await Promise.race([fn(combinedSignal), abortAfterIdle(timeoutMs, cancel, controller, busy)]);
     } finally {
       cancel.cancelled = true;
     }
@@ -267,6 +267,24 @@ export class Provider {
     if (!reduced) throw new ContextLengthError(error.message || error.toString());
     tag('warning').log('Context length exceeded, retrying with reduced messages...');
     return retry(reduced.messages, { ...options, _contextRetryLevel: reduced.nextLevel });
+  }
+
+  private async recoverWithPlainJson(messages: ModelMessage[], schema: any, model: any, options: any): Promise<any> {
+    const target = asSchema(schema);
+    tag('warning').log(`${getModelName(model)} returned no structured output, asking for plain JSON instead`);
+    const instruction = dedent`
+      Respond with a single JSON object that matches this JSON Schema, and nothing else:
+      ${JSON.stringify(await target.jsonSchema)}
+    `;
+    const response = await this.chat([...messages, { role: 'user', content: instruction }], wrapLanguageModel({ model, middleware: extractJsonMiddleware() }), options);
+
+    const parsed = await parsePartialJson(response.text);
+    if (parsed.state !== 'successful-parse') throw new AiError('No object generated: plain JSON fallback returned no parsable JSON');
+    const validated = await target.validate?.(parsed.value);
+    if (validated && !validated.success) throw new AiError(`No object generated: plain JSON fallback did not match the schema: ${validated.error.message}`);
+
+    responseLog(parsed.value);
+    return { ...response, object: validated?.value ?? parsed.value };
   }
 
   private initLangfuse() {
@@ -411,6 +429,8 @@ export class Provider {
 
   async generateWithTools(messages: ModelMessage[], model: any, tools: any, options: any = {}): Promise<any> {
     const modelName = getModelName(model);
+    const busy = { tools: 0 };
+    tools = withIdleExemption(tools, busy);
     setActivity(`🤖 Asking ${modelName} with dynamic tools`, 'ai');
     promptLog(`Using model: ${modelName}`);
 
@@ -437,7 +457,7 @@ export class Provider {
           const onStepEnd = (step: any) => {
             stepMessages.push(...(step.response?.messages || []));
           };
-          const result = (await this.raceWithIdleTimeout((signal) => generateText({ messages: attemptMessages, ...config, abortSignal: signal, onStepEnd }), config.timeout || 30000).catch((error) => {
+          const result = (await this.raceWithIdleTimeout((signal) => generateText({ messages: attemptMessages, ...config, abortSignal: signal, onStepEnd }), config.timeout || 30000, busy).catch((error) => {
             if (stepMessages.length > 0) {
               tag('warning').log(`Keeping ${stepMessages.length} messages from tool steps that already ran before the failure`);
               executedStepMessages.push(...stepMessages);
@@ -527,6 +547,7 @@ export class Provider {
       if (Provider.isContextLengthError(error)) {
         return this.recoverFromContextLength(error, messages, options, (m, o) => this.generateObject(m, schema, model, o));
       }
+      if (NoObjectGeneratedError.isInstance(error)) return this.recoverWithPlainJson(messages, schema, modelToUse, options);
       throw new AiError(error.message || error.toString());
     }
   }
@@ -767,6 +788,29 @@ function repairHarmonyChannel({ toolCall, tools }: ToolCallRepairOptions): any |
   }
   tag('warning').log(`Repaired tool name '${toolCall.toolName}' → 'commentary'`);
   return { ...toolCall, toolName: NARRATION_TOOL, input };
+}
+
+function withIdleExemption(tools: any, busy: { tools: number }): any {
+  if (!tools) return tools;
+  const wrapped: any = {};
+  for (const [name, definition] of Object.entries<any>(tools)) {
+    if (typeof definition?.execute !== 'function') {
+      wrapped[name] = definition;
+      continue;
+    }
+    wrapped[name] = {
+      ...definition,
+      execute: async (...args: any[]) => {
+        busy.tools++;
+        try {
+          return await definition.execute(...args);
+        } finally {
+          busy.tools--;
+        }
+      },
+    };
+  }
+  return wrapped;
 }
 
 export { AiError, Provider as AIProvider };

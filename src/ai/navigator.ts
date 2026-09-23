@@ -18,9 +18,10 @@ import { createDebug, pluralize, tag } from '../utils/logger.js';
 import { loop, pause } from '../utils/loop.js';
 import { RulesLoader } from '../utils/rules-loader.ts';
 import { normalizeInlineText } from '../utils/strings.ts';
-import { extractStatePath, matchesNavigationUrl } from '../utils/url-matcher.js';
+import { extractStatePath, isSameHostFamily, matchesNavigationUrl } from '../utils/url-matcher.js';
 import type { Agent, AgentDeps } from './agent.js';
 import type { Conversation } from './conversation.js';
+import { type Decision, JUDGE_PAGE_CAP, type Judge, UNDECIDED } from './judge.ts';
 import type { Provider } from './provider.js';
 import { Researcher } from './researcher.ts';
 import { actionRule, locatorRule, unexpectedPopupRule } from './rules.js';
@@ -80,6 +81,7 @@ class Navigator implements Agent {
   private explorer: Explorer;
   private config: ExplorbotConfig;
   private stateManager: StateManager;
+  private judge?: Judge;
 
   constructor(deps: AgentDeps) {
     this.provider = deps.ai;
@@ -89,6 +91,7 @@ class Navigator implements Agent {
     this.knowledgeTracker = deps.knowledgeTracker;
     this.experienceTracker = deps.stateManager.getExperienceTracker();
     this.hooksRunner = new HooksRunner(deps.explorer, deps.config);
+    this.judge = deps.judge;
   }
 
   private get verifyAttempts(): number {
@@ -97,15 +100,6 @@ class Navigator implements Agent {
 
   private get verifyTimeout(): number {
     return this.config.ai?.agents?.navigator?.verifyTimeout ?? 1500;
-  }
-
-  private getBaseOrigin(): string | null {
-    const baseUrl = this.config.playwright.url;
-    try {
-      return new URL(baseUrl).origin;
-    } catch {
-      return null;
-    }
   }
 
   private getComparableCurrentUrl(stateManager: any, expectedUrl: string): string {
@@ -126,18 +120,12 @@ class Navigator implements Agent {
     const currentFullUrl = currentState.fullUrl || currentState.url || '';
     if (!currentFullUrl) return false;
 
-    try {
-      const currentOrigin = new URL(currentFullUrl).origin;
-      if (/^https?:\/\//i.test(expectedUrl)) {
-        return currentOrigin === new URL(expectedUrl).origin;
-      }
+    if (!/^https?:\/\//i.test(currentFullUrl)) return !/^https?:\/\//i.test(expectedUrl);
+    if (/^https?:\/\//i.test(expectedUrl)) return isSameHostFamily(currentFullUrl, expectedUrl);
 
-      const baseOrigin = this.getBaseOrigin();
-      if (!baseOrigin) return true;
-      return currentOrigin === baseOrigin;
-    } catch {
-      return !/^https?:\/\//i.test(expectedUrl);
-    }
+    const baseUrl = this.config.playwright.url;
+    if (!baseUrl) return true;
+    return isSameHostFamily(currentFullUrl, baseUrl);
   }
 
   private isOnExpectedPage(expectedUrl: string, stateManager: any): boolean {
@@ -325,8 +313,9 @@ class Navigator implements Agent {
               lastFailure = `Reached ${check.freshState.url} but the page state did not change`;
               tag('warning').log(`Page state did not change at ${check.freshState.url}`);
             } else {
-              lastFailure = `Reached ${check.freshState.url}, expected ${expectedUrl}`;
-              tag('warning').log(`URL verification failed: expected ${expectedUrl}, got ${check.freshState.url}`);
+              const reachedUrl = check.freshState.fullUrl || check.freshState.url;
+              lastFailure = `Reached ${reachedUrl}, expected ${expectedUrl}`;
+              tag('warning').log(`URL verification failed: expected ${expectedUrl}, got ${reachedUrl}`);
             }
             batchFailures.push({
               code: codeBlock,
@@ -584,7 +573,7 @@ class Navigator implements Agent {
     const countVisit = (value?: string | null) => {
       if (!value) return;
       const normalized = normalizeUrl(value);
-      if (normalized) visitCounts.set(normalized, (visitCounts.get(normalized) || 0) + 1);
+      visitCounts.set(normalized, (visitCounts.get(normalized) || 0) + 1);
     };
 
     for (const transition of history) {
@@ -595,7 +584,7 @@ class Navigator implements Agent {
     if (opts?.visitedUrls) {
       for (const url of opts.visitedUrls) {
         const normalized = normalizeUrl(url);
-        if (normalized && !visitCounts.has(normalized)) {
+        if (!visitCounts.has(normalized)) {
           visitCounts.set(normalized, 1);
         }
       }
@@ -696,7 +685,7 @@ class Navigator implements Agent {
     return suggestion;
   }
 
-  async verifyState(message: string, actionResult: ActionResult): Promise<{ verified: boolean; inexpressible: boolean; results: AssertionResult[]; successfulCodes: string[]; assertionSteps: Array<{ name: string; args: any[] }>; totalAttempted: number }> {
+  async verifyState(message: string, actionResult: ActionResult): Promise<{ verified: boolean; inexpressible: boolean; results: AssertionResult[]; successfulCodes: string[]; assertionSteps: Array<{ name: string; args: any[] }>; totalAttempted: number; judged?: Decision }> {
     tag('info').log('AI Navigator verifying state at', actionResult.url);
     debugLog('Verification message:', message);
 
@@ -704,6 +693,13 @@ class Navigator implements Agent {
     if (cachedVerification !== null) {
       tag('operation').log(`Reusing cached verification: ${cachedVerification ? 'PASS' : 'FAIL'}`);
       return { verified: cachedVerification, inexpressible: false, results: [], successfulCodes: [], assertionSteps: [], totalAttempted: 0 };
+    }
+
+    const verifiedClaims = Object.keys(actionResult.verifications ?? {}).filter((claim) => actionResult.getVerification(claim) === true);
+    const same = await this.judge?.decide('Which already verified claim means the same as the claim under consideration?', [...verifiedClaims, UNDECIDED], { claim: message });
+    if (same?.approved) {
+      tag('operation').log(`Judge matched claim to an already verified one: "${same.value}"`);
+      return { verified: true, inexpressible: false, results: [], successfulCodes: [], assertionSteps: [], totalAttempted: 0 };
     }
 
     const knowledge = this.knowledgeTracker.renderRelevantContext(actionResult);
@@ -846,7 +842,8 @@ class Navigator implements Agent {
     const inexpressible = !alreadyVerified && totalAttempted === 0;
     if (inexpressible) {
       tag('warning').log('No assertion could express this claim');
-      return { verified: false, inexpressible, results, successfulCodes, assertionSteps, totalAttempted };
+      const judged = await this.judge?.decide('The page shows that this claim is true.', null, { claim: message, page: actionResult.getCompactARIA().slice(0, JUDGE_PAGE_CAP) });
+      return { verified: false, inexpressible, results, successfulCodes, assertionSteps, totalAttempted, judged };
     }
 
     actionResult.addVerification(message, verified);

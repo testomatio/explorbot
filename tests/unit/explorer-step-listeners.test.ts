@@ -15,11 +15,11 @@ function buildExplorer(dispatcher: EventEmitter) {
   return explorer as Explorer;
 }
 
-function buildTest() {
+function buildTest(addStep: (code: string) => void = () => {}) {
   return {
     scenario: 'listener leak regression',
     start: () => {},
-    addStep: () => {},
+    addStep,
     setActiveNoteScreenshot: () => {},
     getPrintableNotes: () => '',
   } as any;
@@ -37,6 +37,18 @@ describe('Explorer step listener cleanup', () => {
     expect(dispatcher.listenerCount('step.passed')).toBe(0);
     expect(dispatcher.listenerCount('step.failed')).toBe(0);
     expect(dispatcher.listenerCount('test.after')).toBe(0);
+  });
+
+  it('does not record grabbers and savers as test steps', async () => {
+    const dispatcher = new EventEmitter();
+    const recorded: string[] = [];
+    await buildExplorer(dispatcher).beginTest(buildTest((code) => recorded.push(code)));
+
+    dispatcher.emit('step.passed', { title: 'grabBrowserLogs', toCode: () => 'I.grabBrowserLogs()' });
+    dispatcher.emit('step.passed', { title: 'saveScreenshot', toCode: () => 'I.saveScreenshot("x.png")' });
+    dispatcher.emit('step.passed', { title: 'click', toCode: () => 'I.click("Login")' });
+
+    expect(recorded).toEqual(['I.click("Login")']);
   });
 
   it('does not accumulate listeners across repeated startTest cycles', async () => {

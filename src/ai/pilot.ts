@@ -8,7 +8,7 @@ import type Explorer from '../explorer.ts';
 import type { PlaywrightRecorder } from '../playwright-recorder.ts';
 import type { StateManager } from '../state-manager.ts';
 import { Stats } from '../stats.ts';
-import { type Test, TestResult } from '../test-plan.ts';
+import { type Test, TestResult, TestStatus } from '../test-plan.ts';
 import { collectInteractiveNodes } from '../utils/aria.ts';
 import { ErrorPageError } from '../utils/error-page.ts';
 import { createDebug, tag } from '../utils/logger.ts';
@@ -19,6 +19,7 @@ import type { Agent, AgentDeps } from './agent.ts';
 import type { Conversation } from './conversation.ts';
 import type { Fisherman } from './fisherman.ts';
 import { createAskApiTool } from './fisherman/tools.ts';
+import { type Judge, UNDECIDED } from './judge.ts';
 import type { Navigator } from './navigator.ts';
 import type { Provider } from './provider.ts';
 import type { Researcher } from './researcher.ts';
@@ -33,6 +34,10 @@ const PILOT_REASONING_LIMIT = 500;
 const PILOT_MESSAGE_LIMIT = 2;
 const PILOT_MESSAGE_MAX_LENGTH = 160;
 const PILOT_REQUEST_LIMIT = 5;
+const OUTCOME_STATUS: Record<string, SettledStatus> = {
+  'The run shows this outcome happened.': 'passed',
+  'The run shows this outcome did not happen.': 'failed',
+};
 
 export class Pilot implements Agent {
   emoji = '🧭';
@@ -45,6 +50,7 @@ export class Pilot implements Agent {
   private requestStore: RequestStore;
   private playwrightRecorder: PlaywrightRecorder;
   private fisherman: Fisherman | null = null;
+  private judge?: Judge;
 
   constructor(deps: AgentDeps, agentTools: any, researcher: Researcher) {
     this.provider = deps.ai;
@@ -54,6 +60,7 @@ export class Pilot implements Agent {
     this.stateManager = deps.stateManager;
     this.requestStore = deps.requestStore;
     this.playwrightRecorder = deps.playwrightRecorder;
+    this.judge = deps.judge;
   }
 
   setFisherman(fisherman: Fisherman): void {
@@ -118,7 +125,9 @@ export class Pilot implements Agent {
     }
 
     const schema = z.object({
-      decision: z.enum(['pass', 'fail', 'continue', 'skipped']).describe('pass = test succeeded, fail = test failed, continue = tester should keep going, skipped = scenario is irrelevant OR systematic execution failures prevented testing'),
+      decision: z
+        .enum(['pass', 'fail', 'continue', 'skipped'])
+        .describe('pass = scenario goal accomplished, fail = the app misbehaved, continue = tester should keep going, skipped = the scenario cannot be judged against this app (its premise does not hold, it is irrelevant, or systematic execution failures prevented testing)'),
       reason: z.string().describe('Concise user-facing reason, maximum 1 short sentence and 120 characters. Do NOT repeat the decision status; explain only the evidence. For continue: explain why rejected and suggest alternatives.'),
       guidance: z.string().nullable().describe('Required for "continue": specific actionable instruction for the tester — what exactly to verify, retry differently, or complete next. Be concrete.'),
       requestVerification: z
@@ -407,9 +416,13 @@ export class Pilot implements Agent {
         DOM assertion can't be made.
         Do not pass when Tester achieved only a related navigation/filter/tab/status outcome instead of the
         requested action, workflow, or entity detail goal.
-      - "fail": goal not achieved and no further step toward it is available on the current page.
-      - "skipped": scenario is irrelevant to the app, OR systematic infrastructure failures (LLM errors,
-        crashes) prevented testing. NOT for "test failed to interact" — that's "fail" or "continue".
+      - "fail": the app misbehaved — the scenario's action ran against the right target and the app
+        produced a wrong, broken, or missing outcome. Not reaching the goal is not by itself a fail.
+      - "skipped": the scenario cannot be judged against this app — the page shows its premise does not
+        hold (the assumed constraint, field, or behaviour is designed differently), the target entity or
+        feature is not the one here, the scenario is irrelevant, OR systematic infrastructure failures
+        (LLM errors, crashes) prevented testing. NOT for "test failed to interact" — that's "fail" or
+        "continue".
       - "continue": goal incomplete but the control for the NEXT step is present on the current page, or a
         concrete missing check would change your verdict. Guidance must name that step.
         If a verify() asserted a state that was ALREADY TRUE before the test, it proves nothing — reject.
@@ -542,6 +555,9 @@ export class Pilot implements Agent {
     const actionsContext = this.formatActions(toolCalls);
     const stateContext = this.buildStateContext(currentState);
 
+    const healthy = await this.judge?.decide('The run is moving toward the goal and can continue without a supervisor reviewing it now.', null, { scenario: task.scenario, state: stateContext, recentActions: actionsContext });
+    if (healthy?.approved) return '';
+
     const hasFailures = toolCalls.length === 0 || toolCalls.some((t) => !t.wasSuccessful);
 
     const text = await this.sendToPilot(
@@ -586,7 +602,11 @@ export class Pilot implements Agent {
 
     let undecided = task.expected.filter((text) => !task.getCheckedExpectations().includes(text));
     if (image) undecided = task.expected;
-    if (!undecided.length) return task.expected.map((text) => ({ text, status: decided(text) }));
+
+    let settledByJudge = new Map<string, SettledStatus>();
+    if (!image) settledByJudge = await this.settleByJudge(task, undecided);
+    undecided = undecided.filter((text) => !settledByJudge.has(text));
+    if (!undecided.length) return task.expected.map((text) => ({ text, status: settledByJudge.get(text) || decided(text) }));
 
     const schema = z.object({
       outcomes: z.array(
@@ -659,11 +679,29 @@ export class Pilot implements Agent {
 
     const judged = new Map((response?.object?.outcomes || []).map((outcome: any) => [outcome.expectation, outcome]));
     return task.expected.map((text) => {
+      const byJudge = settledByJudge.get(text);
+      if (byJudge) return { text, status: byJudge };
       if (!undecided.includes(text)) return { text, status: decided(text) };
       const outcome = judged.get(text) as { status: SettledStatus; evidence?: string } | undefined;
       if (!outcome) return { text, status: 'unverified' as SettledStatus };
       return { text, status: outcome.status || 'unverified', evidence: outcome.evidence };
     });
+  }
+
+  private async settleByJudge(task: Test, expectations: string[]): Promise<Map<string, SettledStatus>> {
+    const settled = new Map<string, SettledStatus>();
+    const judge = this.judge;
+    if (!judge) return settled;
+
+    const state = { scenario: task.scenario, runLog: task.notesToString() || 'No steps recorded.' };
+    await Promise.all(
+      expectations.map(async (text) => {
+        const decision = await judge.decide(`What did this run establish about the expected outcome: ${text}`, [...Object.keys(OUTCOME_STATUS), UNDECIDED], state);
+        const status = OUTCOME_STATUS[decision.value ?? ''];
+        if (status) settled.set(text, status);
+      })
+    );
+    return settled;
   }
 
   private formatExpectations(task: Test): string {
@@ -684,6 +722,7 @@ export class Pilot implements Agent {
     this.conversation!.addUserText(finalUserText);
 
     const tools = { ...this.pickPlanningTools(), ...this.buildFishermanTools(opts.task) };
+    const preparedCount = opts.task.preparedData.length;
 
     const result = await this.provider.invokeConversation(this.conversation!, tools, {
       maxToolRoundtrips: opts.maxToolRoundtrips ?? 0,
@@ -692,7 +731,7 @@ export class Pilot implements Agent {
       stopWhen: () => opts.task.hasFinished,
       telemetry: { functionId },
     });
-    const text = result?.response?.text || '';
+    const text = this.announcePreparedData(result?.response?.text || '', opts.task, preparedCount);
     const learned = (result?.toolExecutions || []).filter((e: any) => e.toolName === 'learnExperience' && e.output?.content).map((e: any) => ({ url: e.output.url, content: e.output.content }));
     if (learned.length === 0) return text;
     opts.task.applyExperience(learned);
@@ -708,6 +747,24 @@ export class Pilot implements Agent {
     `;
   }
 
+  private announcePreparedData(text: string, task: Test, preparedCount: number): string {
+    const prepared = task.preparedData.slice(preparedCount);
+    if (prepared.length === 0) return text;
+
+    let refresh = '';
+    if (task.status === TestStatus.IN_PROGRESS) refresh = 'It was created after the page loaded, so the page does not show it yet. Run I.refreshPage() through form() before looking for it.';
+
+    return dedent`
+      ${text}
+
+      <prepared_data>
+      Pilot created this data through the API for this test. Use it instead of creating the same data through the UI:
+      ${prepared.map((item) => `- ${item}`).join('\n')}
+      ${refresh}
+      </prepared_data>
+    `;
+  }
+
   private getExperienceToc(): string {
     const state = this.stateManager.getCurrentState();
     if (!state) return '';
@@ -715,7 +772,7 @@ export class Pilot implements Agent {
   }
 
   private pickPlanningTools() {
-    const { see, context, verify, research, getVisitedStates, xpathCheck, learnExperience, askUser } = this.agentTools ?? {};
+    const { see, context, verify, research, getVisitedStates, xpathCheck, learnExperience, askUser, judge } = this.agentTools ?? {};
     const planning: Record<string, unknown> = {};
     if (see) planning.see = see;
     if (context) planning.context = context;
@@ -725,6 +782,7 @@ export class Pilot implements Agent {
     if (xpathCheck) planning.xpathCheck = xpathCheck;
     if (learnExperience) planning.learnExperience = learnExperience;
     if (askUser) planning.askUser = askUser;
+    if (judge) planning.judge = judge;
     withdrawVisionTools(planning);
     return planning;
   }
@@ -771,6 +829,7 @@ export class Pilot implements Agent {
           });
           const stepText = `Precondition: created ${items.join(', ')}`;
           task.addStep(stepText);
+          task.preparedData.push(...items);
           tag('success').log(stepText);
 
           return { noted: true, prepared: true, created: result.created };
@@ -1151,7 +1210,7 @@ export class Pilot implements Agent {
       Tester tools: click, pressKey, form, see, verify, interact, context, research, xpathCheck,
       visualClick, back, getVisitedStates, reset, stop, finish, record.
       Use tool names exactly as listed. Do not invent combined names or aliases.
-      Reloading is not a tool: to re-read a page from the server, instruct Tester to run I.reloadPage() through form.
+      Reloading is not a tool: to re-read a page from the server, instruct Tester to run I.refreshPage() through form.
 
       ${capabilityGroundingRule}
 

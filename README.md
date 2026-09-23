@@ -1,5 +1,8 @@
 <p align="center">
-  <img src="assets/explorbot-logo.png" alt="Explorbot" width="560">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/logos/explorbot/explorbot-for-dark-theme.svg">
+    <img src="assets/logos/explorbot/explorbot-for-light-theme.svg" alt="Explorbot" width="560">
+  </picture>
 </p>
 
 <p align="center"><b>The vibe-testing agent for web applications.</b></p>

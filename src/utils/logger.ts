@@ -103,7 +103,12 @@ class ConsoleDestination implements LogDestination {
     if (entry.type === 'debug') return;
     if (entry.type === 'html') return;
     if (entry.type === 'operation' && !this.verboseMode) return;
-    if (entry.type === 'step' && !this.verboseMode && this.recentSteps.shouldSuppress(entry.content)) return;
+    if (entry.type === 'step' && !this.verboseMode) {
+      const step = entry.originalArgs?.[0];
+      const error = entry.originalArgs?.[1];
+      if (error || step?.failed === true || step?.status === 'failed') return;
+      if (this.recentSteps.shouldSuppress(entry.content)) return;
+    }
     let content = entry.content;
     if (entry.type === 'multiline' || entry.type === 'details') {
       const cleaned = stripAnsi(dedent(entry.content));
@@ -215,7 +220,7 @@ class SpanDestination implements LogDestination {
     if (!step?.toCode) {
       return;
     }
-    const stepName = step?.name ? `I.${step.name}` : 'I.step';
+    const stepName = step?.title ? `I.${step.title}` : 'I.step';
     const stepInput = typeof step?.toCode === 'function' ? step.toCode() : entry.content;
     const errorFromStep = step?.error;
     const errorMessage =

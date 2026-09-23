@@ -58,6 +58,7 @@ Avoid ternary operators!
 Never use `...(condition ? { key: value } : {})` spread pattern — use a plain `if` statement instead
 Avoid creating extra functions that were not explicitly set
 Private methods must be placed after public methods
+Never place a private module-level function above the exported class or functions of that file — function declarations hoist, so a private helper always goes below what it serves, next to the file's other private helpers
 Avoid `=== null` / `=== undefined` comparisons when not needed — prefer shorter `if (...)` or `if (!...)` when applicable
 Use dedent when formatting prompts
 Use `mdq()` from `src/utils/markdown-query.ts` for all markdown manipulation (find sections, replace tables, extract text). Never do manual line-splitting/counting on markdown.

@@ -1,5 +1,5 @@
 import { tag } from '../utils/logger.js';
-import { BaseCommand, type Suggestion } from './base-command.js';
+import { type ArgumentCompletion, BaseCommand, type Suggestion } from './base-command.js';
 
 export class NavigateCommand extends BaseCommand {
   name = 'navigate';
@@ -17,5 +17,12 @@ export class NavigateCommand extends BaseCommand {
 
     await this.explorBot.visit(destination);
     tag('success').log(`Navigation requested: ${destination}`);
+  }
+
+  completeArguments(): ArgumentCompletion[] {
+    return this.explorBot
+      .stateManager()
+      .getKnownUrls()
+      .map((url) => ({ value: url }));
   }
 }

@@ -95,6 +95,25 @@ describe('Logger', () => {
       tag('success').log('Success message');
       expect(consoleSpy).toHaveBeenCalledTimes(3);
     });
+
+    it('should hide failed step attempts by default', () => {
+      const step = { toCode: () => 'I.click("missing")' };
+      tag('step').log(step, new Error('Element not found'));
+      expect(consoleSpy).not.toHaveBeenCalled();
+    });
+
+    it('should show failed step attempts in verbose mode', () => {
+      setVerboseMode(true);
+      const step = { toCode: () => 'I.click("missing")' };
+      tag('step').log(step, new Error('Element not found'));
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('I.click("missing")'));
+    });
+
+    it('should keep successful fallback steps visible', () => {
+      const step = { toCode: () => 'I.click("Save")' };
+      tag('step').log(step);
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('I.click("Save")'));
+    });
   });
 
   describe('debug logging', () => {

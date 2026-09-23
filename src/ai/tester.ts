@@ -136,8 +136,8 @@ export class Tester extends TaskAgent implements Agent {
     let initialState = ActionResult.fromState(state);
     const currentUrl = state.fullUrl || state.url;
     let startOnCurrentPage = opts.startOnCurrentPage;
-    if (isErrorPage(initialState) && !startOnCurrentPage && task.startUrl && normalizeUrl(currentUrl) !== normalizeUrl(task.startUrl)) {
-      debugLog(`Recovering from error page at ${currentUrl} by navigating to ${task.startUrl}`);
+    if (!startOnCurrentPage && task.startUrl && normalizeUrl(currentUrl) !== normalizeUrl(task.startUrl)) {
+      debugLog(`Opening test start URL ${task.startUrl} before building context (was at ${currentUrl})`);
       try {
         await this.explorer.visit(task.startUrl);
         state = this.stateManager.getCurrentState();
@@ -145,7 +145,7 @@ export class Tester extends TaskAgent implements Agent {
         initialState = ActionResult.fromState(state);
         startOnCurrentPage = true;
       } catch (error) {
-        debugLog(`Could not recover from error page: ${compactErrorMessage(error)}`);
+        debugLog(`Could not open test start URL: ${compactErrorMessage(error)}`);
       }
     }
     if (isErrorPage(initialState)) {
@@ -158,14 +158,6 @@ export class Tester extends TaskAgent implements Agent {
     const conversation = this.provider.startConversation(this.getSystemMessage(), 'tester');
     conversation.markLastMessageCacheable();
     this.currentConversation = conversation;
-
-    const scenarioBlock = this.buildScenarioBlock(task, initialState);
-    conversation.addUserText(scenarioBlock);
-    conversation.markLastMessageCacheable();
-    conversation.protectPrefix(conversation.messages.length);
-
-    const pageContext = await this.reinjectContextIfNeeded(1, initialState);
-    if (pageContext) conversation.addUserText(pageContext);
 
     return await Observability.run(
       `test: ${task.scenario}`,
@@ -185,15 +177,14 @@ export class Tester extends TaskAgent implements Agent {
   private async runTestSession(task: Test, initialState: ActionResult, conversation: Conversation, handlers: TestSessionHandlers, opts: TestOptions): Promise<{ success: boolean }> {
     const { offFailedRequest } = handlers;
 
+    let plan = '';
     if (this.pilot) {
       try {
-        const plan = await this.pilot.planTest(task, initialState);
+        await this.researcher.research(initialState).catch(this.skipResearch);
+        plan = await this.pilot.planTest(task, initialState);
         if (task.hasFinished) {
           offFailedRequest?.();
           return { success: task.isSuccessful };
-        }
-        if (plan) {
-          conversation.addUserText(`Pilot's test plan:\n${plan}\n\nFollow this plan while executing the test.`);
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -216,7 +207,7 @@ export class Tester extends TaskAgent implements Agent {
 
     if (opts.startOnCurrentPage) debugLog(`Starting on the page already open at ${task.startUrl}`);
 
-    if (!opts.startOnCurrentPage) {
+    if (!opts.startOnCurrentPage || task.preparedData.length > 0) {
       debugLog(`Navigating to ${task.startUrl}`);
       try {
         await this.explorer.visit(task.startUrl!);
@@ -241,6 +232,15 @@ export class Tester extends TaskAgent implements Agent {
     }
     const currentUrl = startState?.url || task.startUrl || '';
     await this.hooksRunner.runBeforeHook('tester', currentUrl);
+
+    const testerState = this.getCurrentState();
+    conversation.addUserText(this.buildScenarioBlock(task, testerState));
+    conversation.markLastMessageCacheable();
+    conversation.protectPrefix(conversation.messages.length);
+
+    const pageContext = await this.reinjectContextIfNeeded(1, testerState);
+    if (pageContext) conversation.addUserText(pageContext);
+    if (plan) conversation.addUserText(`Pilot's test plan:\n${plan}\n\nFollow this plan while executing the test.`);
 
     const offStateChange = this.stateManager.onStateChange((event: StateTransition) => {
       if (task.hasFinished) return;
@@ -912,6 +912,9 @@ export class Tester extends TaskAgent implements Agent {
   }
 
   private buildDeletionScope(task: Test): string {
+    if (task.preparedData.length > 0) {
+      return `When deleting items, ONLY delete the data prepared for this test: ${task.preparedData.join('; ')}.`;
+    }
     const deletableItems = this.getDeletableSessionNames(task);
     if (deletableItems.length > 0) {
       return `When deleting items, ONLY delete items whose title contains one of these session names: ${deletableItems.join(', ')}. These were created by previous tests.`;
