@@ -555,7 +555,7 @@ export class Pilot implements Agent {
     const actionsContext = this.formatActions(toolCalls);
     const stateContext = this.buildStateContext(currentState);
 
-    const healthy = await this.judge?.decide('The run is moving toward the goal and can continue without a supervisor reviewing it now.', null, { scenario: task.scenario, state: stateContext, recentActions: actionsContext });
+    const healthy = await this.judge?.decide('The recent actions succeeded and the page changed each time.', null, { scenario: task.scenario, state: stateContext, recentActions: actionsContext });
     if (healthy?.approved) return '';
 
     const hasFailures = toolCalls.length === 0 || toolCalls.some((t) => !t.wasSuccessful);
