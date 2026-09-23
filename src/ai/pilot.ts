@@ -8,7 +8,7 @@ import type Explorer from '../explorer.ts';
 import type { PlaywrightRecorder } from '../playwright-recorder.ts';
 import type { StateManager } from '../state-manager.ts';
 import { Stats } from '../stats.ts';
-import { type Test, TestResult } from '../test-plan.ts';
+import { type Test, TestResult, TestStatus } from '../test-plan.ts';
 import { collectInteractiveNodes } from '../utils/aria.ts';
 import { ErrorPageError } from '../utils/error-page.ts';
 import { createDebug, tag } from '../utils/logger.ts';
@@ -722,6 +722,7 @@ export class Pilot implements Agent {
     this.conversation!.addUserText(finalUserText);
 
     const tools = { ...this.pickPlanningTools(), ...this.buildFishermanTools(opts.task) };
+    const preparedCount = opts.task.preparedData.length;
 
     const result = await this.provider.invokeConversation(this.conversation!, tools, {
       maxToolRoundtrips: opts.maxToolRoundtrips ?? 0,
@@ -730,7 +731,7 @@ export class Pilot implements Agent {
       stopWhen: () => opts.task.hasFinished,
       telemetry: { functionId },
     });
-    const text = result?.response?.text || '';
+    const text = this.announcePreparedData(result?.response?.text || '', opts.task, preparedCount);
     const learned = (result?.toolExecutions || []).filter((e: any) => e.toolName === 'learnExperience' && e.output?.content).map((e: any) => ({ url: e.output.url, content: e.output.content }));
     if (learned.length === 0) return text;
     opts.task.applyExperience(learned);
@@ -743,6 +744,24 @@ export class Pilot implements Agent {
 
       ${learned.map((recipe) => recipe.content).join('\n\n')}
       </applied_experience>
+    `;
+  }
+
+  private announcePreparedData(text: string, task: Test, preparedCount: number): string {
+    const prepared = task.preparedData.slice(preparedCount);
+    if (prepared.length === 0) return text;
+
+    let refresh = '';
+    if (task.status === TestStatus.IN_PROGRESS) refresh = 'It was created after the page loaded, so the page does not show it yet. Run I.refreshPage() through form() before looking for it.';
+
+    return dedent`
+      ${text}
+
+      <prepared_data>
+      Pilot created this data through the API for this test. Use it instead of creating the same data through the UI:
+      ${prepared.map((item) => `- ${item}`).join('\n')}
+      ${refresh}
+      </prepared_data>
     `;
   }
 
@@ -810,6 +829,7 @@ export class Pilot implements Agent {
           });
           const stepText = `Precondition: created ${items.join(', ')}`;
           task.addStep(stepText);
+          task.preparedData.push(...items);
           tag('success').log(stepText);
 
           return { noted: true, prepared: true, created: result.created };
@@ -1190,7 +1210,7 @@ export class Pilot implements Agent {
       Tester tools: click, pressKey, form, see, verify, interact, context, research, xpathCheck,
       visualClick, back, getVisitedStates, reset, stop, finish, record.
       Use tool names exactly as listed. Do not invent combined names or aliases.
-      Reloading is not a tool: to re-read a page from the server, instruct Tester to run I.reloadPage() through form.
+      Reloading is not a tool: to re-read a page from the server, instruct Tester to run I.refreshPage() through form.
 
       ${capabilityGroundingRule}
 

@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-09-23
+
+### Changes
+- [Tester] A test now starts from a page loaded after planning, so data prepared for it through the API is on screen from the first step. Previously the tester read the page as it looked before the data was prepared, concluded the item was missing, and went off to create its own through the UI.
+- [Pilot] When Pilot prepares data for a test, it now tells the tester what was created — type, name and id — and to use it rather than create the same thing through the UI. This arrives even when Pilot spends its whole turn on tool calls and writes no plan.
+- [Pilot] Data prepared while a test is already running now comes with a request to reload the page, since the open page cannot show it yet.
+- [Tester] A scenario that deletes something is no longer told to create an item first when one was already prepared for it. It is told to delete only that item.
+- [Tester] Reloading a page works again: both the tester and Pilot were pointed at a command that does not exist.
+- The name of a created item is now read from APIs that nest it under `attributes`, so prepared data is referred to by name instead of by id alone.
+
 ## 2026-09-22
 
 ### New TUI Commands
