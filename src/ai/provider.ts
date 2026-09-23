@@ -662,7 +662,7 @@ export class Provider {
       throw new Error(`Vision model not configured. Set ai.visionModel in your config; ${getCliName()} recommended-models lists the providers that serve one`);
     }
 
-    setActivity(`🤖 Processing image with ${this.config.visionModel}`, 'ai');
+    setActivity(`🤖 Processing image with ${getModelName(this.config.visionModel)}`, 'ai');
 
     const messages: ModelMessage[] = [
       {
