@@ -304,9 +304,9 @@ export function WithLocators<T extends Constructor>(Base: T) {
       if (sectionQuery.count() === 0) sectionQuery = mdq(result.text).query(`section3(~"${escaped}")`);
 
       if (newCss) {
-        result.text = sectionQuery.query('blockquote[0]').setKeyValue('Container', `'${newCss}'`);
+        result.text = sectionQuery.query('blockquote[0]').setKeyValue('Container', `'${newCss}'`).toString();
       } else {
-        result.text = sectionQuery.query('blockquote[0]').replace('');
+        result.text = sectionQuery.query('blockquote[0]').replace('').toString();
         result.text = result.text.replace(`${FOCUSED_MARKER}\n`, '');
       }
 

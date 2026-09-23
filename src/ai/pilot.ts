@@ -19,6 +19,7 @@ import type { Agent, AgentDeps } from './agent.ts';
 import type { Conversation } from './conversation.ts';
 import type { Fisherman } from './fisherman.ts';
 import { createAskApiTool } from './fisherman/tools.ts';
+import { type Judge, UNDECIDED } from './judge.ts';
 import type { Navigator } from './navigator.ts';
 import type { Provider } from './provider.ts';
 import type { Researcher } from './researcher.ts';
@@ -33,6 +34,10 @@ const PILOT_REASONING_LIMIT = 500;
 const PILOT_MESSAGE_LIMIT = 2;
 const PILOT_MESSAGE_MAX_LENGTH = 160;
 const PILOT_REQUEST_LIMIT = 5;
+const OUTCOME_STATUS: Record<string, SettledStatus> = {
+  'The run shows this outcome happened.': 'passed',
+  'The run shows this outcome did not happen.': 'failed',
+};
 
 export class Pilot implements Agent {
   emoji = '🧭';
@@ -45,6 +50,7 @@ export class Pilot implements Agent {
   private requestStore: RequestStore;
   private playwrightRecorder: PlaywrightRecorder;
   private fisherman: Fisherman | null = null;
+  private judge?: Judge;
 
   constructor(deps: AgentDeps, agentTools: any, researcher: Researcher) {
     this.provider = deps.ai;
@@ -54,6 +60,7 @@ export class Pilot implements Agent {
     this.stateManager = deps.stateManager;
     this.requestStore = deps.requestStore;
     this.playwrightRecorder = deps.playwrightRecorder;
+    this.judge = deps.judge;
   }
 
   setFisherman(fisherman: Fisherman): void {
@@ -548,6 +555,9 @@ export class Pilot implements Agent {
     const actionsContext = this.formatActions(toolCalls);
     const stateContext = this.buildStateContext(currentState);
 
+    const healthy = await this.judge?.decide('The run is moving toward the goal and can continue without a supervisor reviewing it now.', null, { scenario: task.scenario, state: stateContext, recentActions: actionsContext });
+    if (healthy?.approved) return '';
+
     const hasFailures = toolCalls.length === 0 || toolCalls.some((t) => !t.wasSuccessful);
 
     const text = await this.sendToPilot(
@@ -592,7 +602,11 @@ export class Pilot implements Agent {
 
     let undecided = task.expected.filter((text) => !task.getCheckedExpectations().includes(text));
     if (image) undecided = task.expected;
-    if (!undecided.length) return task.expected.map((text) => ({ text, status: decided(text) }));
+
+    let settledByJudge = new Map<string, SettledStatus>();
+    if (!image) settledByJudge = await this.settleByJudge(task, undecided);
+    undecided = undecided.filter((text) => !settledByJudge.has(text));
+    if (!undecided.length) return task.expected.map((text) => ({ text, status: settledByJudge.get(text) || decided(text) }));
 
     const schema = z.object({
       outcomes: z.array(
@@ -665,11 +679,29 @@ export class Pilot implements Agent {
 
     const judged = new Map((response?.object?.outcomes || []).map((outcome: any) => [outcome.expectation, outcome]));
     return task.expected.map((text) => {
+      const byJudge = settledByJudge.get(text);
+      if (byJudge) return { text, status: byJudge };
       if (!undecided.includes(text)) return { text, status: decided(text) };
       const outcome = judged.get(text) as { status: SettledStatus; evidence?: string } | undefined;
       if (!outcome) return { text, status: 'unverified' as SettledStatus };
       return { text, status: outcome.status || 'unverified', evidence: outcome.evidence };
     });
+  }
+
+  private async settleByJudge(task: Test, expectations: string[]): Promise<Map<string, SettledStatus>> {
+    const settled = new Map<string, SettledStatus>();
+    const judge = this.judge;
+    if (!judge) return settled;
+
+    const state = { scenario: task.scenario, runLog: task.notesToString() || 'No steps recorded.' };
+    await Promise.all(
+      expectations.map(async (text) => {
+        const decision = await judge.decide(`What did this run establish about the expected outcome: ${text}`, [...Object.keys(OUTCOME_STATUS), UNDECIDED], state);
+        const status = OUTCOME_STATUS[decision.value ?? ''];
+        if (status) settled.set(text, status);
+      })
+    );
+    return settled;
   }
 
   private formatExpectations(task: Test): string {
@@ -721,7 +753,7 @@ export class Pilot implements Agent {
   }
 
   private pickPlanningTools() {
-    const { see, context, verify, research, getVisitedStates, xpathCheck, learnExperience, askUser } = this.agentTools ?? {};
+    const { see, context, verify, research, getVisitedStates, xpathCheck, learnExperience, askUser, judge } = this.agentTools ?? {};
     const planning: Record<string, unknown> = {};
     if (see) planning.see = see;
     if (context) planning.context = context;
@@ -731,6 +763,7 @@ export class Pilot implements Agent {
     if (xpathCheck) planning.xpathCheck = xpathCheck;
     if (learnExperience) planning.learnExperience = learnExperience;
     if (askUser) planning.askUser = askUser;
+    if (judge) planning.judge = judge;
     withdrawVisionTools(planning);
     return planning;
   }

@@ -1,5 +1,6 @@
 import { Planner } from '../ai/planner.js';
 import { Researcher } from '../ai/researcher.js';
+import { normalizeUrl } from '../state-manager.js';
 import { Stats } from '../stats.js';
 import { tag } from '../utils/logger.js';
 import { loop } from '../utils/loop.js';
@@ -67,12 +68,18 @@ export class FreesailCommand extends BaseCommand {
         const suggestion = await navigator.freeSail({ strategy, scope, visitedUrls });
         if (!suggestion) {
           tag('info').log('No navigation suggestion available');
-          return;
+          ctx.stop();
         }
 
         if (scope && !suggestion.target.startsWith(scope)) {
           tag('warning').log(`Suggestion ${suggestion.target} is outside scope ${scope}, skipping`);
-          return;
+          ctx.stop();
+        }
+
+        const currentUrl = stateManager.getCurrentState()?.url;
+        if (currentUrl && normalizeUrl(suggestion.target) === normalizeUrl(currentUrl)) {
+          tag('info').log(`No new navigation target available after ${currentUrl}; stopping exploration`);
+          ctx.stop();
         }
 
         tag('info').log(`Navigating to: ${suggestion.target} - ${suggestion.reason}`);

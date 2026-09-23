@@ -1,0 +1,28 @@
+{
+  "name": "mdq",
+  "version": "0.0.0",
+  "description": "Query and edit markdown with a selector language - jq, for markdown",
+  "license": "MIT",
+  "type": "module",
+  "main": "./index.js",
+  "types": "./types/query.d.ts",
+  "exports": {
+    ".": {
+      "types": "./types/query.d.ts",
+      "import": "./index.js"
+    }
+  },
+  "bin": {
+    "mdq": "./bin/mdq.js"
+  },
+  "files": ["index.js", "types/", "bin/", "README.md"],
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": ["markdown", "query", "selector", "cli", "jq", "frontmatter", "marked", "edit"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/testomatio/explorbot",
+    "directory": "src/utils/mdq"
+  }
+}

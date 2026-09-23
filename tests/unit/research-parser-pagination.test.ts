@@ -62,7 +62,7 @@ describe('pagination line', () => {
 });
 
 describe('rewriting an entry', () => {
-  const rewrite = (markdown: string, key: string, value: string) => mdq(markdown).query('section2(~"Menu")').query('blockquote[0]').setKeyValue(key, value);
+  const rewrite = (markdown: string, key: string, value: string) => mdq(markdown).query('section2(~"Menu")').query('blockquote[0]').setKeyValue(key, value).toString();
 
   it('leaves the blockquote readable', () => {
     const markdown = `## Menu\n\n> Container: '.old'\n\n| Element | ARIA | CSS | eidx |\n`;
