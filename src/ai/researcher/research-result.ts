@@ -52,9 +52,9 @@ export class ResearchResult {
     const escaped = section.name.replace(/"/g, '\\"');
     let sectionQuery = mdq(this.text).query(`section2(~"${escaped}")`);
     if (sectionQuery.count() === 0) sectionQuery = mdq(this.text).query(`section3(~"${escaped}")`);
-    const updated = sectionQuery.query('table').replace(`${newTable.trimEnd()}\n`);
+    const updated = sectionQuery.query('table').replace(`${newTable.trimEnd()}\n`).toString();
     if (updated === this.text) return;
-    section.rawMarkdown = mdq(section.rawMarkdown).query('table').replace(`${newTable.trimEnd()}\n`);
+    section.rawMarkdown = mdq(section.rawMarkdown).query('table').replace(`${newTable.trimEnd()}\n`).toString();
     this.text = updated;
   }
 

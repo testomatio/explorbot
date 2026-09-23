@@ -58,7 +58,7 @@ export function WithPagination<T extends Constructor>(Base: T) {
       let sectionQuery = mdq(result.text).query(`section2(~"${escaped}")`);
       if (sectionQuery.count() === 0) sectionQuery = mdq(result.text).query(`section3(~"${escaped}")`);
       if (sectionQuery.count() === 0) return;
-      result.text = sectionQuery.query('blockquote[0]').setKeyValue('Pagination', strategy);
+      result.text = sectionQuery.query('blockquote[0]').setKeyValue('Pagination', strategy).toString();
     }
   };
 }

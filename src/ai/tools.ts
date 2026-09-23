@@ -15,6 +15,8 @@ import { pause } from '../utils/loop.js';
 import { compactErrorMessage, normalizeInlineText, truncate } from '../utils/strings.ts';
 import { WebElement } from '../utils/web-element.ts';
 import type { ToolDeps } from './agent.ts';
+import { createJudgeTool } from './judge-tool.ts';
+import { JUDGE_PAGE_CAP, type Judge, UNDECIDED } from './judge.ts';
 import { Navigator } from './navigator.ts';
 import { Researcher } from './researcher.ts';
 import { sectionContextRule } from './rules.ts';
@@ -31,7 +33,7 @@ interface AgentToolDeps extends ToolDeps {
 
 export const ASSERTION_TOOLS = ['verify'] as const;
 
-export function createCodeceptJSTools({ explorer, stateManager }: ToolDeps, task: Task) {
+export function createCodeceptJSTools({ explorer, stateManager, judge }: ToolDeps, task: Task) {
   return {
     click: tool({
       description: dedent`
@@ -156,7 +158,9 @@ export function createCodeceptJSTools({ explorer, stateManager }: ToolDeps, task
             attempts,
             suggestion,
           },
-          ambiguityError || action.lastError
+          ambiguityError || action.lastError,
+          judge,
+          explanation
         );
       },
     }),
@@ -232,7 +236,9 @@ export function createCodeceptJSTools({ explorer, stateManager }: ToolDeps, task
             attempts,
             suggestion: 'Use xpathCheck() to locate the row/card/tree node, or visualClick() if the hover target is only visually identifiable.',
           },
-          action.lastError
+          action.lastError,
+          judge,
+          explanation
         );
       },
     }),
@@ -437,7 +443,9 @@ export function createCodeceptJSTools({ explorer, stateManager }: ToolDeps, task
                 attempts: action.executedSteps,
                 suggestion: formSuggestion,
               },
-              action.lastError
+              action.lastError,
+              judge,
+              explanation
             );
           }
 
@@ -587,7 +595,7 @@ export function createLearnExperienceTool({ getExperienceTracker, getState }: { 
   });
 }
 
-export function createAgentTools({ explorer, stateManager, ai, researcher, navigator, supervisor, withExperience }: AgentToolDeps): any {
+export function createAgentTools({ explorer, stateManager, ai, judge, researcher, navigator, supervisor, withExperience }: AgentToolDeps): any {
   const tools: Record<string, any> = {
     see: tool({
       description: dedent`
@@ -724,6 +732,13 @@ export function createAgentTools({ explorer, stateManager, ai, researcher, navig
           }
 
           if (result.inexpressible) {
+            if (result.judged?.approved) {
+              return failedToolResult('verify', `No assertion could express this claim, but the page appears to confirm it: ${assertion}`, {
+                inexpressible: true,
+                suggestion: 'This is a judgement about the page, not an assertion that ran in the browser — a hint, not proof. Restate the claim in terms of what is visible or of a control state to get a real assertion.',
+              });
+            }
+
             return failedToolResult('verify', `No assertion could express this claim: ${assertion}`, {
               inexpressible: true,
               suggestion: 'This is not evidence the page is wrong — the claim could not be turned into an assertion. Restate it in terms of what is visible or of a control state, or check it with see().',
@@ -1143,6 +1158,20 @@ export function createAgentTools({ explorer, stateManager, ai, researcher, navig
     });
   }
 
+  const buildJudgeState = async () => {
+    const activeTest = explorer.activeTest;
+    const state = stateManager.getCurrentState();
+    const result = state ? ActionResult.fromState(state) : null;
+    return {
+      task: activeTest?.scenario || '',
+      page: cap(result?.getCompactARIA(), JUDGE_PAGE_CAP),
+      recentActions: Object.values(activeTest?.steps || {})
+        .slice(-JUDGE_RECENT_ACTIONS_LIMIT)
+        .map((step) => step.text),
+    };
+  };
+  Object.assign(tools, createJudgeTool({ explorer, stateManager, ai, judge }, buildJudgeState));
+
   withdrawVisionTools(tools);
 
   return tools;
@@ -1158,6 +1187,7 @@ const NAVIGATED_SUGGESTION = 'The action left the page. Elements are never compa
 const ARIA_OUTPUT_CAP = 4000;
 const HTML_OUTPUT_CAP = 6000;
 const ANALYSIS_OUTPUT_CAP = 2000;
+const JUDGE_RECENT_ACTIONS_LIMIT = 8;
 
 function cap(text: string | undefined | null, max: number): string {
   if (!text) return '';
@@ -1267,7 +1297,7 @@ function hasObservablePageChange(data?: Record<string, any>): boolean {
   return Array.isArray(data.pageDiff.htmlParts) && data.pageDiff.htmlParts.length > 0;
 }
 
-export async function failedToolResult(action: string, message: string, data?: Record<string, any>, error?: Error | null) {
+export async function failedToolResult(action: string, message: string, data?: Record<string, any>, error?: Error | null, judge?: Judge, intent?: string) {
   const result: Record<string, any> = { success: false, action, message, ...data };
   if (data?.pageDiff) {
     result.suggestion = data.suggestion ? `${data.suggestion} ${PAGE_DIFF_SUGGESTION}` : PAGE_DIFF_SUGGESTION;
@@ -1279,6 +1309,11 @@ export async function failedToolResult(action: string, message: string, data?: R
     result.suggestion = getMultipleElementsSuggestion();
     result.multipleElementsDetected = true;
     result.elements = formatElementList(matched);
+    const labels = (matched || []).map((element) => `${element.text || 'no text'} — ${element.html}`);
+    const pick = await judge?.decide('Which listed element does the intent name?', [...labels, UNDECIDED], { intent });
+    if (!pick?.value) return result;
+    const index = labels.indexOf(pick.value) + 1;
+    result.suggestion = `Element ${index} is the one meant. Repeat the action with step.opts({ elementIndex: ${index} }) as the last argument.`;
     return result;
   }
 

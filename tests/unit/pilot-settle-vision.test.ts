@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it } from 'bun:test';
+import { Decision } from '../../src/ai/judge.ts';
 import { Pilot } from '../../src/ai/pilot.ts';
 import { Stats } from '../../src/stats.ts';
 import { Test, TestResult } from '../../src/test-plan.ts';
 
-function buildPilot(provider: any): Pilot {
-  return Object.assign(Object.create(Pilot.prototype), { provider }) as Pilot;
+function buildPilot(provider: any, judge?: any): Pilot {
+  return Object.assign(Object.create(Pilot.prototype), { provider, judge }) as Pilot;
 }
 
 function finalPage(): any {
@@ -103,5 +104,57 @@ describe('Pilot settling outcomes against the final page', () => {
 
     expect(settled).toEqual([{ text: 'the list refreshes', status: 'unverified' }]);
     expect(models).toEqual(['text-model']);
+  });
+});
+
+describe('Pilot settling outcomes via the judge', () => {
+  const judgeHappened = (settles: string) => ({
+    decide: async (question: string, options: string[]) => {
+      if (!question.includes(settles)) return new Decision(null, 0.5);
+      return new Decision(options[0], 0.9);
+    },
+  });
+
+  it('settles what the judge approves and leaves the rest to the model', async () => {
+    const asked: string[] = [];
+    const pilot = buildPilot(
+      {
+        hasVision: () => false,
+        getAgenticModel: () => 'text-model',
+        generateObject: async (messages: any[]) => {
+          asked.push(messages[0].content);
+          return { object: { outcomes: [{ expectation: 'the list refreshes', status: 'failed' }] } };
+        },
+      },
+      judgeHappened('the editor opens')
+    );
+
+    const settled = await pilot.settleExpectations(new Test('open the editor', 'normal', ['the editor opens', 'the list refreshes'], '/skills'));
+
+    expect(settled).toEqual([
+      { text: 'the editor opens', status: 'passed' },
+      { text: 'the list refreshes', status: 'failed' },
+    ]);
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).not.toContain('the editor opens');
+  });
+
+  it('does not ask the model when the judge settles every outcome', async () => {
+    let modelAsked = false;
+    const pilot = buildPilot(
+      {
+        hasVision: () => false,
+        generateObject: async () => {
+          modelAsked = true;
+          return null;
+        },
+      },
+      judgeHappened('the editor opens')
+    );
+
+    const settled = await pilot.settleExpectations(new Test('open the editor', 'normal', ['the editor opens'], '/skills'));
+
+    expect(settled).toEqual([{ text: 'the editor opens', status: 'passed' }]);
+    expect(modelAsked).toBe(false);
   });
 });
