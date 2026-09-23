@@ -3,6 +3,7 @@
 ## 2026-09-23
 
 ### Changes
+- [Tester] Can now check what a copy button put into the clipboard: whether it contains a text or equals it exactly. The tester clears the clipboard before copying, so an old value cannot pass the check. Needs CodeceptJS 4.2.
 - [Tester] A test now starts from a page loaded after planning, so data prepared for it through the API is on screen from the first step. Previously the tester read the page as it looked before the data was prepared, concluded the item was missing, and went off to create its own through the UI.
 - [Pilot] When Pilot prepares data for a test, it now tells the tester what was created — type, name and id — and to use it rather than create the same thing through the UI. This arrives even when Pilot spends its whole turn on tool calls and writes no plan.
 - [Pilot] Data prepared while a test is already running now comes with a request to reload the page, since the open page cannot show it yet.
