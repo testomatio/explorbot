@@ -324,7 +324,12 @@ export class Tester extends TaskAgent implements Agent {
               const guidance = await this.pilot.reviewNewPage(task, currentState, conversation);
               if (guidance) nextStep += `\n\n${guidance}`;
             } else if (this.shouldAnalyzeProgress(iteration, currentState) && this.pilot) {
-              const guidance = await this.pilot.analyzeProgress(task, currentState, conversation, !this.isStruggling);
+              let guidance: string;
+              if (this.isStruggling) {
+                guidance = await this.pilot.analyzeProgress(task, currentState, conversation);
+              } else {
+                guidance = await this.pilot.periodicAnalyzeProgress(task, currentState, conversation);
+              }
               if (guidance) nextStep += `\n\n${guidance}`;
               this.consecutiveFailures = 0;
               this.lastAnalyzedStateHash = currentState.hash;

@@ -542,7 +542,23 @@ export class Pilot implements Agent {
     );
   }
 
-  async analyzeProgress(task: Test, currentState: ActionResult, testerConversation: Conversation, routine: boolean): Promise<string> {
+  async periodicAnalyzeProgress(task: Test, currentState: ActionResult, testerConversation: Conversation): Promise<string> {
+    const toolCalls = testerConversation.getToolExecutions().slice(-this.stepsToReview);
+    const healthy = await this.judge?.decide('The recent actions advance the scenario toward its remaining expected outcomes.', null, {
+      scenario: task.scenario,
+      plannedSteps: task.plannedSteps,
+      expectations: this.formatExpectations(task),
+      runLog: task.notesToString() || 'No steps recorded.',
+      visitedUrls: task.getVisitedUrls({ localOnly: true }),
+      state: this.buildStateContext(currentState),
+      page: currentState.getCompactARIA().slice(0, JUDGE_PAGE_CAP),
+      recentActions: this.formatActions(toolCalls),
+    });
+    if (healthy?.approved) return '';
+    return this.analyzeProgress(task, currentState, testerConversation);
+  }
+
+  async analyzeProgress(task: Test, currentState: ActionResult, testerConversation: Conversation): Promise<string> {
     tag('substep').log('Pilot analyzing progress...');
 
     if (!this.conversation) {
@@ -554,20 +570,6 @@ export class Pilot implements Agent {
     const toolCalls = testerConversation.getToolExecutions().slice(-this.stepsToReview);
     const actionsContext = this.formatActions(toolCalls);
     const stateContext = this.buildStateContext(currentState);
-
-    if (routine) {
-      const healthy = await this.judge?.decide('The recent actions advance the scenario toward its remaining expected outcomes.', null, {
-        scenario: task.scenario,
-        plannedSteps: task.plannedSteps,
-        expectations: this.formatExpectations(task),
-        runLog: task.notesToString() || 'No steps recorded.',
-        visitedUrls: task.getVisitedUrls({ localOnly: true }),
-        state: stateContext,
-        page: currentState.getCompactARIA().slice(0, JUDGE_PAGE_CAP),
-        recentActions: actionsContext,
-      });
-      if (healthy?.approved) return '';
-    }
 
     const hasFailures = toolCalls.length === 0 || toolCalls.some((t) => !t.wasSuccessful);
 
