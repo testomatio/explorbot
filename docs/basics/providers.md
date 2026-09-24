@@ -333,6 +333,13 @@ export default {
 | `tool` | `boolean` | Give Tester and Pilot a `judge` tool to ask their own questions. Default: `true` |
 | `direct` | `boolean` | Consult the model at Explorbot's built-in decision points. Default: `true` |
 
+Without a config file, or to turn it on for one run, set `EXPLORBOT_DECISION_MODEL` or pass `--decision-model` as `provider/model-id`. It overrides `provider` and `model` in the config and keeps `tool` and `direct`:
+
+```bash
+EXPLORBOT_DECISION_MODEL=openrouter/typesafe/jev-1.13 npx explorbot explore
+npx prima-cli go "Settings" --decision-model typesafe/jev-latest
+```
+
 Leave `decisionModel` unset and Explorbot never calls it. An unknown provider or a missing API key stops Explorbot at startup.
 
 Explorbot acts on an answer only when it is more than 70% sure, and otherwise does what it would have done without the decision model. See [Decisions](../web-testing/decisions.md) for where it is consulted, the `judge` tool, and what happens when an answer is rejected.

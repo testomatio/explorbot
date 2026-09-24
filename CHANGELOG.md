@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-09-24
+
+### Changes
+- The decision model can be turned on without a config file: set `EXPLORBOT_DECISION_MODEL=openrouter/typesafe/jev-1.13` or pass `--decision-model typesafe/jev-latest` to `explorbot` or `prima-cli`. Either overrides `ai.decisionModel` for that run; `PRIMA_CLI_DECISION_MODEL` works too.
+
 ## 2026-09-23
 
 ### Changes
