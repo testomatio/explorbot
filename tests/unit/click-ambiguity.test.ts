@@ -115,10 +115,58 @@ describe('judging an ambiguous match', () => {
     expect(Object.keys(result).sort()).toEqual(['action', 'elements', 'message', 'multipleElementsDetected', 'success', 'suggestion']);
   });
 
-  it('passes the judge through from the click tool', async () => {
+  it('clicks the element the judge picks right away, before the remaining fallbacks', async () => {
+    const { deps, action } = fakeDeps(() => multipleElementsError());
+    const tools = createCodeceptJSTools({ ...deps, judge: judgePicking(1) } as any, fakeTask());
+    await tools.click.execute({ commands: [`I.click({"role":"switch"})`, `I.click('.other')`], explanation: 'Toggle the control' }, {} as any);
+    expect(action.ran).toEqual([`I.click({"role":"switch"})`, `I.click({"role":"switch"}, step.opts({ elementIndex: 2 }))`, `I.click('.other')`]);
+  });
+
+  it('asks the judge once per click', async () => {
+    let asked = 0;
+    const judge = {
+      decide: async (_question: string, options: string[]) => {
+        asked++;
+        return new Decision(options[0], 0.9);
+      },
+    };
     const { deps } = fakeDeps(() => multipleElementsError());
-    const tools = createCodeceptJSTools({ ...deps, judge: judgePicking(0) } as any, fakeTask());
+    const tools = createCodeceptJSTools({ ...deps, judge } as any, fakeTask());
+    await tools.click.execute({ commands: [`I.click({"role":"switch"})`], explanation: 'Toggle the control' }, {} as any);
+    expect(asked).toBe(1);
+  });
+
+  it('skips the judge and sends the model to visualClick when the matches are identical', async () => {
+    let asked = 0;
+    const judge = {
+      decide: async () => {
+        asked++;
+        return new Decision(null, 0);
+      },
+    };
+    const { deps, action } = fakeDeps(() => multipleElementsError([], ['', '']));
+    const tools = createCodeceptJSTools({ ...deps, judge } as any, fakeTask());
     const result = await tools.click.execute({ commands: [`I.click({"role":"switch"})`], explanation: 'Toggle the control' }, {} as any);
-    expect(result.suggestion).toContain('elementIndex: 1');
+    expect(asked).toBe(0);
+    expect(action.ran).toHaveLength(1);
+    expect(result.suggestion).toContain('visualClick()');
+  });
+
+  it('labels each option from the live element: icon, description and surrounding section', async () => {
+    const native = (data: Record<string, any>) => ({ evaluate: async () => data });
+    const error = multipleElementsError([], ['', '']);
+    const attrs = (context: string) => ({ class: 'btn', 'data-explorbot-context': context, 'data-explorbot-hit': 'target' });
+    (error as any).webElements[0].getNativeElement = () => native({ tag: 'button', text: '', icon: 'md-icon md-icon-tune', description: 'Filters', allAttrs: attrs('Run header') });
+    (error as any).webElements[1].getNativeElement = () => native({ tag: 'button', text: '', icon: 'md-icon md-icon-close', description: '', allAttrs: attrs('Run header') });
+    let options: string[] = [];
+    const judge = {
+      decide: async (_question: string, offered: string[]) => {
+        options = offered;
+        return new Decision(null, 0);
+      },
+    };
+    await failedToolResult('click', 'Multiple elements (2) found', {}, error, judge as any, 'Open filters');
+    expect(options[0]).toBe('button "no text", icon: md-icon md-icon-tune, described as: "Filters", in: "Run header"');
+    expect(options[1]).toBe('button "no text", icon: md-icon md-icon-close, in: "Run header"');
   });
 });

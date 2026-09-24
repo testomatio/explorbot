@@ -52,13 +52,29 @@ const actingTester: any = { getToolExecutions: () => [{ toolName: 'click', wasSu
 describe('Pilot.analyzeProgress — judge gate', () => {
   it('skips the review silently when the judge approves the run as healthy', async () => {
     const decideSpy = mock(healthy);
-    const guidance = await buildPilotWithJudge(decideSpy).analyzeProgress(buildTestTask(), buildState(), actingTester);
+    const guidance = await buildPilotWithJudge(decideSpy).analyzeProgress(buildTestTask(), buildState(), actingTester, true);
     expect(guidance).toBe('');
     expect(decideSpy).toHaveBeenCalledTimes(1);
   });
 
   it('reviews when the judge rejects', async () => {
-    const guidance = await buildPilotWithJudge(mock(unsure)).analyzeProgress(buildTestTask(), buildState(), actingTester);
+    const guidance = await buildPilotWithJudge(mock(unsure)).analyzeProgress(buildTestTask(), buildState(), actingTester, true);
     expect(guidance).toBe('NEXT: keep going');
+  });
+
+  it('hands the judge the goal checklist and the run log', async () => {
+    const decideSpy = mock(healthy);
+    await buildPilotWithJudge(decideSpy).analyzeProgress(buildTestTask(), buildState(), actingTester, true);
+    const state = (decideSpy.mock.calls[0] as any[])[2];
+    expect(state.expectations).toContain('REMAINING: page works');
+    expect(state.runLog).toBeDefined();
+    expect(state.visitedUrls).toContain('/page');
+  });
+
+  it('always reviews a struggling run without asking the judge', async () => {
+    const decideSpy = mock(healthy);
+    const guidance = await buildPilotWithJudge(decideSpy).analyzeProgress(buildTestTask(), buildState(), actingTester, false);
+    expect(guidance).toBe('NEXT: keep going');
+    expect(decideSpy).not.toHaveBeenCalled();
   });
 });

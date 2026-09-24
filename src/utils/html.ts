@@ -377,6 +377,25 @@ export function extractElementData(el: Element, config?: ElementExtractionConfig
     return '';
   }
 
+  function describeIcon(target: Element): string {
+    const icon = target.querySelector('svg, img, i, [data-icon]');
+    if (!icon) return '';
+    const use = icon.querySelector('use');
+    const parts = [icon.getAttribute('class'), icon.getAttribute('data-icon'), icon.getAttribute('aria-label'), icon.getAttribute('alt'), use?.getAttribute('href'), use?.getAttribute('xlink:href')];
+    return normalizeText(parts.filter(Boolean).join(' ')).slice(0, cfg.maxTextLength);
+  }
+
+  function describeTarget(target: Element): string {
+    const texts = (target.getAttribute('aria-describedby') || '')
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((id) => readText(document.getElementById(id)))
+      .filter(Boolean);
+    const title = target.getAttribute('title');
+    if (title) texts.push(normalizeText(title));
+    return texts.join(' ').slice(0, cfg.maxContextLength);
+  }
+
   const rect = el.getBoundingClientRect();
   if (rect.width === 0 && rect.height === 0) return null;
   const style = window.getComputedStyle(el);
@@ -425,6 +444,8 @@ export function extractElementData(el: Element, config?: ElementExtractionConfig
   return {
     tag: el.tagName.toLowerCase(),
     text: normalizeText(el.textContent || '').slice(0, cfg.maxTextLength),
+    icon: describeIcon(el),
+    description: describeTarget(el),
     allAttrs,
     outerHTML: el.outerHTML.slice(0, cfg.maxOuterHTMLLength),
     x: Math.round(rect.x + rect.width / 2),

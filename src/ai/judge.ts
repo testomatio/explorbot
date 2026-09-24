@@ -29,12 +29,15 @@ export class Decision {
 export class Judge {
   constructor(
     private provider: JudgeProvider,
-    private enabled: { tool: boolean; direct: boolean }
+    private enabled: { tool: boolean; direct: boolean },
+    private threshold = APPROVAL_THRESHOLD
   ) {}
 
   static fromConfig(config: AIConfig['decisionModel']): Judge | null {
     if (!config) return null;
-    return new Judge(new JudgeProvider(config.provider, config.model), { tool: config.tool !== false, direct: config.direct !== false });
+    const threshold = config.threshold ?? APPROVAL_THRESHOLD;
+    if (!(threshold > 0 && threshold < 1)) throw new Error(`decisionModel.threshold must be between 0 and 1, got ${config.threshold}`);
+    return new Judge(new JudgeProvider(config.provider, config.model), { tool: config.tool !== false, direct: config.direct !== false }, threshold);
   }
 
   get toolEnabled(): boolean {
@@ -51,7 +54,9 @@ export class Judge {
     return Observability.run('judge.decide', { tags: ['judge'] }, async () => {
       setActivity('⚖️ Asking judge...', 'ai');
       const decision = await this.request(question, options, state).finally(() => clearActivity());
-      Observability.getSpan()?.setAttribute('ai.telemetry.metadata.judgeDecision', JSON.stringify({ question, value: decision.value, confidence: decision.confidence }));
+      const span = Observability.getSpan();
+      span?.setAttribute('ai.telemetry.metadata.judgeQuestion', question);
+      span?.setAttribute('ai.telemetry.metadata.judgeDecision', JSON.stringify({ question, value: decision.value, confidence: decision.confidence, threshold: this.threshold, model: this.provider.model }));
       return decision;
     });
   }
@@ -62,14 +67,18 @@ export class Judge {
 
     const answer = await this.provider.decide(state, question, list).catch((error: unknown) => this.recordFailure(error));
     if (!answer) return new Decision(null, 0);
-    if (answer.probability <= APPROVAL_THRESHOLD) return new Decision(null, answer.probability);
+    Observability.getSpan()?.setAttribute('langfuse.observation.output', JSON.stringify(answer));
+    if (answer.probability <= this.threshold) return new Decision(null, answer.probability);
     if (answer.value === UNDECIDED) return new Decision(null, answer.probability);
     return new Decision(answer.value, answer.probability);
   }
 
   private recordFailure(error: unknown): null {
     debugLog('judge declined: %s', error);
-    Observability.getSpan()?.setAttribute('ai.telemetry.metadata.judgeError', String(error));
+    const span = Observability.getSpan();
+    span?.setAttribute('ai.telemetry.metadata.judgeError', String(error));
+    span?.setAttribute('langfuse.observation.level', 'ERROR');
+    span?.setAttribute('langfuse.observation.status_message', String(error));
     return null;
   }
 }

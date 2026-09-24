@@ -19,7 +19,7 @@ import type { Agent, AgentDeps } from './agent.ts';
 import type { Conversation } from './conversation.ts';
 import type { Fisherman } from './fisherman.ts';
 import { createAskApiTool } from './fisherman/tools.ts';
-import { type Judge, UNDECIDED } from './judge.ts';
+import { JUDGE_PAGE_CAP, type Judge, UNDECIDED } from './judge.ts';
 import type { Navigator } from './navigator.ts';
 import type { Provider } from './provider.ts';
 import type { Researcher } from './researcher.ts';
@@ -542,7 +542,7 @@ export class Pilot implements Agent {
     );
   }
 
-  async analyzeProgress(task: Test, currentState: ActionResult, testerConversation: Conversation): Promise<string> {
+  async analyzeProgress(task: Test, currentState: ActionResult, testerConversation: Conversation, routine: boolean): Promise<string> {
     tag('substep').log('Pilot analyzing progress...');
 
     if (!this.conversation) {
@@ -555,8 +555,19 @@ export class Pilot implements Agent {
     const actionsContext = this.formatActions(toolCalls);
     const stateContext = this.buildStateContext(currentState);
 
-    const healthy = await this.judge?.decide('The run is moving toward the goal and can continue without a supervisor reviewing it now.', null, { scenario: task.scenario, state: stateContext, recentActions: actionsContext });
-    if (healthy?.approved) return '';
+    if (routine) {
+      const healthy = await this.judge?.decide('The recent actions advance the scenario toward its remaining expected outcomes.', null, {
+        scenario: task.scenario,
+        plannedSteps: task.plannedSteps,
+        expectations: this.formatExpectations(task),
+        runLog: task.notesToString() || 'No steps recorded.',
+        visitedUrls: task.getVisitedUrls({ localOnly: true }),
+        state: stateContext,
+        page: currentState.getCompactARIA().slice(0, JUDGE_PAGE_CAP),
+        recentActions: actionsContext,
+      });
+      if (healthy?.approved) return '';
+    }
 
     const hasFailures = toolCalls.length === 0 || toolCalls.some((t) => !t.wasSuccessful);
 

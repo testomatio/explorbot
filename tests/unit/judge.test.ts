@@ -58,6 +58,12 @@ describe('Judge.decide', () => {
     expect((await judge.consult('x', null, {})).approved).toBe(true);
   });
 
+  it('applies a configured threshold instead of 70%', async () => {
+    const provider: any = { decide: async () => ({ value: 'yes', probability: 0.6 }) };
+    expect((await new Judge(provider, { tool: true, direct: true }, 0.5).decide('x', null, {})).approved).toBe(true);
+    expect((await new Judge(provider, { tool: true, direct: true }, 0.65).decide('x', null, {})).rejected).toBe(true);
+  });
+
   it('rejects instead of throwing when the provider fails', async () => {
     const provider: any = {
       decide: async () => {
@@ -88,6 +94,11 @@ describe('Judge.fromConfig', () => {
 
   it('builds nothing when unset', () => {
     expect(Judge.fromConfig(undefined)).toBeNull();
+  });
+
+  it('refuses a threshold outside 0..1', () => {
+    expect(() => Judge.fromConfig({ provider: 'openrouter', model: 'typesafe/jev-1.13', threshold: 70 })).toThrow('between 0 and 1');
+    expect(Judge.fromConfig({ provider: 'openrouter', model: 'typesafe/jev-1.13', threshold: 0.8 })).not.toBeNull();
   });
 
   it('enables both paths by default, and honours each toggle', () => {

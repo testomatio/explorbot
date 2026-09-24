@@ -17,12 +17,14 @@ A choice always includes an extra *undecided* option, so the model can say that 
 
 Explorbot acts on an answer only when it is **approved**:
 
-- a statement's probability is above **70%**, or
-- a choice picked a real option, not *undecided*, with a probability above **70%**.
+- a statement's probability is above the threshold, or
+- a choice picked a real option, not *undecided*, with a probability above the threshold.
+
+The threshold is **70%** unless `decisionModel.threshold` sets another value.
 
 Anything else counts as **rejected**, including:
 
-- a confident "no", or any probability of 70% or lower
+- a confident "no", or any probability at or below the threshold
 - *undecided*
 - a choice offered with fewer than two options
 - a request timeout (15 seconds) or a failed request
@@ -36,14 +38,17 @@ These are fixed places in the code where Explorbot asks the decision model befor
 
 ### Tester: locator matches several elements
 
-When a click or fill fails because the locator matched more than one element, Explorbot lists the matches and asks which one the step meant.
+When a click or fill fails because the locator matched more than one element, Explorbot lists the matches and asks which one the step meant. Each option describes the element: its role and name, its icon, the text that describes it (`aria-describedby` or `title`), and the section it sits in.
 
-- **Approved:** the Tester is told which element to use and how to target it with `elementIndex`.
+- **Approved:** a click is repeated right away on the chosen element with `elementIndex`, before the Tester's remaining fallback locators. For other actions, the Tester is told which element to use.
+- **Identical options:** when two matches describe the same way, the question is not asked. The Tester is told to click by appearance with `visualClick()`.
 - **Fallback:** the Tester receives the numbered list of matches and picks one itself, narrows the locator, or uses a visual click.
 
 ### Pilot: progress review
 
-Every few steps, Pilot reviews the Tester's recent actions with the `agenticModel`. First it asks whether the run is moving toward its goal and can continue unsupervised for now.
+Every few steps, Pilot reviews the Tester's recent actions with the `agenticModel`. On a routine review it first asks whether the recent actions advance the scenario toward its remaining expected outcomes. The decision model sees the scenario, its planned steps, which expected outcomes are checked and which remain, the run log, the pages visited, the current page and the recent actions.
+
+A review forced by a run of failed or empty steps skips the question and goes straight to Pilot.
 
 - **Approved:** the review is skipped and the Tester continues. This saves one `agenticModel` call.
 - **Fallback:** Pilot runs its full review as usual.
@@ -105,4 +110,10 @@ The model supplies only the question. The tool gathers the rest of the state its
 
 ## Tracing
 
-Each question is recorded as a `judge.decide` span with the question, the answer and its confidence. A failed request also records the reason. The TUI shows `⚖️ Asking judge...` while a question is in flight. See [Observability](../contributing/observability.md) for setting up tracing.
+Each question is recorded as a `judge.decide` span:
+
+- **Input:** the exact request body sent to the provider: model, state and question. Post it again to the endpoint to replay the decision.
+- **Output:** the raw answer and its probability, before the threshold is applied.
+- **Metadata:** `judgeQuestion` for filtering by question, `judgeDecision` with the approved value, confidence, threshold and model, and `judgeEndpoint`.
+
+A failed request marks the span as an error and records the reason. The TUI shows `⚖️ Asking judge...` while a question is in flight. See [Observability](../contributing/observability.md) for setting up tracing.
