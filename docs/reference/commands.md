@@ -112,6 +112,7 @@ EXPLORBOT_AI_PROVIDER=openrouter \
 | `EXPLORBOT_URL` | Base URL to test; the API boat reads it as the base endpoint |
 | `EXPLORBOT_VISION_MODEL` | Screenshot analysis; overrides the provider recommendation |
 | `EXPLORBOT_AGENTIC_MODEL` | Captain and Pilot decisions; overrides the provider recommendation |
+| `EXPLORBOT_DECISION_MODEL` | Turns on the decision model, as provider/model-id (openrouter/typesafe/jev-1.13 or typesafe/jev-latest); overrides ai.decisionModel |
 | `EXPLORBOT_OUTPUT` | Output root for states, plans, research, and reports. Defaults to the site dir under ~/.explorbot/sites |
 | `EXPLORBOT_EPHEMERAL` | Keep no state between runs — output goes to a fresh temp directory instead of the site dir |
 | `EXPLORBOT_KNOWLEDGE` | Inline knowledge text, applied to every page |
