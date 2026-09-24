@@ -13,7 +13,7 @@ Every question has one of two shapes:
 | **Statement** | "The page shows that this claim is true." | Probability that the statement holds |
 | **Choice** | "Which listed element does the intent name?" plus numbered options | The chosen option and its probability |
 
-A choice always includes an extra *undecided* option, so the model can say that none of the options fits.
+A choice always includes an extra *undecided* option, so the model can say that none of the options fits. The question tells the model to choose it when it is not sure.
 
 Explorbot acts on an answer only when it is **approved**:
 

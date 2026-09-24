@@ -10,6 +10,7 @@
 - [Pilot] To decide whether to skip a review, the decision model now sees the scenario, its planned steps, which expected outcomes are checked and which remain, the run log, the pages visited and the current page. It is asked one question: whether the recent actions advance the scenario toward its remaining outcomes.
 - [Tester] When a click matches several elements and the decision model names the one meant, that element is clicked right away. The tester no longer needs another turn to repeat the click.
 - [Tester] When the matching elements look identical, the decision model is not asked. The tester is told to click by appearance with `visualClick()`. Previously a pick among identical options always resolved to the first element.
+- When the decision model chooses from a list, the question now tells it to answer "undecided" if it is not sure or no option fits, instead of picking the closest one.
 - Tracing: each decision model call in Langfuse records the exact request as its input and the raw answer as its output, so a decision can be found by its question and replayed. A failed call is marked as an error.
 
 ## 2026-09-24

@@ -9,6 +9,7 @@ const debugLog = createDebug('explorbot:judge');
 const APPROVAL_THRESHOLD = 0.7;
 
 export const UNDECIDED = 'undecided';
+const UNDECIDED_HINT = `Choose "${UNDECIDED}" if you are not sure or no option fits.`;
 export const JUDGE_PAGE_CAP = 12000;
 
 export class Decision {
@@ -71,8 +72,10 @@ export class Judge {
   private async request(question: string, options: string[] | boolean | null, state: unknown): Promise<Decision> {
     let list: string[] | undefined;
     if (Array.isArray(options)) list = options;
+    let instructions = question;
+    if (list?.includes(UNDECIDED)) instructions = `${question} ${UNDECIDED_HINT}`;
 
-    const answer = await this.provider.decide(state, question, list).catch((error: unknown) => this.recordFailure(error));
+    const answer = await this.provider.decide(state, instructions, list).catch((error: unknown) => this.recordFailure(error));
     if (!answer) return new Decision(null, 0);
     Observability.getSpan()?.setAttribute('langfuse.observation.output', JSON.stringify(answer));
     if (answer.probability <= this.threshold) return new Decision(null, answer.probability);

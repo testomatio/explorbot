@@ -41,6 +41,14 @@ describe('Judge.decide', () => {
     expect(asked[0].options).toEqual(['Details', 'History', UNDECIDED]);
   });
 
+  it('tells the model to choose undecided when unsure, only when that option is offered', async () => {
+    const { judge, asked } = answering('History', 0.85);
+    await judge.decide('Which tab is active?', ['Details', 'History', UNDECIDED], {});
+    await judge.decide('Which tab is active?', ['Details', 'History'], {});
+    expect(asked[0].question).toBe(`Which tab is active? Choose "${UNDECIDED}" if you are not sure or no option fits.`);
+    expect(asked[1].question).toBe('Which tab is active?');
+  });
+
   it('rejects when the undecided option wins', async () => {
     expect((await answering(UNDECIDED, 0.9).judge.decide('x', ['Details', 'History', UNDECIDED], {})).rejected).toBe(true);
   });
