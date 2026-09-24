@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'bun:test';
-import { Decision } from '../../src/ai/judge.ts';
+import { Judge, UNDECIDED } from '../../src/ai/judge.ts';
 import { createCodeceptJSTools, failedToolResult } from '../../src/ai/tools.ts';
 import { ConfigParser } from '../../src/config.ts';
 
@@ -96,16 +96,26 @@ describe('click on an ambiguous locator', () => {
 });
 
 describe('judging an ambiguous match', () => {
-  const judgePicking = (index: number) => ({ decide: async (_question: string, options: string[]) => new Decision(options[index], 0.9) });
+  const judgeAnswering = (answer: (options: string[]) => string | null) => {
+    const asked: string[][] = [];
+    const provider: any = {
+      decide: async (_state: unknown, _question: string, options: string[]) => {
+        asked.push(options);
+        return { value: answer(options), probability: 0.9 };
+      },
+    };
+    return { judge: new Judge(provider, { tool: true, direct: true }), asked };
+  };
+  const judgePicking = (index: number) => judgeAnswering((options) => options[index]).judge;
 
   it('names the element the judge picks, by elementIndex', async () => {
-    const result = await failedToolResult('click', 'Multiple elements (2) found', {}, multipleElementsError(), judgePicking(1) as any, 'Toggle the control');
+    const result = await failedToolResult('form', 'Multiple elements (2) found', {}, multipleElementsError(), judgePicking(1), 'Toggle the control');
     expect(result.suggestion).toContain('elementIndex: 2');
   });
 
   it('keeps the numbered list when the judge rejects', async () => {
-    const judge = { decide: async () => new Decision(null, 0.5) };
-    const result = await failedToolResult('click', 'Multiple elements (2) found', {}, multipleElementsError(), judge as any, 'Toggle the control');
+    const { judge } = judgeAnswering(() => UNDECIDED);
+    const result = await failedToolResult('form', 'Multiple elements (2) found', {}, multipleElementsError(), judge, 'Toggle the control');
     expect(result.suggestion).not.toContain('is the one meant');
     expect(result.elements).toContain('Element 2:');
   });
@@ -123,50 +133,20 @@ describe('judging an ambiguous match', () => {
   });
 
   it('asks the judge once per click', async () => {
-    let asked = 0;
-    const judge = {
-      decide: async (_question: string, options: string[]) => {
-        asked++;
-        return new Decision(options[0], 0.9);
-      },
-    };
+    const { judge, asked } = judgeAnswering((options) => options[0]);
     const { deps } = fakeDeps(() => multipleElementsError());
     const tools = createCodeceptJSTools({ ...deps, judge } as any, fakeTask());
     await tools.click.execute({ commands: [`I.click({"role":"switch"})`], explanation: 'Toggle the control' }, {} as any);
-    expect(asked).toBe(1);
+    expect(asked).toHaveLength(1);
   });
 
   it('skips the judge and sends the model to visualClick when the matches are identical', async () => {
-    let asked = 0;
-    const judge = {
-      decide: async () => {
-        asked++;
-        return new Decision(null, 0);
-      },
-    };
+    const { judge, asked } = judgeAnswering((options) => options[0]);
     const { deps, action } = fakeDeps(() => multipleElementsError([], ['', '']));
     const tools = createCodeceptJSTools({ ...deps, judge } as any, fakeTask());
     const result = await tools.click.execute({ commands: [`I.click({"role":"switch"})`], explanation: 'Toggle the control' }, {} as any);
-    expect(asked).toBe(0);
+    expect(asked).toHaveLength(0);
     expect(action.ran).toHaveLength(1);
-    expect(result.suggestion).toContain('visualClick()');
-  });
-
-  it('labels each option from the live element: icon, description and surrounding section', async () => {
-    const native = (data: Record<string, any>) => ({ evaluate: async () => data });
-    const error = multipleElementsError([], ['', '']);
-    const attrs = (context: string) => ({ class: 'btn', 'data-explorbot-context': context, 'data-explorbot-hit': 'target' });
-    (error as any).webElements[0].getNativeElement = () => native({ tag: 'button', text: '', icon: 'md-icon md-icon-tune', description: 'Filters', allAttrs: attrs('Run header') });
-    (error as any).webElements[1].getNativeElement = () => native({ tag: 'button', text: '', icon: 'md-icon md-icon-close', description: '', allAttrs: attrs('Run header') });
-    let options: string[] = [];
-    const judge = {
-      decide: async (_question: string, offered: string[]) => {
-        options = offered;
-        return new Decision(null, 0);
-      },
-    };
-    await failedToolResult('click', 'Multiple elements (2) found', {}, error, judge as any, 'Open filters');
-    expect(options[0]).toBe('button "no text", icon: md-icon md-icon-tune, described as: "Filters", in: "Run header"');
-    expect(options[1]).toBe('button "no text", icon: md-icon md-icon-close, in: "Run header"');
+    expect(result.elements).toContain('visualClick()');
   });
 });

@@ -81,6 +81,24 @@ describe('Judge.decide', () => {
   });
 });
 
+describe('Judge.pick', () => {
+  it('returns the 1-based position of the chosen option', async () => {
+    const { judge, asked } = answering('Second', 0.9);
+    expect(await judge.pick('Which one?', ['First', 'Second'], {})).toBe(2);
+    expect(asked[0].options).toEqual(['First', 'Second', UNDECIDED]);
+  });
+
+  it('returns null when undecided wins', async () => {
+    expect(await answering(UNDECIDED, 0.9).judge.pick('Which one?', ['First', 'Second'], {})).toBeNull();
+  });
+
+  it('does not ask when options are identical, since a pick could not tell them apart', async () => {
+    const { judge, asked } = answering('Same', 0.9);
+    expect(await judge.pick('Which one?', ['Same', 'Same'], {})).toBeNull();
+    expect(asked).toHaveLength(0);
+  });
+});
+
 describe('Judge.fromConfig', () => {
   let saved: string | undefined;
   beforeEach(() => {

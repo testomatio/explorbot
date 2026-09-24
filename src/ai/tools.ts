@@ -9,14 +9,14 @@ import { type Task, TestResult } from '../test-plan.js';
 import { ariaRefSelector, describeRef, refIsGone } from '../utils/aria-ref.ts';
 import { LARGE_ARIA_CHANGE_THRESHOLD } from '../utils/aria.ts';
 import { isFatalBrowserError } from '../utils/browser-errors.ts';
-import { ELEMENT_EXTRACTION_CONFIG, EXPLORBOT_ATTRS, type RawElementData, cleanHtmlSnippet, extractElementData, inferHtmlRole } from '../utils/html.ts';
+import { cleanHtmlSnippet } from '../utils/html.ts';
 import { createDebug, tag } from '../utils/logger.js';
 import { pause } from '../utils/loop.js';
 import { compactErrorMessage, normalizeInlineText, truncate } from '../utils/strings.ts';
 import { WebElement } from '../utils/web-element.ts';
 import type { ToolDeps } from './agent.ts';
 import { createJudgeTool } from './judge-tool.ts';
-import { JUDGE_PAGE_CAP, type Judge, UNDECIDED } from './judge.ts';
+import { JUDGE_PAGE_CAP, type Judge } from './judge.ts';
 import { Navigator } from './navigator.ts';
 import { Researcher } from './researcher.ts';
 import { sectionContextRule } from './rules.ts';
@@ -121,8 +121,14 @@ export function createCodeceptJSTools({ explorer, stateManager, judge }: ToolDep
 
           if (!ambiguityError && action.lastError?.name === 'MultipleElementsFound') {
             ambiguityError = action.lastError;
-            const index = await pickMatchedElement(await extractWebElements(ambiguityError), judge, { intent: explanation, task: task.description });
-            if (index) commands.splice(i + 1, 0, withElementIndex(command, index));
+            const matched = await extractWebElements(ambiguityError);
+            const index = await judge?.pick(
+              PICK_ELEMENT_QUESTION,
+              (matched || []).map((el) => el.label),
+              { intent: explanation, task: task.description }
+            );
+            const end = command.lastIndexOf(')');
+            if (index) commands.splice(i + 1, 0, `${command.slice(0, end)}, step.opts({ elementIndex: ${index} })${command.slice(end)}`);
           }
 
           if (success) {
@@ -1311,11 +1317,11 @@ export async function failedToolResult(action: string, message: string, data?: R
     result.suggestion = getMultipleElementsSuggestion();
     result.multipleElementsDetected = true;
     result.elements = formatElementList(matched);
-    if (matched && hasIdenticalMatches(matched)) {
-      result.suggestion = 'The matched elements are identical, so their number cannot tell them apart. Click the one you mean by appearance with visualClick().';
-      return result;
-    }
-    const index = await pickMatchedElement(matched, judge, { intent });
+    const index = await judge?.pick(
+      PICK_ELEMENT_QUESTION,
+      (matched || []).map((el) => el.label),
+      { intent }
+    );
     if (!index) return result;
     result.suggestion = `Element ${index} is the one meant. Repeat the action with step.opts({ elementIndex: ${index} }) as the last argument.`;
     return result;
@@ -1383,11 +1389,12 @@ const MAX_DISAMBIGUATE_ELEMENTS = 10;
 const MAX_DISAMBIGUATE_TEXT = 80;
 const MAX_DISAMBIGUATE_HTML = 300;
 const MULTIPLE_ELEMENTS_PATTERN = 'multiple elements';
+const PICK_ELEMENT_QUESTION = 'Which listed element does the intent name?';
 
 async function extractWebElements(error: Error | null | undefined): Promise<MatchedElement[] | null> {
   if (!error || error.name !== 'MultipleElementsFound') return null;
 
-  const elements = (error as any).webElements as Array<{ toAbsoluteXPath: () => Promise<string>; toOuterHTML: () => Promise<string>; getText: () => Promise<string | null>; isVisible?: () => Promise<boolean>; getNativeElement?: () => any }> | undefined;
+  const elements = (error as any).webElements as Array<{ toAbsoluteXPath: () => Promise<string>; toOuterHTML: () => Promise<string>; getText: () => Promise<string | null>; isVisible?: () => Promise<boolean> }> | undefined;
   if (!elements?.length) return null;
 
   const result: MatchedElement[] = [];
@@ -1397,8 +1404,7 @@ async function extractWebElements(error: Error | null | undefined): Promise<Matc
       const html = truncate(cleanHtmlSnippet(await elements[i].toOuterHTML()), MAX_DISAMBIGUATE_HTML);
       const text = truncate(normalizeInlineText((await elements[i].getText()) || ''), MAX_DISAMBIGUATE_TEXT);
       const visible = await Promise.resolve(elements[i].isVisible?.()).catch(() => undefined);
-      const data = await Promise.resolve(elements[i].getNativeElement?.()?.evaluate(extractElementData, ELEMENT_EXTRACTION_CONFIG)).catch(() => null);
-      result.push({ xpath, html, text, visible, summary: summarizeMatch(data) });
+      result.push({ xpath, html, text, visible, label: `${text || 'no text'} — ${html}` });
     } catch (e) {
       debugLog('Failed to get details for element %d: %s', i, e);
     }
@@ -1408,7 +1414,7 @@ async function extractWebElements(error: Error | null | undefined): Promise<Matc
 
 function formatElementList(matched: MatchedElement[] | null): string {
   if (!matched) return 'Could not fetch element details. Repeat the action to get better info.';
-  const keys = matched.map(optionLabel);
+  const keys = matched.map((el) => `${el.text}::${el.visible}::${el.html}`);
   const list = matched
     .map((el, i) => {
       const lines = [`Element ${i + 1}:`, `Text: "${el.text}"`];
@@ -1417,49 +1423,13 @@ function formatElementList(matched: MatchedElement[] | null): string {
       if (wrapped.length) lines.push(`Wraps: element ${wrapped.map((j) => j + 1).join(', ')}`);
       const same = keys.map((_, j) => j).filter((j) => j !== i && keys[j] === keys[i]);
       if (same.length) lines.push(`Identical to element ${same.map((j) => j + 1).join(', ')}`);
-      if (el.summary) lines.push(`Summary: ${el.summary}`);
       lines.push(`XPath: ${el.xpath}`, `HTML: ${el.html}`);
       return lines.join('\n');
     })
     .join('\n\n');
 
-  if (!hasIdenticalMatches(matched)) return list;
+  if (new Set(keys).size === matched.length) return list;
   return `${list}\n\nIdentical matches are not told apart by their number — picking one is a guess. Click the one you mean by appearance with visualClick().`;
-}
-
-async function pickMatchedElement(matched: MatchedElement[] | null, judge: Judge | undefined, state: Record<string, unknown>): Promise<number | null> {
-  if (!matched || !judge || hasIdenticalMatches(matched)) return null;
-  const labels = matched.map(optionLabel);
-  const pick = await judge.decide('Which listed element does the intent name?', [...labels, UNDECIDED], state);
-  if (!pick.value) return null;
-  return labels.indexOf(pick.value) + 1;
-}
-
-function hasIdenticalMatches(matched: MatchedElement[]): boolean {
-  return new Set(matched.map(optionLabel)).size < matched.length;
-}
-
-function withElementIndex(command: string, index: number): string {
-  const end = command.lastIndexOf(')');
-  return `${command.slice(0, end)}, step.opts({ elementIndex: ${index} })${command.slice(end)}`;
-}
-
-function optionLabel(el: MatchedElement): string {
-  return el.summary || `${el.text || 'no text'} — ${el.html}`;
-}
-
-function summarizeMatch(data: RawElementData | null): string {
-  if (!data) return '';
-  const name = data.text || data.allAttrs['aria-label'] || 'no text';
-  const parts = [`${inferHtmlRole({ attrs: data.allAttrs, tag: data.tag })} "${name}"`];
-  if (data.icon) parts.push(`icon: ${data.icon}`);
-  if (data.description) parts.push(`described as: "${data.description}"`);
-  const context = data.allAttrs[EXPLORBOT_ATTRS.context];
-  if (context) parts.push(`in: "${context}"`);
-  const hit = data.allAttrs[EXPLORBOT_ATTRS.hit];
-  if (hit === 'covered') parts.push(`covered by ${data.allAttrs[EXPLORBOT_ATTRS.coveredBy] || 'another element'}`);
-  if (hit === 'offscreen') parts.push('offscreen');
-  return parts.join(', ');
 }
 
 export async function formatMatchedElements(error: Error | null | undefined): Promise<string | null> {
@@ -1484,6 +1454,6 @@ interface MatchedElement {
   xpath: string;
   html: string;
   text: string;
-  summary: string;
+  label: string;
   visible?: boolean;
 }

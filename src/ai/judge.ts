@@ -49,6 +49,13 @@ export class Judge {
     return this.consult(question, options, state);
   }
 
+  async pick(question: string, options: string[], state: unknown): Promise<number | null> {
+    if (new Set(options).size < options.length) return null;
+    const decision = await this.decide(question, [...options, UNDECIDED], state);
+    if (!decision.value) return null;
+    return options.indexOf(decision.value) + 1;
+  }
+
   async consult(question: string, options: string[] | boolean | null, state: unknown): Promise<Decision> {
     if (Array.isArray(options) && options.length < 2) return new Decision(null, 0);
     return Observability.run('judge.decide', { tags: ['judge'] }, async () => {

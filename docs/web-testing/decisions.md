@@ -38,10 +38,10 @@ These are fixed places in the code where Explorbot asks the decision model befor
 
 ### Tester: locator matches several elements
 
-When a click or fill fails because the locator matched more than one element, Explorbot lists the matches and asks which one the step meant. Each option describes the element: its role and name, its icon, the text that describes it (`aria-describedby` or `title`), and the section it sits in.
+When a click or fill fails because the locator matched more than one element, Explorbot lists the matches and asks which one the step meant.
 
 - **Approved:** a click is repeated right away on the chosen element with `elementIndex`, before the Tester's remaining fallback locators. For other actions, the Tester is told which element to use.
-- **Identical options:** when two matches describe the same way, the question is not asked. The Tester is told to click by appearance with `visualClick()`.
+- **Identical options:** when two matches look the same, the question is not asked. The Tester is told to click by appearance with `visualClick()`.
 - **Fallback:** the Tester receives the numbered list of matches and picks one itself, narrows the locator, or uses a visual click.
 
 ### Pilot: progress review

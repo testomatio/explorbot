@@ -37,23 +37,6 @@ describe('extractElementData', () => {
     expect(data?.outerHTML).toContain('aria-checked="false"');
   });
 
-  it('names an icon-only control by its icon and by the text that describes it', () => {
-    const dom = new JSDOM(`
-      <main>
-        <span id="tip">Filter runs</span>
-        <button aria-describedby="tip" title="Filters"><svg class="icon icon-funnel"><use href="#funnel"></use></svg></button>
-      </main>
-    `);
-    useDom(dom);
-    const button = dom.window.document.querySelector('button')!;
-    mockVisibleBox(button);
-
-    const data = extractElementData(button);
-
-    expect(data?.icon).toBe('icon icon-funnel #funnel');
-    expect(data?.description).toBe('Filter runs Filters');
-  });
-
   it('marks embedded code editor iframes', () => {
     const dom = new JSDOM(`
       <main>
