@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { relative, resolve } from 'node:path';
+import { dirname, relative, resolve } from 'node:path';
 import { tool } from 'ai';
 import { createBashTool } from 'bash-tool';
 import chalk from 'chalk';
@@ -19,6 +19,7 @@ import { createDebug, tag } from '../utils/logger.ts';
 import { loop } from '../utils/loop.ts';
 import { RulesLoader } from '../utils/rules-loader.ts';
 import { isInternalStep } from '../utils/step-analyzer.ts';
+import { ensureCodeceptResolvable } from '../utils/test-files.ts';
 import type { Agent, AgentDeps } from './agent.ts';
 import { toolExecutionLabel } from './conversation.ts';
 import type { Navigator } from './navigator.ts';
@@ -135,6 +136,7 @@ export class Rerunner extends TaskAgent implements Agent {
       codeceptjs.container.createMocha();
       const mocha = codeceptjs.container.mocha();
       mocha.reporter(class {});
+      ensureCodeceptResolvable(dirname(absPath));
       mocha.files = [absPath];
       mocha.loadFiles();
 
