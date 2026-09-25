@@ -103,6 +103,7 @@ class Explorer {
     if (!this.playwrightHelper) {
       throw new Error('Playwright helper not available');
     }
+    this.applyBasePathToHelper();
     await this.connectOrLaunchBrowser();
     const hasSession = !this.options?.attachedBrowser && this.options?.session && existsSync(this.options.session);
     await this.openContextPage();
@@ -358,6 +359,14 @@ class Explorer {
     await this.playwrightHelper._setPage(page);
     debugLog(`Adopted attached browser page: ${page.url()}`);
     await this.pinBaseQuery();
+  }
+
+  private applyBasePathToHelper(): void {
+    if (!ConfigParser.getInstance().getBasePath()) return;
+
+    const helper = this.playwrightHelper;
+    const original = helper.amOnPage.bind(helper);
+    helper.amOnPage = (url: string) => original(ConfigParser.getInstance().applyBasePath(url));
   }
 
   private async pinBaseQuery(): Promise<void> {

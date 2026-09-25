@@ -372,4 +372,23 @@ describe('Explorer', () => {
     await action.execute('I.see("Text on Page")');
     expect(action.getActionResult()?.html).toContain('Text on Page');
   });
+
+  it('scopes direct I.amOnPage calls on the helper once a base URL is set', async () => {
+    const visited: string[] = [];
+    const helper = (explorer as any).playwrightHelper;
+    helper.amOnPage = (url: string) => {
+      visited.push(url);
+    };
+
+    const parser = ConfigParser.getInstance();
+    (parser as any).runBase = { origin: baseUrl, path: '/teams/acme', query: '' };
+    (explorer as any).applyBasePathToHelper();
+
+    await helper.amOnPage('/runs');
+    await helper.amOnPage('https://other.example.com/login');
+
+    (parser as any).runBase = null;
+
+    expect(visited).toEqual(['/teams/acme/runs', 'https://other.example.com/login']);
+  });
 });

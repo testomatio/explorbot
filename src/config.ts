@@ -404,7 +404,14 @@ export class ConfigParser {
         let envUrl = options?.baseUrl;
         if (!envUrl && target?.startsWith('http')) envUrl = target;
 
-        const outputRoot = resolveOutputRoot(process.env.EXPLORBOT_URL || envUrl);
+        if (options?.baseUrl) {
+          const envOrigin = URL.parse(process.env.EXPLORBOT_URL || '')?.origin;
+          const baseOrigin = URL.parse(options.baseUrl)?.origin;
+          if (envOrigin && envOrigin !== baseOrigin) {
+            tag('warning').log(`--base-url ${baseOrigin} selects the site for this run — EXPLORBOT_URL ${envOrigin} is ignored`);
+          }
+        }
+        const outputRoot = resolveOutputRoot(options?.baseUrl || process.env.EXPLORBOT_URL || envUrl);
         loadedConfig = await this.buildEnvConfig(envUrl, outputRoot);
         sourcePath = join(outputRoot, 'explorbot.config.js');
 
@@ -493,6 +500,10 @@ export class ConfigParser {
 
   public getBaseQuery(): string {
     return this.runBase?.query || '';
+  }
+
+  public getBasePath(): string {
+    return this.runBase?.path || '';
   }
 
   public resolveTargetPath(target?: string): string {

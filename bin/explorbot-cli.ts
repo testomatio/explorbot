@@ -84,7 +84,7 @@ function addCommonOptions(cmd: Command): Command {
     .option('--debug', 'Enable debug logging (same as --verbose)')
     .option('-c, --config <path>', 'Path to configuration file')
     .option('-p, --path <path>', 'Working directory path')
-    .option('--base-url <url>', 'Run against this URL: its path scopes relative paths from plans, its query params ride along with every page load')
+    .option('--base-url <url>', 'Run against this URL: its path scopes relative paths (plans, commands, saved tests on rerun), its query params ride along with every page load')
     .option('-s, --show', 'Show browser window')
     .option('--headless', 'Run browser in headless mode')
     .option('--incognito', 'Run without recording experiences')
