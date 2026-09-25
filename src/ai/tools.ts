@@ -113,7 +113,7 @@ export function createCodeceptJSTools({ explorer, stateManager, judge }: ToolDep
 
         for (let i = 0; i < commands.length; i++) {
           const command = transformContainsCommand(commands[i]);
-          const success = await action.attempt(command, explanation);
+          let success = await action.attempt(command, explanation);
 
           const attempt: { command: string; success: boolean; error?: string } = { command, success };
           if (action.lastError) attempt.error = errorText(action.lastError);
@@ -121,14 +121,11 @@ export function createCodeceptJSTools({ explorer, stateManager, judge }: ToolDep
 
           if (!ambiguityError && action.lastError?.name === 'MultipleElementsFound') {
             ambiguityError = action.lastError;
-            const matched = await extractWebElements(ambiguityError);
-            const index = await judge?.pick(
-              PICK_ELEMENT_QUESTION,
-              (matched || []).map((el) => el.label),
-              { intent: explanation, task: task.description }
-            );
-            const end = command.lastIndexOf(')');
-            if (index) commands.splice(i + 1, 0, `${command.slice(0, end)}, step.opts({ elementIndex: ${index} })${command.slice(end)}`);
+            if (judge) {
+              const labels = (await extractWebElements(ambiguityError))?.map((el) => el.label) || [];
+              const index = await judge.pick(PICK_ELEMENT_QUESTION, labels, { intent: explanation, task: task.description });
+              if (index) success = await action.attemptOnElement(command, index, explanation);
+            }
           }
 
           if (success) {
@@ -1317,9 +1314,10 @@ export async function failedToolResult(action: string, message: string, data?: R
     result.suggestion = getMultipleElementsSuggestion();
     result.multipleElementsDetected = true;
     result.elements = formatElementList(matched);
-    const index = await judge?.pick(
+    if (!judge || !matched) return result;
+    const index = await judge.pick(
       PICK_ELEMENT_QUESTION,
-      (matched || []).map((el) => el.label),
+      matched.map((el) => el.label),
       { intent }
     );
     if (!index) return result;
@@ -1343,6 +1341,7 @@ function getMultipleElementsSuggestion(): string {
     reuse the same locator with step.opts({ elementIndex: N }) as the last argument.
     A match reported as not visible can never be acted on — pick one that is.
     If none of them is the element you want, narrow the locator with a container or its full unique text.
+    If the matches cannot be told apart, click the one you mean by appearance with visualClick().
     If the list is missing, call xpathCheck() to see what the locator matches.
   `;
 }

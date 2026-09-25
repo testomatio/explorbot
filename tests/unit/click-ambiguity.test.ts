@@ -35,6 +35,11 @@ function fakeDeps(errorFor: (command: string) => Error) {
       action.lastError = errorFor(command);
       return false;
     },
+    attemptOnElement: async (command: string, elementIndex: number) => {
+      action.ran.push(`${command} #${elementIndex}`);
+      action.lastError = errorFor(command);
+      return false;
+    },
   };
   const deps: any = {
     explorer: { action: () => action },
@@ -125,11 +130,19 @@ describe('judging an ambiguous match', () => {
     expect(Object.keys(result).sort()).toEqual(['action', 'elements', 'message', 'multipleElementsDetected', 'success', 'suggestion']);
   });
 
+  it('never looks at the matches for a judge when there is none, and points to visualClick', async () => {
+    const { deps, action } = fakeDeps(() => multipleElementsError());
+    const tools = createCodeceptJSTools(deps, fakeTask());
+    const result = await tools.click.execute({ commands: [`I.click({"role":"switch"})`], explanation: 'Toggle the control' }, {} as any);
+    expect(action.ran).toEqual([`I.click({"role":"switch"})`]);
+    expect(result.suggestion).toContain('visualClick()');
+  });
+
   it('clicks the element the judge picks right away, before the remaining fallbacks', async () => {
     const { deps, action } = fakeDeps(() => multipleElementsError());
     const tools = createCodeceptJSTools({ ...deps, judge: judgePicking(1) } as any, fakeTask());
     await tools.click.execute({ commands: [`I.click({"role":"switch"})`, `I.click('.other')`], explanation: 'Toggle the control' }, {} as any);
-    expect(action.ran).toEqual([`I.click({"role":"switch"})`, `I.click({"role":"switch"}, step.opts({ elementIndex: 2 }))`, `I.click('.other')`]);
+    expect(action.ran).toEqual([`I.click({"role":"switch"})`, `I.click({"role":"switch"}) #2`, `I.click('.other')`]);
   });
 
   it('asks the judge once per click', async () => {
