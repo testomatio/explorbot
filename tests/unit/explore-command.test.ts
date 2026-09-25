@@ -290,6 +290,29 @@ describe('ExploreCommand error page guard', () => {
   });
 });
 
+describe('ExploreCommand URL argument', () => {
+  test.each([
+    ['/login checkout', ['/login']],
+    ['https://example.com/login', ['https://example.com/login']],
+    ['checkout flow', []],
+  ])('%p visits %p before exploring', async (args, expected) => {
+    const visited: string[] = [];
+    const explorBot = {
+      visit: async (url: string) => {
+        visited.push(url);
+      },
+      stateManager: () => ({
+        getCurrentState: () => ({ url: '/login', title: 'Application', httpStatus: 404 }),
+      }),
+      printSessionAnalysis: async () => {},
+    } as unknown as ExplorBot;
+
+    await new ExploreCommand(explorBot).execute(args);
+
+    expect(visited).toEqual(expected);
+  });
+});
+
 describe('ExploreCommand reporting survives a failed return to the main page', () => {
   test('final visit failure does not suppress savePlans or session analysis', async () => {
     const fakePlan = new Plan('Live');

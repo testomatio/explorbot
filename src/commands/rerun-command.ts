@@ -1,8 +1,9 @@
 import { existsSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { basename, resolve } from 'node:path';
 import { ConfigParser } from '../config.ts';
 import { tag } from '../utils/logger.ts';
-import { BaseCommand } from './base-command.js';
+import { listTestFiles } from '../utils/test-files.ts';
+import { type ArgumentCompletion, BaseCommand } from './base-command.js';
 
 export class RerunCommand extends BaseCommand {
   name = 'rerun';
@@ -31,6 +32,10 @@ export class RerunCommand extends BaseCommand {
 
     const testIndices = indexArg ? parseTestIndices(indexArg) : undefined;
     await this.explorBot.agentRerunner().rerun(filePath, { testIndices });
+  }
+
+  completeArguments(): ArgumentCompletion[] {
+    return listTestFiles(ConfigParser.getInstance().getTestsDir()).map((file) => ({ value: basename(file) }));
   }
 }
 

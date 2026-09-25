@@ -52,6 +52,7 @@ No `init`, no config file, no project directory, no model IDs to look up. These 
 | `EXPLORBOT_URL` | yes | Base URL to test; the API boat reads it as the base endpoint |
 | `EXPLORBOT_VISION_MODEL` | no | Screenshot analysis; overrides the provider recommendation |
 | `EXPLORBOT_AGENTIC_MODEL` | no | Captain and Pilot decisions; overrides the provider recommendation |
+| `EXPLORBOT_DECISION_MODEL` | no | Turns on the decision model, as provider/model-id (openrouter/typesafe/jev-1.13 or typesafe/jev-latest); overrides ai.decisionModel |
 | `EXPLORBOT_OUTPUT` | no | Output root for states, plans, research, and reports. Defaults to the site dir under ~/.explorbot/sites |
 | `EXPLORBOT_EPHEMERAL` | no | Keep no state between runs — output goes to a fresh temp directory instead of the site dir |
 | `EXPLORBOT_KNOWLEDGE` | no | Inline knowledge text, applied to every page |

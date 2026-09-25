@@ -86,6 +86,7 @@ export class StateManager {
   private currentState: WebPageState | null = null;
   private stateHistory: StateTransition[] = [];
   private allVisitedUrls: Set<string> = new Set();
+  private experienceUrls?: string[];
   private stateChangeListeners: StateChangeListener[] = [];
   private experienceTracker!: ExperienceTracker;
   private knowledgeTracker: KnowledgeTracker;
@@ -357,6 +358,21 @@ export class StateManager {
 
   getAllVisitedUrls(): Set<string> {
     return this.allVisitedUrls;
+  }
+
+  getKnownUrls(): string[] {
+    this.experienceUrls ||= this.experienceTracker
+      .getAllExperience()
+      .sort((left, right) => right.mtime.getTime() - left.mtime.getTime())
+      .flatMap((experience) => experience.data.url || []);
+    const sessionUrls = this.stateHistory.map((transition) => transition.toState.url).reverse();
+    const urls = new Map<string, string>();
+    for (const url of [...sessionUrls, ...this.experienceUrls]) {
+      const key = normalizeUrl(url);
+      if (urls.has(key)) continue;
+      urls.set(key, url);
+    }
+    return [...urls.values()];
   }
 
   /**

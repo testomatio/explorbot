@@ -61,21 +61,48 @@ prima-cli browser stop
 
 Prima needs a model, and takes it from the environment. There is no `init` to run and nothing is written for you.
 
+The setup we recommend runs everything through OpenRouter with one key: GPT-OSS 120B served by Groq as the main model, and TypeSafe's Jev as the [decision model](https://github.com/testomatio/explorbot/blob/main/docs/web-testing/decisions.md), which answers narrow yes/no and pick-one questions so the main model is called less often.
+
 ```bash
-export PRIMA_CLI_AI_MODEL=openrouter/openai/gpt-oss-120b
-export OPENROUTER_API_KEY=your-key
+PRIMA_CLI_AI_MODEL=openrouter/openai/gpt-oss-120b:nitro
+PRIMA_CLI_DECISION_MODEL=openrouter/typesafe/jev-1.13
+OPENROUTER_API_KEY=your-key
 ```
 
-The provider comes from the model name, so that is the whole setup. Fish uses `set -gx` instead of `export`. Since prima is usually run by a coding agent, the better home is the agent's own config — in `~/.claude/settings.json`, an `env` block reaches every command the agent runs:
+The provider comes from each model name, and `:nitro` asks OpenRouter for its fastest host, which is Groq for this model. Jev is optional: leave `PRIMA_CLI_DECISION_MODEL` unset and prima never calls it, or pass `--decision-model` for a single run.
+
+Prima is usually run by a coding agent, so the best home for these variables is the agent's own config, where they reach every command the agent runs.
+
+Claude Code, in `~/.claude/settings.json`:
 
 ```json
 {
   "env": {
-    "PRIMA_CLI_AI_MODEL": "openrouter/openai/gpt-oss-120b",
+    "PRIMA_CLI_AI_MODEL": "openrouter/openai/gpt-oss-120b:nitro",
+    "PRIMA_CLI_DECISION_MODEL": "openrouter/typesafe/jev-1.13",
     "OPENROUTER_API_KEY": "your-key"
   }
 }
 ```
+
+Codex, in `~/.codex/config.toml`:
+
+```toml
+[shell_environment_policy]
+set = { PRIMA_CLI_AI_MODEL = "openrouter/openai/gpt-oss-120b:nitro", PRIMA_CLI_DECISION_MODEL = "openrouter/typesafe/jev-1.13", OPENROUTER_API_KEY = "your-key" }
+```
+
+`set` is applied after Codex filters the inherited environment, so the key survives even where names containing `KEY` are stripped.
+
+To run prima yourself, or from any agent that inherits your shell, export them in `~/.bashrc` or `~/.zshrc`:
+
+```bash
+export PRIMA_CLI_AI_MODEL=openrouter/openai/gpt-oss-120b:nitro
+export PRIMA_CLI_DECISION_MODEL=openrouter/typesafe/jev-1.13
+export OPENROUTER_API_KEY=your-key
+```
+
+Fish uses `set -gx` in `~/.config/fish/config.fish` instead of `export`.
 
 Screenshot analysis needs its own model — one is never guessed from the main model. Set `PRIMA_CLI_VISION_MODEL`, or pass `--vision-model` for a single run, as `--model` does for the main one. Without it prima still runs, but settles `check` outcomes from the run log rather than from the page as seen.
 

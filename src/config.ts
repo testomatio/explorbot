@@ -185,6 +185,7 @@ interface AIConfig {
   vision?: boolean;
   visionModel?: any;
   agenticModel?: any;
+  decisionModel?: { provider: string; model: string; tool?: boolean; direct?: boolean; threshold?: number };
   retryAttempts?: number;
   retryDelay?: number;
   maxParallelRequests?: number;
@@ -277,6 +278,7 @@ export const EXPLORBOT_ENV_VARS: EnvVar[] = [
   { name: 'EXPLORBOT_URL', required: true, description: 'Base URL to test; the API boat reads it as the base endpoint' },
   { name: 'EXPLORBOT_VISION_MODEL', description: 'Screenshot analysis; overrides the provider recommendation' },
   { name: 'EXPLORBOT_AGENTIC_MODEL', description: 'Captain and Pilot decisions; overrides the provider recommendation' },
+  { name: 'EXPLORBOT_DECISION_MODEL', description: 'Turns on the decision model, as provider/model-id (openrouter/typesafe/jev-1.13 or typesafe/jev-latest); overrides ai.decisionModel' },
   { name: 'EXPLORBOT_OUTPUT', description: 'Output root for states, plans, research, and reports. Defaults to the site dir under ~/.explorbot/sites' },
   { name: 'EXPLORBOT_EPHEMERAL', description: 'Keep no state between runs — output goes to a fresh temp directory instead of the site dir' },
   { name: 'EXPLORBOT_KNOWLEDGE', description: 'Inline knowledge text, applied to every page' },
@@ -431,6 +433,7 @@ export class ConfigParser {
       this.runtimeTarget = target;
       this.configPath = sourcePath;
       this.applyEnvSpec(this.config);
+      this.applyEnvDecisionModel(this.config);
 
       // Restore original directory after successful config load
       if (options?.path && originalCwd !== process.cwd()) {
@@ -624,6 +627,14 @@ export class ConfigParser {
     if (!spec) return;
     if (!config.dirs) config.dirs = { knowledge: 'knowledge', experience: 'experience', output: 'output' };
     config.dirs.spec = spec;
+  }
+
+  private applyEnvDecisionModel(config: ExplorbotConfig): void {
+    const spec = process.env.EXPLORBOT_DECISION_MODEL;
+    if (!spec) return;
+    const separator = spec.indexOf('/');
+    if (separator < 1) throw new Error('EXPLORBOT_DECISION_MODEL must be written as "provider/model-id", e.g. openrouter/typesafe/jev-1.13');
+    config.ai.decisionModel = { ...config.ai.decisionModel, provider: spec.slice(0, separator), model: spec.slice(separator + 1) };
   }
 
   private async buildEnvConfig(baseUrl: string | undefined, outputRoot: string): Promise<ExplorbotConfig> {

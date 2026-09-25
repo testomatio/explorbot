@@ -7,6 +7,7 @@ import { Driller } from './ai/driller.ts';
 import { ExperienceCompactor } from './ai/experience-compactor.ts';
 import { Fisherman } from './ai/fisherman.ts';
 import { Historian } from './ai/historian.ts';
+import { Judge } from './ai/judge.ts';
 import { Navigator } from './ai/navigator.ts';
 import { Pilot } from './ai/pilot.ts';
 import { Planner } from './ai/planner.ts';
@@ -80,6 +81,7 @@ export class ExplorBot {
   private _reporter?: Reporter;
   private _requestStore?: RequestStore;
   private _playwrightRecorder?: PlaywrightRecorder;
+  private judgeInstance: Judge | null | undefined;
 
   constructor(options: ExplorBotOptions = {}) {
     this.options = options;
@@ -192,6 +194,11 @@ export class ExplorBot {
     return (this._playwrightRecorder ||= new PlaywrightRecorder());
   }
 
+  judge(): Judge | null {
+    if (this.judgeInstance === undefined) this.judgeInstance = Judge.fromConfig(this.config.ai?.decisionModel);
+    return this.judgeInstance;
+  }
+
   getConfig(): ExplorbotConfig {
     return this.config;
   }
@@ -213,6 +220,7 @@ export class ExplorBot {
       knowledgeTracker: this.knowledgeTracker(),
       requestStore: this.requestStore(),
       playwrightRecorder: this.playwrightRecorder(),
+      judge: this.judge() || undefined,
     });
 
     const agentName = (agent as any).constructor.name.toLowerCase();

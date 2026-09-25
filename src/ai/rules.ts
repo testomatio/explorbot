@@ -497,6 +497,19 @@ export const actionRule = dedent`
 
   After hovering, use see() or context() to check what appeared.
 
+  ### I.seeInClipboard / I.seeClipboardEquals / I.clearClipboard
+
+  Check what a copy control put into the system clipboard. Run via form(), not click().
+  I.seeInClipboard asserts the clipboard contains the text, I.seeClipboardEquals asserts an exact match,
+  I.clearClipboard empties it — call it before copying so a stale value can't pass the check.
+
+  <example>
+    I.clearClipboard();
+    I.click({ role: 'button', text: 'Copy link' });
+    I.seeInClipboard('/invite/');
+    I.seeClipboardEquals('ABC-123');
+  </example>
+
   [DO NEVER USE OTHER CODECEPTJS COMMANDS THAN PROPOSED HERE]
   [INTERACT ONLY WITH ELEMENTS THAT ARE ON THE PAGE HTML]
   [DO NOT USE WAIT FUNCTIONS]

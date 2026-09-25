@@ -22,6 +22,8 @@ Explorbot uses three roles:
 
 Pick a fast, cheap model for the first two and a stronger one for the third. When a provider has no recommended model for one of these roles, combine it with another provider for that role.
 
+An optional [decision model](#decision-model) can answer narrow yes/no and pick-one questions so the other models are called less often.
+
 ### OpenRouter
 
 Start with OpenRouter. One key reaches [many providers and models](https://openrouter.ai/models).
@@ -308,6 +310,41 @@ Laguna XS is an agentic coding model — fast, cheap, and reliable at tool calli
 
 Keep `agenticModel` on another provider. Poolside's endpoint accepts `response_format: json_schema` but does not enforce it, so structured-output calls depend on the model volunteering valid JSON. Laguna XS usually does; Laguna S answers in prose instead, which makes it unusable for the Planner, Pilot, and Captain. Laguna S is also slow enough under page-sized prompts to hit Explorbot's request timeouts, so it is not a substitute for Laguna XS in the `model` role either.
 
+## Decision Model
+
+A decision model is an optional fourth role. It does not generate text or call tools. It receives the current state and one closed question, and returns an answer with a probability. Explorbot uses it for narrow choices that would otherwise take a call to a larger model or a guess.
+
+Explorbot supports TypeSafe's Jev, reached through OpenRouter or through TypeSafe's API directly:
+
+```javascript
+export default {
+  ai: {
+    // ...your model, visionModel, agenticModel...
+    decisionModel: { provider: 'openrouter', model: 'typesafe/jev-1.13' },
+    // or: decisionModel: { provider: 'typesafe', model: 'jev-latest' },
+  },
+};
+```
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `provider` | `'openrouter' \| 'typesafe'` | Authenticates with `OPENROUTER_API_KEY` or `TYPESAFE_API_KEY` |
+| `model` | `string` | Model ID at that provider |
+| `tool` | `boolean` | Give Tester and Pilot a `judge` tool to ask their own questions. Default: `true` |
+| `direct` | `boolean` | Consult the model at Explorbot's built-in decision points. Default: `true` |
+| `threshold` | `number` | How sure the model must be before Explorbot acts on an answer, between 0 and 1. Default: `0.7` |
+
+Without a config file, or to turn it on for one run, set `EXPLORBOT_DECISION_MODEL` or pass `--decision-model` as `provider/model-id`. It overrides `provider` and `model` in the config and keeps `tool` and `direct`:
+
+```bash
+EXPLORBOT_DECISION_MODEL=openrouter/typesafe/jev-1.13 npx explorbot explore
+npx prima-cli go "Settings" --decision-model typesafe/jev-latest
+```
+
+Leave `decisionModel` unset and Explorbot never calls it. An unknown provider, a missing API key, or a `threshold` outside 0 and 1 stops Explorbot at startup.
+
+Explorbot acts on an answer only when it is more sure than `threshold` (70% by default), and otherwise does what it would have done without the decision model. See [Decisions](../web-testing/decisions.md) for where it is consulted, the `judge` tool, and what happens when an answer is rejected.
+
 ## Multi-Provider Configuration
 
 Mix clients the same way you assign `model`, `visionModel`, and `agenticModel`. Each field can use a different provider instance — a fast provider does the token-heavy reading while a stronger one makes the decisions:
@@ -359,4 +396,5 @@ export OPENAI_API_KEY=your-key-here
 export ANTHROPIC_API_KEY=your-key-here
 export GOOGLE_API_KEY=your-key-here
 export MISTRAL_API_KEY=your-key-here
+export TYPESAFE_API_KEY=your-key-here
 ```

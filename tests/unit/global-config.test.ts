@@ -534,6 +534,19 @@ describe('global mode in the API boat', () => {
 });
 
 describe('explorbot init', () => {
+  it('quotes the wildcard in the suggested learn command', () => {
+    const consoleSpy = spyOn(console, 'log').mockImplementation(() => {});
+
+    try {
+      runInitCommand({ path: workDir });
+
+      const output = consoleSpy.mock.calls.flat().join('\n');
+      expect(output).toContain("learn '*' 'to authorize use these credentials: admin@example.com / secret123'");
+    } finally {
+      consoleSpy.mockRestore();
+    }
+  });
+
   it('writes the global config and env file without the wizard', async () => {
     await runInit({ global: true, provider: 'groq', apiKey: 'test-key' });
 

@@ -4,6 +4,7 @@ import type Explorer from '../explorer.ts';
 import type { KnowledgeTracker } from '../knowledge-tracker.ts';
 import type { PlaywrightRecorder } from '../playwright-recorder.ts';
 import type { StateManager } from '../state-manager.ts';
+import type { Judge } from './judge.ts';
 import type { AIProvider } from './provider.ts';
 
 export interface Agent {
@@ -18,6 +19,7 @@ export interface AgentDeps {
   knowledgeTracker: KnowledgeTracker;
   requestStore: RequestStore;
   playwrightRecorder: PlaywrightRecorder;
+  judge?: Judge;
 }
 
-export type ToolDeps = Pick<AgentDeps, 'explorer' | 'stateManager' | 'ai'>;
+export type ToolDeps = Pick<AgentDeps, 'explorer' | 'stateManager' | 'ai' | 'judge'>;

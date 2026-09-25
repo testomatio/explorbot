@@ -163,7 +163,7 @@ export function runInitCommand(options: InitCommandOptions): void {
     log('2. Set AI models config file');
     log('3. Set web application URL in the config file');
     log('4. Add initial knowledge (how to authorize to the application, etc.)');
-    tag('substep').log(chalk.yellow(`${getCliName()} learn * 'to authorize use these credentials: admin@example.com / secret123'`));
+    tag('substep').log(chalk.yellow(`${getCliName()} learn '*' 'to authorize use these credentials: admin@example.com / secret123'`));
     tag('substep').log('You can use ${env.LOGIN} and ${env.PASSWORD} to reference environment variables.');
 
     log('5. Launch application on a relative URL');

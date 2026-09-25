@@ -15,6 +15,8 @@ import { pause } from '../utils/loop.js';
 import { compactErrorMessage, normalizeInlineText, truncate } from '../utils/strings.ts';
 import { WebElement } from '../utils/web-element.ts';
 import type { ToolDeps } from './agent.ts';
+import { createJudgeTool } from './judge-tool.ts';
+import { JUDGE_PAGE_CAP, type Judge } from './judge.ts';
 import { Navigator } from './navigator.ts';
 import { Researcher } from './researcher.ts';
 import { sectionContextRule } from './rules.ts';
@@ -31,7 +33,7 @@ interface AgentToolDeps extends ToolDeps {
 
 export const ASSERTION_TOOLS = ['verify'] as const;
 
-export function createCodeceptJSTools({ explorer, stateManager }: ToolDeps, task: Task) {
+export function createCodeceptJSTools({ explorer, stateManager, judge }: ToolDeps, task: Task) {
   return {
     click: tool({
       description: dedent`
@@ -111,13 +113,20 @@ export function createCodeceptJSTools({ explorer, stateManager }: ToolDeps, task
 
         for (let i = 0; i < commands.length; i++) {
           const command = transformContainsCommand(commands[i]);
-          const success = await action.attempt(command, explanation);
+          let success = await action.attempt(command, explanation);
 
           const attempt: { command: string; success: boolean; error?: string } = { command, success };
           if (action.lastError) attempt.error = errorText(action.lastError);
           attempts.push(attempt);
 
-          if (!ambiguityError && action.lastError?.name === 'MultipleElementsFound') ambiguityError = action.lastError;
+          if (!ambiguityError && action.lastError?.name === 'MultipleElementsFound') {
+            ambiguityError = action.lastError;
+            if (judge) {
+              const labels = (await extractWebElements(ambiguityError))?.map((el) => el.label) || [];
+              const index = await judge.pick(PICK_ELEMENT_QUESTION, labels, { intent: explanation, task: task.description });
+              if (index) success = await action.attemptExactElementIndex(command, index, explanation);
+            }
+          }
 
           if (success) {
             const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, command);
@@ -232,7 +241,9 @@ export function createCodeceptJSTools({ explorer, stateManager }: ToolDeps, task
             attempts,
             suggestion: 'Use xpathCheck() to locate the row/card/tree node, or visualClick() if the hover target is only visually identifiable.',
           },
-          action.lastError
+          action.lastError,
+          judge,
+          explanation
         );
       },
     }),
@@ -375,7 +386,7 @@ export function createCodeceptJSTools({ explorer, stateManager }: ToolDeps, task
         - Performing multiple form actions in a single batch
         - Complex interactions requiring sequential commands
         - Reaching items further down a list (I.scrollTo)
-        - Reloading the page to prove a change outlived it (I.reloadPage)
+        - Reloading the page to prove a change outlived it (I.refreshPage)
 
         Example - filling a form with context (PREFERRED):
         I.fillField('Username', 'John', '.login-form')
@@ -437,7 +448,9 @@ export function createCodeceptJSTools({ explorer, stateManager }: ToolDeps, task
                 attempts: action.executedSteps,
                 suggestion: formSuggestion,
               },
-              action.lastError
+              action.lastError,
+              judge,
+              explanation
             );
           }
 
@@ -587,7 +600,7 @@ export function createLearnExperienceTool({ getExperienceTracker, getState }: { 
   });
 }
 
-export function createAgentTools({ explorer, stateManager, ai, researcher, navigator, supervisor, withExperience }: AgentToolDeps): any {
+export function createAgentTools({ explorer, stateManager, ai, judge, researcher, navigator, supervisor, withExperience }: AgentToolDeps): any {
   const tools: Record<string, any> = {
     see: tool({
       description: dedent`
@@ -724,6 +737,13 @@ export function createAgentTools({ explorer, stateManager, ai, researcher, navig
           }
 
           if (result.inexpressible) {
+            if (result.judged?.approved) {
+              return failedToolResult('verify', `No assertion could express this claim, but the page appears to confirm it: ${assertion}`, {
+                inexpressible: true,
+                suggestion: 'This is a judgement about the page, not an assertion that ran in the browser — a hint, not proof. Restate the claim in terms of what is visible or of a control state to get a real assertion.',
+              });
+            }
+
             return failedToolResult('verify', `No assertion could express this claim: ${assertion}`, {
               inexpressible: true,
               suggestion: 'This is not evidence the page is wrong — the claim could not be turned into an assertion. Restate it in terms of what is visible or of a control state, or check it with see().',
@@ -1143,6 +1163,20 @@ export function createAgentTools({ explorer, stateManager, ai, researcher, navig
     });
   }
 
+  const buildJudgeState = async () => {
+    const activeTest = explorer.activeTest;
+    const state = stateManager.getCurrentState();
+    const result = state ? ActionResult.fromState(state) : null;
+    return {
+      task: activeTest?.scenario || '',
+      page: cap(result?.getCompactARIA(), JUDGE_PAGE_CAP),
+      recentActions: Object.values(activeTest?.steps || {})
+        .slice(-JUDGE_RECENT_ACTIONS_LIMIT)
+        .map((step) => step.text),
+    };
+  };
+  Object.assign(tools, createJudgeTool({ explorer, stateManager, ai, judge }, buildJudgeState));
+
   withdrawVisionTools(tools);
 
   return tools;
@@ -1158,6 +1192,7 @@ const NAVIGATED_SUGGESTION = 'The action left the page. Elements are never compa
 const ARIA_OUTPUT_CAP = 4000;
 const HTML_OUTPUT_CAP = 6000;
 const ANALYSIS_OUTPUT_CAP = 2000;
+const JUDGE_RECENT_ACTIONS_LIMIT = 8;
 
 function cap(text: string | undefined | null, max: number): string {
   if (!text) return '';
@@ -1267,7 +1302,7 @@ function hasObservablePageChange(data?: Record<string, any>): boolean {
   return Array.isArray(data.pageDiff.htmlParts) && data.pageDiff.htmlParts.length > 0;
 }
 
-export async function failedToolResult(action: string, message: string, data?: Record<string, any>, error?: Error | null) {
+export async function failedToolResult(action: string, message: string, data?: Record<string, any>, error?: Error | null, judge?: Judge, intent?: string) {
   const result: Record<string, any> = { success: false, action, message, ...data };
   if (data?.pageDiff) {
     result.suggestion = data.suggestion ? `${data.suggestion} ${PAGE_DIFF_SUGGESTION}` : PAGE_DIFF_SUGGESTION;
@@ -1279,6 +1314,14 @@ export async function failedToolResult(action: string, message: string, data?: R
     result.suggestion = getMultipleElementsSuggestion();
     result.multipleElementsDetected = true;
     result.elements = formatElementList(matched);
+    if (!judge || !matched) return result;
+    const index = await judge.pick(
+      PICK_ELEMENT_QUESTION,
+      matched.map((el) => el.label),
+      { intent }
+    );
+    if (!index) return result;
+    result.suggestion = `Element ${index} is the one meant. Repeat the action with step.opts({ elementIndex: ${index} }) as the last argument.`;
     return result;
   }
 
@@ -1298,6 +1341,7 @@ function getMultipleElementsSuggestion(): string {
     reuse the same locator with step.opts({ elementIndex: N }) as the last argument.
     A match reported as not visible can never be acted on — pick one that is.
     If none of them is the element you want, narrow the locator with a container or its full unique text.
+    If the matches cannot be told apart, click the one you mean by appearance with visualClick().
     If the list is missing, call xpathCheck() to see what the locator matches.
   `;
 }
@@ -1344,6 +1388,7 @@ const MAX_DISAMBIGUATE_ELEMENTS = 10;
 const MAX_DISAMBIGUATE_TEXT = 80;
 const MAX_DISAMBIGUATE_HTML = 300;
 const MULTIPLE_ELEMENTS_PATTERN = 'multiple elements';
+const PICK_ELEMENT_QUESTION = 'Which listed element does the intent name?';
 
 async function extractWebElements(error: Error | null | undefined): Promise<MatchedElement[] | null> {
   if (!error || error.name !== 'MultipleElementsFound') return null;
@@ -1358,7 +1403,7 @@ async function extractWebElements(error: Error | null | undefined): Promise<Matc
       const html = truncate(cleanHtmlSnippet(await elements[i].toOuterHTML()), MAX_DISAMBIGUATE_HTML);
       const text = truncate(normalizeInlineText((await elements[i].getText()) || ''), MAX_DISAMBIGUATE_TEXT);
       const visible = await Promise.resolve(elements[i].isVisible?.()).catch(() => undefined);
-      result.push({ xpath, html, text, visible });
+      result.push({ xpath, html, text, visible, label: `${text || 'no text'} — ${html}` });
     } catch (e) {
       debugLog('Failed to get details for element %d: %s', i, e);
     }
@@ -1408,5 +1453,6 @@ interface MatchedElement {
   xpath: string;
   html: string;
   text: string;
+  label: string;
   visible?: boolean;
 }

@@ -10,14 +10,19 @@ import { executionController } from '../../src/execution-controller.js';
 import { Stats } from '../../src/stats.js';
 import { MockAIProvider } from '../mocks/ai-provider.mock.js';
 
-function buildHangingModel(capture: { signal?: AbortSignal }): MockLanguageModelV3 {
+function buildHangingModel(capture: { signal?: AbortSignal; calls?: number }): MockLanguageModelV3 {
   return new MockLanguageModelV3({
     provider: 'test',
     modelId: 'hanging-model',
     doGenerate: async (params: any) => {
+      capture.calls = (capture.calls || 0) + 1;
       capture.signal = params.abortSignal;
       return await new Promise((_resolve, reject) => {
-        params.abortSignal?.addEventListener('abort', () => reject(new Error('aborted')));
+        params.abortSignal?.addEventListener('abort', () => {
+          const error = new Error('This operation was aborted');
+          error.name = 'AbortError';
+          reject(error);
+        });
       });
     },
   });
@@ -533,6 +538,48 @@ describe('Provider', () => {
 
       await expect(provider.generateObject(messages, schema)).rejects.toThrow(AiError);
     });
+
+    it('should ask for plain JSON when structured output comes back empty', async () => {
+      const calls: any[] = [];
+      const model = new MockLanguageModelV3({
+        provider: 'test',
+        modelId: 'empty-structured-model',
+        doGenerate: async (params: any) => {
+          calls.push(params);
+          if (params.responseFormat?.type === 'json') {
+            return { finishReason: 'other' as const, usage: { inputTokens: 1, outputTokens: 1 }, content: [] };
+          }
+          return { finishReason: 'stop' as const, usage: { inputTokens: 1, outputTokens: 1 }, content: [{ type: 'text' as const, text: '```json\n{"name":"suite"}\n```' }] };
+        },
+      });
+      aiConfig.retryDelay = 1;
+      const retrying = new Provider(aiConfig);
+
+      const response = await retrying.generateObject([{ role: 'user', content: 'Generate object' }], z.object({ name: z.string() }), model);
+
+      expect(response.object).toEqual({ name: 'suite' });
+      expect(calls).toHaveLength(4);
+      const fallback = calls[3];
+      expect(fallback.responseFormat?.type).not.toBe('json');
+      expect(JSON.stringify(fallback.prompt)).toContain('\\"name\\"');
+    });
+
+    it('should fail when the plain JSON fallback does not match the schema', async () => {
+      const model = new MockLanguageModelV3({
+        provider: 'test',
+        modelId: 'empty-structured-model',
+        doGenerate: async (params: any) => {
+          if (params.responseFormat?.type === 'json') {
+            return { finishReason: 'other' as const, usage: { inputTokens: 1, outputTokens: 1 }, content: [] };
+          }
+          return { finishReason: 'stop' as const, usage: { inputTokens: 1, outputTokens: 1 }, content: [{ type: 'text' as const, text: '{"title":"suite"}' }] };
+        },
+      });
+      aiConfig.retryDelay = 1;
+      const retrying = new Provider(aiConfig);
+
+      await expect(retrying.generateObject([{ role: 'user', content: 'Generate object' }], z.object({ name: z.string() }), model)).rejects.toThrow(AiError);
+    });
   });
 
   describe('conversation methods', () => {
@@ -837,6 +884,16 @@ describe('Provider', () => {
   });
 
   describe('abort on idle timeout', () => {
+    it('retries an internal idle timeout instead of treating it as a user abort', async () => {
+      const capture: { signal?: AbortSignal; calls?: number } = {};
+      const model = buildHangingModel(capture);
+      const messages: ModelMessage[] = [{ role: 'user', content: 'hi' }];
+
+      await expect(provider.generateObject(messages, z.object({ name: z.string() }), model, { timeout: 20, maxRetries: 2 })).rejects.toThrow('AI request timeout');
+
+      expect(capture.calls).toBe(2);
+    });
+
     it('aborts the in-flight request when the idle timeout fires', async () => {
       const capture: { signal?: AbortSignal } = {};
       const model = buildHangingModel(capture);
@@ -853,11 +910,11 @@ describe('Provider', () => {
 
     it('propagates the global execution abort through the combined signal', async () => {
       executionController.startExecution();
-      const capture: { signal?: AbortSignal } = {};
+      const capture: { signal?: AbortSignal; calls?: number } = {};
       const model = buildHangingModel(capture);
       const messages: ModelMessage[] = [{ role: 'user', content: 'hi' }];
 
-      const pending = provider.generateWithTools(messages, model, {}, { timeout: 60000, maxRetries: 1 });
+      const pending = provider.generateWithTools(messages, model, {}, { timeout: 60000, maxRetries: 3 });
       while (!capture.signal) {
         await new Promise((resolve) => setTimeout(resolve, 5));
       }
@@ -869,6 +926,7 @@ describe('Provider', () => {
 
       expect(rejected).toBe(true);
       expect(aborted).toBe(true);
+      expect(capture.calls).toBe(1);
     });
   });
 });

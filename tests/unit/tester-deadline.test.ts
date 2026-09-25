@@ -81,7 +81,7 @@ function setupTester() {
   const tester = new Tester(deps, researcher, navigator);
   tester.setPilot({ reset: () => {}, planTest: async () => null, finalReview } as any);
   tester.setHistorian({ saveSession } as any);
-  return { tester, invokeConversation, finalReview, saveSession, stopTest };
+  return { tester, invokeConversation, finalReview, saveSession, stopTest, explorer, provider };
 }
 
 describe('Tester deadline', () => {
@@ -120,5 +120,28 @@ describe('Tester deadline', () => {
     expect(invokeConversation.mock.calls.length).toBeGreaterThanOrEqual(1);
     expect(finalReview).toHaveBeenCalledTimes(1);
     expect(saveSession).toHaveBeenCalledTimes(1);
+  });
+
+  test('plans first, then visits the start page, then gives Tester the scenario and the plan', async () => {
+    const { tester, explorer, provider, finalReview } = setupTester();
+    const order: string[] = [];
+    tester.setPilot({
+      reset: () => {},
+      planTest: async () => {
+        order.push('plan');
+        return 'act on the prepared item';
+      },
+      finalReview,
+    } as any);
+    explorer.visit.mockImplementation(async () => {
+      order.push('visit');
+    });
+    provider.startConversation.mockImplementation(() => ({ ...createConversation(), addUserText: (text: string) => order.push(text.split('\n')[0]) }));
+    const task = new Test('check dashboard', 'normal', 'dashboard works', '/dashboard');
+
+    await tester.test(task, { deadline: Date.now() - 1 });
+
+    expect(order.slice(0, 3)).toEqual(['plan', 'visit', '<task>']);
+    expect(order).toContain("Pilot's test plan:");
   });
 });

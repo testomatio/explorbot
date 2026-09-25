@@ -313,7 +313,7 @@ export class Researcher extends ResearcherBase implements Agent {
         researchFile = saveResearch(researchState, result.text, combinedHtml);
       }
 
-      const summaryText = mdq(result.text).query('section2(/^summary/)').query('paragraph[0]').text().trim();
+      const summaryText = mdq(result.text).query('section2(/^summary/i)').query('paragraph[0]').text().trim();
       const summaryLine = summaryText.split('\n')[0]?.trim().slice(0, 200);
       if (summaryLine) this.experienceTracker.updateSummary(this.actionResult!, summaryLine);
 

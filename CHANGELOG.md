@@ -1,5 +1,102 @@
 # Changelog
 
+## 2026-09-25
+
+### Configuration
+- **`ai.decisionModel.threshold`** — How sure the decision model must be before Explorbot acts on its answer, between 0 and 1. A value outside that range stops Explorbot at startup. Default: `0.7`.
+
+### Changes
+- [Pilot] The decision model is asked whether a routine progress review can be skipped only when the run is not struggling. After a run of failed or empty steps, Pilot reviews right away.
+- [Pilot] To decide whether to skip a review, the decision model now sees the scenario, its planned steps, which expected outcomes are checked and which remain, the run log, the pages visited and the current page. It is asked one question: whether the recent actions advance the scenario toward its remaining outcomes.
+- [Tester] When a click matches several elements and the decision model names the one meant, that element is clicked right away. The tester no longer needs another turn to repeat the click.
+- [Tester] When the matching elements look identical, the decision model is not asked. The tester is told to click by appearance with `visualClick()`. Previously a pick among identical options always resolved to the first element.
+- When the decision model chooses from a list, the question now tells it to answer "undecided" if it is not sure or no option fits, instead of picking the closest one.
+- Tracing: each decision model call in Langfuse records the exact request as its input and the raw answer as its output, so a decision can be found by its question and replayed. A failed call is marked as an error.
+
+## 2026-09-24
+
+### Changes
+- The decision model can be turned on without a config file: set `EXPLORBOT_DECISION_MODEL=openrouter/typesafe/jev-1.13` or pass `--decision-model typesafe/jev-latest` to `explorbot` or `prima-cli`. Either overrides `ai.decisionModel` for that run; `PRIMA_CLI_DECISION_MODEL` works too.
+
+## 2026-09-23
+
+### Changes
+- [Tester] Can now check what a copy button put into the clipboard: whether it contains a text or equals it exactly. The tester clears the clipboard before copying, so an old value cannot pass the check. Needs CodeceptJS 4.2.
+- [Tester] A test now starts from a page loaded after planning, so data prepared for it through the API is on screen from the first step. Previously the tester read the page as it looked before the data was prepared, concluded the item was missing, and went off to create its own through the UI.
+- [Pilot] When Pilot prepares data for a test, it now tells the tester what was created — type, name and id — and to use it rather than create the same thing through the UI. This arrives even when Pilot spends its whole turn on tool calls and writes no plan.
+- [Pilot] Data prepared while a test is already running now comes with a request to reload the page, since the open page cannot show it yet.
+- [Tester] A scenario that deletes something is no longer told to create an item first when one was already prepared for it. It is told to delete only that item.
+- [Tester] Reloading a page works again: both the tester and Pilot were pointed at a command that does not exist.
+- The name of a created item is now read from APIs that nest it under `attributes`, so prepared data is referred to by name instead of by id alone.
+- Docs: new Decisions page on the optional decision model (`ai.decisionModel`): the 70% confidence rule, every built-in decision point and what Explorbot does when the answer is rejected, and the `judge` tool. Setup is in the AI providers guide.
+
+## 2026-09-22
+
+### New TUI Commands
+
+- **`/explore <url>`** — `/explore` now takes the page to explore as its first argument, like
+  `explorbot explore <path>`. An argument starting with `/`, `http://` or `https://` opens that page first, and the
+  rest of the line is the focus. Without one, `/explore` explores the current page as before. `/start` accepts the
+  same argument.
+  ```
+  /explore /login
+  /explore /checkout guest payment
+  /explore https://app.example.com/settings
+  ```
+
+### Changes
+
+- TUI: commands that take an argument now suggest one as soon as the command is picked. `/test` lists saved plans
+  and inserts `--from-plan <file>`, `/plan:load` and `/plans` list saved plans, `/rerun` lists generated test files,
+  and `/navigate`, `/research` and `/explore` list the pages visited in this run followed by pages Explorbot learned
+  in earlier runs. Typing narrows the list. Each plan is listed on its own line with the page path it starts from and
+  how many tests it holds; a name too long for its column keeps its beginning and its end, so plans that share a
+  prefix stay apart. Short suggestions such as command names stay in columns.
+- TUI: while argument suggestions are shown, Enter runs what you typed. Move through the list with the arrow keys to
+  run a suggestion with Enter, or press Tab to insert it. Completing a command name with Tab now adds a space after
+  it, so its suggestions appear right away.
+## 2026-09-20
+
+### Configuration
+- **`ai.decisionModel`** — Opt in to a decision model: a cheap model that answers one narrow question. Explorbot acts on its answer only when it is more than 70% sure, and otherwise does exactly what it does today. Set as `{ provider, model }`, through OpenRouter or direct to TypeSafe — for example `{ provider: 'openrouter', model: 'typesafe/jev-1.13' }` or `{ provider: 'typesafe', model: 'jev-latest' }`. Default: unset, and with it unset nothing changes.
+- **`ai.decisionModel.tool`** — Whether the AI can ask the decision model itself, mid-run. Default: `true`.
+- **`ai.decisionModel.direct`** — Whether Explorbot consults it at the fixed points listed below. Default: `true`.
+
+Authenticates with `OPENROUTER_API_KEY` or `TYPESAFE_API_KEY`, depending on the provider.
+
+### Changes
+- [Tester] New `judge` tool. When a decision depends on reading the page rather than running a command, the tester can ask it to confirm a statement or pick one option instead of guessing. "Not confirmed" means the page doesn't settle it, never that the statement is false. Available to Pilot as well.
+- [Tester] When a locator matches several elements, Explorbot now tries to work out which one was meant and points the tester at it. If the matches genuinely cannot be told apart it falls back to the numbered list and the visual-click route, as before.
+- [Pilot] A progress review is skipped when the decision model is confident the run is healthy, saving the expensive model call. When it isn't sure, Pilot reviews as before.
+- [Navigator] A claim already checked on the page is recognised even when it is worded differently, skipping a repeat check. Claims that no assertion can express — previously a dead end — are now reported as confirmed when the page clearly shows them, kept separate from assertions that actually ran.
+- Prima: `prima go` with a page description rather than a URL can now pick the control that leads there directly. It confirms it arrived before reporting success, and otherwise falls back to the usual navigation.
+- Prima: `prima check` settles the expected outcomes the decision model is sure about without calling the larger model; the rest are settled as before.
+## 2026-09-22
+
+### Changes
+
+- [Chief] Apibot now sends the credentials and parameters your endpoint knowledge describes. Before planning, it
+  reads the knowledge files that match the endpoint and picks out the headers, query parameters and body fields they
+  say to send — an API token written in plain prose becomes an `Authorization` header. Each value is then sent with
+  every request whose path matches that file's `endpoint:` pattern, including the sample data fetched before
+  planning, which used to fail with 403. Values from `--header` or `api.headers` still win over knowledge, and a
+  request's own values win over both. Body fields fill in only what a JSON request body leaves out.
+  ```markdown
+  ---
+  endpoint: '*'
+  ---
+  Authenticate with the Bearer token abc123. Every request needs workspace_id 42.
+  ```
+- AI: when a model answers a structured request with nothing — gpt-oss served by Groq does this often — Explorbot
+  asks the same model again for plain JSON and checks it against the expected shape, instead of failing the
+  step. Plans that used to stop with "No object generated: the model did not return a response" now complete.
+- AI: retries of a failed model call now wait 1s, then 2s, instead of firing back-to-back. `ai.retryDelay` still
+  overrides the wait.
+- README: the Explorbot logo is replaced with the new design, and GitHub now shows a light-text version of it in
+  dark mode.
+- New logos for Explorbot, API bot, Doc bot and Prima are now kept in `assets/logos/`, one folder per product: the
+  app icon and the wordmark, each for light and dark backgrounds, in SVG and PNG. The old logo files are removed.
+
 ## 2026-09-18
 
 ### New CLI Options
@@ -43,6 +140,11 @@
 ## 2026-09-17
 
 ### Changes
+
+- [Tester] A test now opens its start URL before it reads the page, so its first action is chosen from the
+  page the scenario actually starts on. Previously the opening step was planned from whatever page the previous
+  test left open — a test starting on a create form could spend its whole run on the list page behind it,
+  never filling the form.
 
 - [Pilot] When the app reports an action succeeded but the record is not visible on the page, Pilot now asks
   the API whether it was stored instead of failing on what the screenshot shows. A record the API cannot find
@@ -95,8 +197,72 @@
   established the outcome on screen could still be failed with a vague "could not be confirmed" in place of
   the result it observed. Verdicts now cite what was seen, and the evidence takes less room for it, because
   a passed assertion is no longer repeated back several times over.
+- A slow browser action no longer causes the step running it to be abandoned and repeated. The AI
+  request timeout measured the whole turn, time spent in the browser included, so a field that took
+  longer than the timeout to fill looked like a model that had stopped responding: the turn was dropped
+  and retried while its commands were still running on the page. Up to three copies of the same step
+  then interleaved in one browser session and each reported the other's error, so work that had gone
+  through — a record created and saved — came back as a failed step and the test was reported as failed.
+  The timeout now counts only time spent waiting on the model.
 
 ## 2026-09-15
+
+### New CLI Options
+
+- **`mdq`** — A new command for reading and editing markdown from the shell, the way `jq` reads JSON.
+  It ships as its own npm package, so it runs without installing anything: `npx mdq 'h2' README.md`.
+  It also works as a library — `import { mdq } from 'mdq'` — on Node 18 or newer.
+  The first argument is a selector, the second an optional file (stdin is used when it is omitted).
+  Matched markdown is printed by default. Exit codes compose like `grep`: `0` when something matched,
+  `1` when nothing did, `2` for a bad selector or bad usage.
+
+  ```bash
+  mdq 'h2' README.md                             # print every h2
+  cat plan.md | mdq 'section("API") table'       # read from stdin
+  mdq 'comment(~"test")' plan.md --count         # how many test comments
+  ```
+
+- **`--json`, `--count`, `--text`, `--frontmatter`** — Change what is printed: table rows as JSON,
+  the number of matches, the text with its markdown stripped, or the file's frontmatter as JSON.
+
+  ```bash
+  mdq 'section("API") table' --json README.md
+  mdq 'h2' --count README.md
+  mdq --frontmatter knowledge/login.md
+  ```
+
+- **`--remove`, `--replace`, `--insert-before`, `--insert-after`, `--prepend`, `--append`, `--add-row`, `--add-item`, `--set`** —
+  Edit the file instead of reading it. The whole document is printed with the edit applied; one edit at a
+  time. `--add-row` takes a JSON object and lines the table's columns back up; `--add-item` copies the
+  list's existing bullet or numbering; `--set` takes `Key=value` and drops the entry when the value is empty.
+
+  ```bash
+  mdq 'section("FAQ")' doc.md --remove
+  mdq 'table[0]' api.md --add-row '{"Method":"GET","Path":"/users"}'
+  mdq 'list' plan.md --add-item 'check the dashboard'
+  ```
+
+- **`-i`, `--in-place`** — Write the edit back to the file instead of printing it.
+
+  ```bash
+  mdq 'section("Draft")' notes.md --remove -i
+  ```
+
+### Changes
+
+- Knowledge and experience files are now read correctly when they start with a `---` block. The
+  frontmatter used to be read as a heading titled `url: /login`, so the first fact in every such file
+  could be mistaken for a section title.
+- Blank lines are no longer lost or doubled when a block is deleted or inserted, and blank lines inside
+  fenced code blocks are left exactly as they were.
+- A mistyped selector now fails with a message naming the unknown word, instead of quietly matching
+  nothing and looking like an empty file.
+- A search written as `/pattern/` is now case-sensitive unless it ends with `i`, matching how quoted
+  searches already behaved. Previously every `/pattern/` ignored case whether it said so or not.
+- Searching a table now looks at its cells, not only its column titles.
+- Reading a file no longer waits on standard input. Passing a filename while standard input was an
+  open pipe used to abort with an `EAGAIN` error on Node; input is now read only when no filename
+  is given.
 
 ### Fixes
 

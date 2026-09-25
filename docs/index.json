@@ -22,6 +22,7 @@
         { "title": "Planner", "file": "web-testing/planner.md", "description": "Tune what gets tested" },
         { "title": "Researcher", "file": "web-testing/researcher.md", "description": "How pages are analyzed, and how to tune it" },
         { "title": "Page interaction", "file": "web-testing/page-interaction.md", "description": "How agents read and act on a page" },
+        { "title": "Decisions", "file": "web-testing/decisions.md", "description": "The optional decision model: built-in decision points, the judge tool, fallbacks" },
         { "title": "Automated tests", "file": "web-testing/automated-tests.md", "description": "The runnable test files you keep" },
         { "title": "Rerun", "file": "web-testing/rerun.md", "description": "Re-run generated tests with AI healing" },
         { "title": "Agents", "file": "web-testing/agents.md", "description": "What each agent does under the hood" },

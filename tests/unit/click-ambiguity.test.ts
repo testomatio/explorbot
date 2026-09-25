@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'bun:test';
-import { createCodeceptJSTools } from '../../src/ai/tools.ts';
+import { Judge, UNDECIDED } from '../../src/ai/judge.ts';
+import { createCodeceptJSTools, failedToolResult } from '../../src/ai/tools.ts';
 import { ConfigParser } from '../../src/config.ts';
 
 function multipleElementsError(visibility: boolean[] = [], texts: string[] = ['First control', 'Second control']): Error {
@@ -31,6 +32,11 @@ function fakeDeps(errorFor: (command: string) => Error) {
     saveScreenshot: async () => undefined,
     attempt: async (command: string) => {
       action.ran.push(command);
+      action.lastError = errorFor(command);
+      return false;
+    },
+    attemptExactElementIndex: async (command: string, elementIndex: number) => {
+      action.ran.push(`${command} #${elementIndex}`);
       action.lastError = errorFor(command);
       return false;
     },
@@ -91,5 +97,69 @@ describe('click on an ambiguous locator', () => {
 
     expect(result.multipleElementsDetected).toBe(true);
     expect(result.elements).toContain('Element 2:');
+  });
+});
+
+describe('judging an ambiguous match', () => {
+  const judgeAnswering = (answer: (options: string[]) => string | null) => {
+    const asked: string[][] = [];
+    const provider: any = {
+      decide: async (_state: unknown, _question: string, options: string[]) => {
+        asked.push(options);
+        return { value: answer(options), probability: 0.9 };
+      },
+    };
+    return { judge: new Judge(provider, { tool: true, direct: true }), asked };
+  };
+  const judgePicking = (index: number) => judgeAnswering((options) => options[index]).judge;
+
+  it('names the element the judge picks, by elementIndex', async () => {
+    const result = await failedToolResult('form', 'Multiple elements (2) found', {}, multipleElementsError(), judgePicking(1), 'Toggle the control');
+    expect(result.suggestion).toContain('elementIndex: 2');
+  });
+
+  it('keeps the numbered list when the judge rejects', async () => {
+    const { judge } = judgeAnswering(() => UNDECIDED);
+    const result = await failedToolResult('form', 'Multiple elements (2) found', {}, multipleElementsError(), judge, 'Toggle the control');
+    expect(result.suggestion).not.toContain('is the one meant');
+    expect(result.elements).toContain('Element 2:');
+  });
+
+  it('emits no key main does not emit when there is no judge', async () => {
+    const result = await failedToolResult('click', 'Multiple elements (2) found', {}, multipleElementsError());
+    expect(Object.keys(result).sort()).toEqual(['action', 'elements', 'message', 'multipleElementsDetected', 'success', 'suggestion']);
+  });
+
+  it('never looks at the matches for a judge when there is none, and points to visualClick', async () => {
+    const { deps, action } = fakeDeps(() => multipleElementsError());
+    const tools = createCodeceptJSTools(deps, fakeTask());
+    const result = await tools.click.execute({ commands: [`I.click({"role":"switch"})`], explanation: 'Toggle the control' }, {} as any);
+    expect(action.ran).toEqual([`I.click({"role":"switch"})`]);
+    expect(result.suggestion).toContain('visualClick()');
+  });
+
+  it('clicks the element the judge picks right away, before the remaining fallbacks', async () => {
+    const { deps, action } = fakeDeps(() => multipleElementsError());
+    const tools = createCodeceptJSTools({ ...deps, judge: judgePicking(1) } as any, fakeTask());
+    await tools.click.execute({ commands: [`I.click({"role":"switch"})`, `I.click('.other')`], explanation: 'Toggle the control' }, {} as any);
+    expect(action.ran).toEqual([`I.click({"role":"switch"})`, `I.click({"role":"switch"}) #2`, `I.click('.other')`]);
+  });
+
+  it('asks the judge once per click', async () => {
+    const { judge, asked } = judgeAnswering((options) => options[0]);
+    const { deps } = fakeDeps(() => multipleElementsError());
+    const tools = createCodeceptJSTools({ ...deps, judge } as any, fakeTask());
+    await tools.click.execute({ commands: [`I.click({"role":"switch"})`], explanation: 'Toggle the control' }, {} as any);
+    expect(asked).toHaveLength(1);
+  });
+
+  it('skips the judge and sends the model to visualClick when the matches are identical', async () => {
+    const { judge, asked } = judgeAnswering((options) => options[0]);
+    const { deps, action } = fakeDeps(() => multipleElementsError([], ['', '']));
+    const tools = createCodeceptJSTools({ ...deps, judge } as any, fakeTask());
+    const result = await tools.click.execute({ commands: [`I.click({"role":"switch"})`], explanation: 'Toggle the control' }, {} as any);
+    expect(asked).toHaveLength(0);
+    expect(action.ran).toHaveLength(1);
+    expect(result.elements).toContain('visualClick()');
   });
 });

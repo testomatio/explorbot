@@ -8,6 +8,7 @@ import { Observability } from '../../../../src/observability.ts';
 import { Plan, Test } from '../../../../src/test-plan.ts';
 import { createDebug, tag } from '../../../../src/utils/logger.ts';
 import { RulesLoader } from '../../../../src/utils/rules-loader.ts';
+import { isSecretName, registerSecret } from '../../../../src/utils/secrets.ts';
 import type { ApiClient } from '../api-client.ts';
 import type { ApibotConfig } from '../config.ts';
 import { getActiveStyle, getStyles } from './chief/styles.ts';
@@ -28,6 +29,21 @@ const ApiTasksSchema = z.object({
     .describe('List of testing scenarios'),
 });
 
+const NamedValueSchema = z.object({ name: z.string(), value: z.string() });
+
+const RequestDefaultsSchema = z.object({
+  files: z
+    .array(
+      z.object({
+        file: z.number().describe('Number of the knowledge file the values come from'),
+        headers: z.array(NamedValueSchema).describe('Headers to send, each value exactly as it goes on the wire'),
+        query: z.array(NamedValueSchema).describe('Query parameters to send'),
+        body: z.array(NamedValueSchema).describe('Fields a request body must contain, each value as a JSON literal'),
+      })
+    )
+    .describe('One entry per knowledge file that names values to send with requests'),
+});
+
 const ChiefBase = WithSessionDedup(Object as unknown as new (...args: any[]) => object);
 
 export class Chief extends ChiefBase {
@@ -37,6 +53,7 @@ export class Chief extends ChiefBase {
   private knowledgeTracker?: KnowledgeTracker;
   currentPlan: Plan | null = null;
   private lastStyleName = '';
+  private readKnowledgeFiles = new Set<string>();
 
   MIN_TASKS = 3;
   MAX_TASKS = 10;
@@ -56,6 +73,7 @@ export class Chief extends ChiefBase {
     debugLog('Sending planning prompt to AI provider');
 
     await Observability.run(`chief: ${endpoint}`, { tags: ['chief'], sessionId: endpoint }, async () => {
+      await this.prepareRequestDefaults(endpoint);
       const sampleData = await this.collectSampleData(endpoint);
       const conversation = this.buildConversation(endpoint, opts?.style, sampleData);
 
@@ -124,6 +142,52 @@ export class Chief extends ChiefBase {
       test.startUrl = test.startUrl || defaultEndpoint;
       this.currentPlan.addTest(test);
       existing.add(test.scenario.toLowerCase());
+    }
+  }
+
+  private async prepareRequestDefaults(endpoint: string): Promise<void> {
+    if (!this.apiClient) return;
+    const files = (this.knowledgeTracker?.getEndpointKnowledge(endpoint) || []).filter((knowledge) => !this.readKnowledgeFiles.has(knowledge.filePath));
+    if (!files.length) return;
+
+    const knowledgeFiles = files.map((knowledge, index) => `<file number="${index + 1}" endpoint="${knowledge.endpoint}">\n${knowledge.content}\n</file>`).join('\n\n');
+    const prompt = dedent`
+      <task>
+      Extract the values these knowledge files say must be sent with API requests:
+      - headers: authentication, API keys and other headers, written exactly as sent (include the auth scheme when one is named)
+      - query: query parameters requests need
+      - body: fields request bodies must contain, each value written as a JSON literal
+      Copy values exactly as written. Never invent a value. Skip facts that are not about what to send.
+      </task>
+
+      <knowledge_files>
+      ${knowledgeFiles}
+      </knowledge_files>
+    `;
+
+    const result = await this.provider.generateObject([{ role: 'user', content: prompt }], RequestDefaultsSchema, this.provider.getModelForAgent('chief'), { agentName: 'chief' }).catch((error: Error) => {
+      tag('warning').log(`Could not read request defaults from knowledge: ${error.message}`);
+      return null;
+    });
+    if (!result) return;
+    for (const knowledge of files) this.readKnowledgeFiles.add(knowledge.filePath);
+
+    const entries: z.infer<typeof RequestDefaultsSchema>['files'] = result.object?.files || [];
+    for (const entry of entries) {
+      const knowledge = files[entry.file - 1];
+      if (!knowledge?.endpoint) continue;
+
+      const headers = Object.fromEntries(entry.headers.map(({ name, value }) => [name, value]));
+      const query = Object.fromEntries(entry.query.map(({ name, value }) => [name, value]));
+      const body = Object.fromEntries(entry.body.map(({ name, value }) => [name, parseJsonLiteral(value)]));
+      const sent = Object.entries({ headers, query, body }).filter(([, values]) => Object.keys(values).length);
+      if (!sent.length) continue;
+
+      for (const [name, value] of sent.flatMap(([, values]) => Object.entries(values))) {
+        if (isSecretName(name)) registerSecret(String(value));
+      }
+      this.apiClient.addRequestDefaults({ pattern: knowledge.endpoint, headers, query, body });
+      tag('info').log(`Request defaults from knowledge for ${knowledge.endpoint}: ${sent.map(([kind, values]) => `${kind} ${Object.keys(values).join(', ')}`).join('; ')}`);
     }
   }
 
@@ -339,5 +403,13 @@ export class Chief extends ChiefBase {
       - Edge cases and boundary value analysis
       </expertise>
     `;
+  }
+}
+
+function parseJsonLiteral(value: string): unknown {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
   }
 }

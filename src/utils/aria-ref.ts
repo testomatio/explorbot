@@ -1,6 +1,6 @@
 import { WebElement } from './web-element.ts';
 
-const REF_LINE_PATTERN = /^(\s*)-\s+(\w+)\s*(?:"([^"]*)")?.*?\[ref=(e\d+)\]/;
+const REF_LINE_PATTERN = /^(\s*)-\s+(\w+)\s*(?:"([^"]*)")?.*?\[ref=((?:f\d+)?e\d+)\]/;
 const ARIA_REF_PATTERN = /^(f\d+)?e\d+$/i;
 
 const REF_ROLES: Record<string, string> = { a: 'link', button: 'button', select: 'combobox', textarea: 'textbox' };
