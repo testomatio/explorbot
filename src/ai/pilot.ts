@@ -1149,6 +1149,9 @@ export class Pilot implements Agent {
         const consoleError = t.output?.pageDiff?.consoleErrors?.[0];
         if (consoleError) line += `\n   console: ${consoleError.slice(0, PILOT_MESSAGE_MAX_LENGTH)}`;
 
+        const disabledReason = t.output?.disabledReason?.[0];
+        if (disabledReason) line += `\n   shown on hover of disabled target: ${disabledReason.slice(0, PILOT_MESSAGE_MAX_LENGTH)}`;
+
         return line;
       })
       .join('\n\n');
