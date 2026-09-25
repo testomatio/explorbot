@@ -35,7 +35,7 @@ function fakeDeps(errorFor: (command: string) => Error) {
       action.lastError = errorFor(command);
       return false;
     },
-    attemptOnElement: async (command: string, elementIndex: number) => {
+    attemptExactElementIndex: async (command: string, elementIndex: number) => {
       action.ran.push(`${command} #${elementIndex}`);
       action.lastError = errorFor(command);
       return false;

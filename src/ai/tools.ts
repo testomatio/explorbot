@@ -124,7 +124,7 @@ export function createCodeceptJSTools({ explorer, stateManager, judge }: ToolDep
             if (judge) {
               const labels = (await extractWebElements(ambiguityError))?.map((el) => el.label) || [];
               const index = await judge.pick(PICK_ELEMENT_QUESTION, labels, { intent: explanation, task: task.description });
-              if (index) success = await action.attemptOnElement(command, index, explanation);
+              if (index) success = await action.attemptExactElementIndex(command, index, explanation);
             }
           }
 

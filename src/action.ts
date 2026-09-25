@@ -491,7 +491,7 @@ class Action {
     }
   }
 
-  public async attemptOnElement(codeBlock: string, elementIndex: number, originalMessage?: string): Promise<boolean> {
+  public async attemptExactElementIndex(codeBlock: string, elementIndex: number, originalMessage?: string): Promise<boolean> {
     const applyElementIndex = (step: any) => {
       step.opts = { ...step.opts, elementIndex };
     };
