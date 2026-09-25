@@ -324,7 +324,12 @@ export class Tester extends TaskAgent implements Agent {
               const guidance = await this.pilot.reviewNewPage(task, currentState, conversation);
               if (guidance) nextStep += `\n\n${guidance}`;
             } else if (this.shouldAnalyzeProgress(iteration, currentState) && this.pilot) {
-              const guidance = await this.pilot.analyzeProgress(task, currentState, conversation);
+              let guidance: string;
+              if (this.isStruggling) {
+                guidance = await this.pilot.analyzeProgress(task, currentState, conversation);
+              } else {
+                guidance = await this.pilot.periodicAnalyzeProgress(task, currentState, conversation);
+              }
               if (guidance) nextStep += `\n\n${guidance}`;
               this.consecutiveFailures = 0;
               this.lastAnalyzedStateHash = currentState.hash;
@@ -486,11 +491,14 @@ export class Tester extends TaskAgent implements Agent {
       this.regionTransitioned = false;
       return true;
     }
-    if (this.consecutiveFailures >= 3) return true;
-    if (this.consecutiveEmptyResults >= 2) return true;
+    if (this.isStruggling) return true;
     if (iteration % this.progressCheckInterval !== 0) return false;
     if (this.lastAnalyzedStateHash === currentState.hash) return false;
     return true;
+  }
+
+  private get isStruggling(): boolean {
+    return this.consecutiveFailures >= 3 || this.consecutiveEmptyResults >= 2;
   }
 
   private shouldStopForStalledExecution(task: Test, previousState: ActionResult, toolExecutions: any[]): boolean {

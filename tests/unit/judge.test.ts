@@ -41,6 +41,14 @@ describe('Judge.decide', () => {
     expect(asked[0].options).toEqual(['Details', 'History', UNDECIDED]);
   });
 
+  it('tells the model to choose undecided when unsure, only when that option is offered', async () => {
+    const { judge, asked } = answering('History', 0.85);
+    await judge.decide('Which tab is active?', ['Details', 'History', UNDECIDED], {});
+    await judge.decide('Which tab is active?', ['Details', 'History'], {});
+    expect(asked[0].question).toBe(`Which tab is active? Choose "${UNDECIDED}" if you are not sure or no option fits.`);
+    expect(asked[1].question).toBe('Which tab is active?');
+  });
+
   it('rejects when the undecided option wins', async () => {
     expect((await answering(UNDECIDED, 0.9).judge.decide('x', ['Details', 'History', UNDECIDED], {})).rejected).toBe(true);
   });
@@ -56,6 +64,12 @@ describe('Judge.decide', () => {
     expect((await judge.decide('x', null, {})).rejected).toBe(true);
     expect(asked).toHaveLength(0);
     expect((await judge.consult('x', null, {})).approved).toBe(true);
+  });
+
+  it('applies a configured threshold instead of 70%', async () => {
+    const provider: any = { decide: async () => ({ value: 'yes', probability: 0.6 }) };
+    expect((await new Judge(provider, { tool: true, direct: true }, 0.5).decide('x', null, {})).approved).toBe(true);
+    expect((await new Judge(provider, { tool: true, direct: true }, 0.65).decide('x', null, {})).rejected).toBe(true);
   });
 
   it('rejects instead of throwing when the provider fails', async () => {
@@ -75,6 +89,24 @@ describe('Judge.decide', () => {
   });
 });
 
+describe('Judge.pick', () => {
+  it('returns the 1-based position of the chosen option', async () => {
+    const { judge, asked } = answering('Second', 0.9);
+    expect(await judge.pick('Which one?', ['First', 'Second'], {})).toBe(2);
+    expect(asked[0].options).toEqual(['First', 'Second', UNDECIDED]);
+  });
+
+  it('returns null when undecided wins', async () => {
+    expect(await answering(UNDECIDED, 0.9).judge.pick('Which one?', ['First', 'Second'], {})).toBeNull();
+  });
+
+  it('does not ask when options are identical, since a pick could not tell them apart', async () => {
+    const { judge, asked } = answering('Same', 0.9);
+    expect(await judge.pick('Which one?', ['Same', 'Same'], {})).toBeNull();
+    expect(asked).toHaveLength(0);
+  });
+});
+
 describe('Judge.fromConfig', () => {
   let saved: string | undefined;
   beforeEach(() => {
@@ -88,6 +120,11 @@ describe('Judge.fromConfig', () => {
 
   it('builds nothing when unset', () => {
     expect(Judge.fromConfig(undefined)).toBeNull();
+  });
+
+  it('refuses a threshold outside 0..1', () => {
+    expect(() => Judge.fromConfig({ provider: 'openrouter', model: 'typesafe/jev-1.13', threshold: 70 })).toThrow('between 0 and 1');
+    expect(Judge.fromConfig({ provider: 'openrouter', model: 'typesafe/jev-1.13', threshold: 0.8 })).not.toBeNull();
   });
 
   it('enables both paths by default, and honours each toggle', () => {

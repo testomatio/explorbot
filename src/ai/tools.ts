@@ -16,7 +16,7 @@ import { compactErrorMessage, normalizeInlineText, truncate } from '../utils/str
 import { WebElement } from '../utils/web-element.ts';
 import type { ToolDeps } from './agent.ts';
 import { createJudgeTool } from './judge-tool.ts';
-import { JUDGE_PAGE_CAP, type Judge, UNDECIDED } from './judge.ts';
+import { JUDGE_PAGE_CAP, type Judge } from './judge.ts';
 import { Navigator } from './navigator.ts';
 import { Researcher } from './researcher.ts';
 import { sectionContextRule } from './rules.ts';
@@ -113,13 +113,20 @@ export function createCodeceptJSTools({ explorer, stateManager, judge }: ToolDep
 
         for (let i = 0; i < commands.length; i++) {
           const command = transformContainsCommand(commands[i]);
-          const success = await action.attempt(command, explanation);
+          let success = await action.attempt(command, explanation);
 
           const attempt: { command: string; success: boolean; error?: string } = { command, success };
           if (action.lastError) attempt.error = errorText(action.lastError);
           attempts.push(attempt);
 
-          if (!ambiguityError && action.lastError?.name === 'MultipleElementsFound') ambiguityError = action.lastError;
+          if (!ambiguityError && action.lastError?.name === 'MultipleElementsFound') {
+            ambiguityError = action.lastError;
+            if (judge) {
+              const labels = (await extractWebElements(ambiguityError))?.map((el) => el.label) || [];
+              const index = await judge.pick(PICK_ELEMENT_QUESTION, labels, { intent: explanation, task: task.description });
+              if (index) success = await action.attemptExactElementIndex(command, index, explanation);
+            }
+          }
 
           if (success) {
             const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, command);
@@ -158,9 +165,7 @@ export function createCodeceptJSTools({ explorer, stateManager, judge }: ToolDep
             attempts,
             suggestion,
           },
-          ambiguityError || action.lastError,
-          judge,
-          explanation
+          ambiguityError || action.lastError
         );
       },
     }),
@@ -1309,10 +1314,13 @@ export async function failedToolResult(action: string, message: string, data?: R
     result.suggestion = getMultipleElementsSuggestion();
     result.multipleElementsDetected = true;
     result.elements = formatElementList(matched);
-    const labels = (matched || []).map((element) => `${element.text || 'no text'} — ${element.html}`);
-    const pick = await judge?.decide('Which listed element does the intent name?', [...labels, UNDECIDED], { intent });
-    if (!pick?.value) return result;
-    const index = labels.indexOf(pick.value) + 1;
+    if (!judge || !matched) return result;
+    const index = await judge.pick(
+      PICK_ELEMENT_QUESTION,
+      matched.map((el) => el.label),
+      { intent }
+    );
+    if (!index) return result;
     result.suggestion = `Element ${index} is the one meant. Repeat the action with step.opts({ elementIndex: ${index} }) as the last argument.`;
     return result;
   }
@@ -1333,6 +1341,7 @@ function getMultipleElementsSuggestion(): string {
     reuse the same locator with step.opts({ elementIndex: N }) as the last argument.
     A match reported as not visible can never be acted on — pick one that is.
     If none of them is the element you want, narrow the locator with a container or its full unique text.
+    If the matches cannot be told apart, click the one you mean by appearance with visualClick().
     If the list is missing, call xpathCheck() to see what the locator matches.
   `;
 }
@@ -1379,6 +1388,7 @@ const MAX_DISAMBIGUATE_ELEMENTS = 10;
 const MAX_DISAMBIGUATE_TEXT = 80;
 const MAX_DISAMBIGUATE_HTML = 300;
 const MULTIPLE_ELEMENTS_PATTERN = 'multiple elements';
+const PICK_ELEMENT_QUESTION = 'Which listed element does the intent name?';
 
 async function extractWebElements(error: Error | null | undefined): Promise<MatchedElement[] | null> {
   if (!error || error.name !== 'MultipleElementsFound') return null;
@@ -1393,7 +1403,7 @@ async function extractWebElements(error: Error | null | undefined): Promise<Matc
       const html = truncate(cleanHtmlSnippet(await elements[i].toOuterHTML()), MAX_DISAMBIGUATE_HTML);
       const text = truncate(normalizeInlineText((await elements[i].getText()) || ''), MAX_DISAMBIGUATE_TEXT);
       const visible = await Promise.resolve(elements[i].isVisible?.()).catch(() => undefined);
-      result.push({ xpath, html, text, visible });
+      result.push({ xpath, html, text, visible, label: `${text || 'no text'} — ${html}` });
     } catch (e) {
       debugLog('Failed to get details for element %d: %s', i, e);
     }
@@ -1443,5 +1453,6 @@ interface MatchedElement {
   xpath: string;
   html: string;
   text: string;
+  label: string;
   visible?: boolean;
 }
