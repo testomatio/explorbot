@@ -109,6 +109,11 @@ Authenticates with `OPENROUTER_API_KEY` or `TYPESAFE_API_KEY`, depending on the 
   instead of just the path, so the mismatch is visible in the log.
 - Network calls and API requests recorded during a run are matched against the site the same way, so calls made
   from a redirected host are captured instead of silently dropped.
+- [Pilot] A test that checks a reverse action — going back a page, undoing, closing, collapsing, clearing a
+  filter — is now planned from a starting point where that action has somewhere to go. Pilot used to plan the
+  click from wherever the page happened to be, so a test of the previous-page control that started on page 1
+  clicked an inert arrow and reported a failure the app had not caused. It now plans the steps that reach the
+  state the action leads back from before the step being measured.
 
 ## 2026-09-17
 

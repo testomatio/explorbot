@@ -482,6 +482,10 @@ export class Pilot implements Agent {
         the elements needed for the scenario. The page summary does not list every element.
         Prefer interacting with the current page over navigating away.
 
+        A scenario that verifies a reverse or returning action can only be measured from the state that
+        action leads back from. When the page is not in that state, plan the steps that reach it first —
+        exercising the control from the wrong end proves nothing and is not a defect.
+
         Tester never sees <experience> — a recorded recipe reaches it only when you open one.
         The entries listed are what was recorded on the page you are on now; recipes for the
         pages this test moves to are listed when it gets there. Open the ones whose titles fit a
