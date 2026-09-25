@@ -744,6 +744,16 @@ export class Tester extends TaskAgent implements Agent {
   }
 
   getSystemMessage(): string {
+    let judgeRule = '';
+    if (this.agentTools?.judge) {
+      judgeRule = dedent`
+        <judge_rule>
+        For a quick judgement about the current page (did the last action already take effect, which element the scenario means), ask judge() before see().
+        Keep see() for what only a screenshot shows.
+        </judge_rule>
+      `;
+    }
+
     return dedent`
     <role>
     You are a senior test automation engineer with expertise in CodeceptJS and exploratory testing.
@@ -842,6 +852,8 @@ export class Tester extends TaskAgent implements Agent {
     ${formRequirementsRule}
 
     ${capabilityGroundingRule}
+
+    ${judgeRule}
 
     ${dataProtectionRules}
 
