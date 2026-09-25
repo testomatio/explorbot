@@ -338,6 +338,19 @@ describe('global mode', () => {
     expect(parser.resolveTargetPath('app.example.com/users')).toBe('/users');
   });
 
+  it('scopes relative targets to the path of the base URL', async () => {
+    const parser = ConfigParser.getInstance();
+    writeGlobalConfig();
+
+    const config = await parser.loadConfig({ path: workDir, baseUrl: 'https://app.example.com/teams/acme/?preview=pr-42' });
+
+    expect(config.playwright.url).toBe('https://app.example.com');
+    expect(parser.getBaseQuery()).toBe('?preview=pr-42');
+    expect(parser.resolveTargetPath('/runs')).toBe('/teams/acme/runs');
+    expect(parser.resolveTargetPath('/teams/acme/runs')).toBe('/teams/acme/runs');
+    expect(parser.resolveTargetPath('https://app.example.com/users/sign_in')).toBe('/users/sign_in');
+  });
+
   it('keeps targets outside the site untouched', async () => {
     const parser = ConfigParser.getInstance();
     writeGlobalConfig();

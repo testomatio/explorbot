@@ -6,7 +6,7 @@ import stepsListener from 'codeceptjs/lib/listener/steps';
 import storeListener from 'codeceptjs/lib/listener/store';
 import { createTest } from 'codeceptjs/lib/mocha/test';
 import dedent from 'dedent';
-import type { Browser, BrowserContextOptions, Page } from 'playwright';
+import type { Browser, BrowserContextOptions, Page, Route } from 'playwright';
 import { ActionResult } from './action-result.ts';
 import Action from './action.js';
 import type { RequestStore } from './api/request-store.ts';
@@ -103,6 +103,7 @@ class Explorer {
     if (!this.playwrightHelper) {
       throw new Error('Playwright helper not available');
     }
+    this.applyBasePathToHelper();
     await this.connectOrLaunchBrowser();
     const hasSession = !this.options?.attachedBrowser && this.options?.session && existsSync(this.options.session);
     await this.openContextPage();
@@ -163,7 +164,7 @@ class Explorer {
 
   async visit(url: string, opts: CaptureOpts = {}): Promise<ActionResult> {
     return this.runWithRecovery('visit', async () => {
-      const action = await this.visitOnce(url);
+      const action = await this.visitOnce(ConfigParser.getInstance().applyBasePath(url));
       if (opts.screenshot) return action.capturePageState({ includeScreenshot: true });
       return action.getActionResult() ?? action.capturePageState();
     });
@@ -347,6 +348,7 @@ class Explorer {
     const attached = this.options?.attachedBrowser;
     if (!attached) {
       await this.playwrightHelper._createContextPage(this.createBrowserContextOptions());
+      await this.pinBaseQuery();
       return;
     }
 
@@ -356,6 +358,39 @@ class Explorer {
     this.playwrightHelper.browserContext = context;
     await this.playwrightHelper._setPage(page);
     debugLog(`Adopted attached browser page: ${page.url()}`);
+    await this.pinBaseQuery();
+  }
+
+  private applyBasePathToHelper(): void {
+    if (!ConfigParser.getInstance().getBasePath()) return;
+
+    const helper = this.playwrightHelper;
+    const original = helper.amOnPage.bind(helper);
+    helper.amOnPage = (url: string) => original(ConfigParser.getInstance().applyBasePath(url));
+  }
+
+  private async pinBaseQuery(): Promise<void> {
+    const query = ConfigParser.getInstance().getBaseQuery();
+    if (!query) return;
+
+    const pinned = new URLSearchParams(query);
+    const origin = URL.parse(this.config.playwright.url)?.origin;
+
+    await this.playwrightHelper.browserContext.route('**/*', async (route: Route) => {
+      const request = route.request();
+      if (request.resourceType() !== 'document') return route.continue();
+
+      const url = URL.parse(request.url());
+      if (!url || url.origin !== origin) return route.continue();
+
+      const missing = [...pinned].filter(([key]) => !url.searchParams.has(key));
+      if (!missing.length) return route.continue();
+
+      for (const [key, value] of missing) url.searchParams.set(key, value);
+      return route.continue({ url: url.toString() });
+    });
+
+    tag('info').log(`Every page load of ${origin} carries ${query}`);
   }
 
   private createBrowserContextOptions(): BrowserContextOptions {
