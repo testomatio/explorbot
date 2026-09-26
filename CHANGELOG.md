@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-09-26
+
+### Changes
+- [Tester] When a click hits a disabled button, the tester now hovers it and reports the text the app shows (usually a tooltip explaining why it is disabled). Previously it guessed a missing precondition, such as an unset field nearby, and chased the wrong cause.
+- [Pilot] Sees the text shown on hover of a disabled button, so test results name the real reason an action was unavailable.
+- Screenshots used for visual checks no longer include the screencast's step captions. The AI previously read those captions as part of the page and tried to click them.
+
 ## 2026-09-25
 
 ### Configuration

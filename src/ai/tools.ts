@@ -156,17 +156,22 @@ export function createCodeceptJSTools({ explorer, stateManager, judge }: ToolDep
         await commitNote(activeNote, TestResult.FAILED, toolResult, action);
 
         const suggestion = clickFailureSuggestion(attempts);
+        const data: Record<string, any> = { ...toolResult, attempts, suggestion };
+        const clickError = ambiguityError || action.lastError;
 
-        return failedToolResult(
-          'click',
-          'All click commands failed',
-          {
-            ...toolResult,
-            attempts,
-            suggestion,
-          },
-          ambiguityError || action.lastError
-        );
+        for (const disabled of attempts.filter((a) => a.error?.includes('not enabled'))) {
+          const hoverCommand = disabled.command.replace('I.click(', 'I.moveCursorTo(');
+          const beforeHover = ActionResult.fromState(stateManager.getCurrentState()!);
+          if (!(await action.attempt(hoverCommand, 'Hover the disabled element to reveal why it is disabled'))) continue;
+          const hoverResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(beforeHover, hoverCommand);
+          const shown = hoverResult.pageDiff?.messages;
+          if (!shown?.length) break;
+          data.disabledReason = shown;
+          data.suggestion = `Element is DISABLED. Hovering it showed: "${shown.join(' | ')}". That is why — act on it or report it, do not guess another cause.`;
+          break;
+        }
+
+        return failedToolResult('click', 'All click commands failed', data, clickError);
       },
     }),
 
@@ -1356,7 +1361,7 @@ export function clickFailureSuggestion(attempts: Array<{ error?: string }>): str
   const errors = attempts.map((a) => a.error || '');
 
   if (errors.some((e) => e.includes('not enabled'))) {
-    return 'Element exists but is DISABLED — clicking it again cannot work. A precondition is unmet: a required field is empty, nothing is selected, or a dialog is blocking. Satisfy it, then retry.';
+    return 'Element exists but is DISABLED — clicking it again cannot work. Find the precondition the page shows as unmet, then retry.';
   }
 
   if (errors.some((e) => e.includes('intercepts pointer events'))) {

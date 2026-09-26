@@ -114,6 +114,7 @@ class Action {
       if (includeScreenshot) {
         const filename = safeFilename(`${stateHash}_${timestamp}`, '.png');
         const screenshotPath = join(statesDir, filename);
+        await page?.screencast?.hideOverlays().catch(() => {});
         screenshotFile = await page
           ?.screenshot({ path: screenshotPath, fullPage: true })
           .then(() => {
@@ -124,6 +125,7 @@ class Action {
             debugLog('Screenshot failed, continuing without it:', err);
             return undefined;
           });
+        await page?.screencast?.showOverlays().catch(() => {});
       }
 
       // Save HTML to file
