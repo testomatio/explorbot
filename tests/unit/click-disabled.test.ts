@@ -57,15 +57,16 @@ describe('click on a disabled element', () => {
     expect(result.success).toBe(false);
     expect(action.ran).toEqual([`I.click({"role":"button","text":"Launch"})`, `I.moveCursorTo({"role":"button","text":"Launch"})`]);
     expect(result.disabledReason.join(' ')).toContain('Configure CI in project settings');
-    expect(result.suggestion).toContain('disabledReason');
+    expect(result.suggestion).toContain('Hovering it showed');
   });
 
-  it('reports an empty reason when hovering reveals nothing', async () => {
+  it('adds no reason when hovering reveals nothing', async () => {
     const { deps } = fakeDeps(() => {});
     const tools = createCodeceptJSTools(deps, fakeTask());
 
     const result = await tools.click.execute({ commands: [`I.click("Launch", ".detail")`], explanation: 'Launch the plan' }, {} as any);
 
-    expect(result.disabledReason).toEqual([]);
+    expect(result.disabledReason).toBeUndefined();
+    expect(result.suggestion).toContain('precondition');
   });
 });
