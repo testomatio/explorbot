@@ -143,6 +143,12 @@ describe('site target resolution', () => {
     expect(resolveSiteTarget('/login')).toEqual({ baseUrl: 'https://app.example.com', path: '/login' });
   });
 
+  it('resolves a leading-slash path against EXPLORBOT_URL over the configured base URL', () => {
+    process.env.EXPLORBOT_URL = 'https://app.example.com';
+
+    expect(resolveSiteTarget('/login', 'http://localhost:3050')).toEqual({ baseUrl: 'https://app.example.com', path: '/login' });
+  });
+
   it('rejects a leading-slash path when no base URL is known', () => {
     registerSite('https://app.example.com');
 

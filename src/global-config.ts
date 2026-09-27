@@ -131,7 +131,7 @@ export function resolveSiteTarget(target?: string, defaultBaseUrl?: string): Sit
   }
 
   if (raw.startsWith('/')) {
-    const base = defaultBaseUrl || process.env.EXPLORBOT_URL;
+    const base = process.env.EXPLORBOT_URL || defaultBaseUrl;
     if (!base) {
       throw new Error(withSites(`Cannot resolve path "${raw}" without a site.`));
     }
