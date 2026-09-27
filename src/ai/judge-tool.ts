@@ -11,7 +11,11 @@ export function createJudgeTool(deps: ToolDeps, buildState: () => Promise<Record
   return {
     judge: tool({
       description: dedent`
-        Settle one judgement about the current page instead of guessing. Phrase it literally and concretely.
+        Fast yes/no or pick-one decision about the current page, answered from <page_aria> and your recent steps.
+        No screenshot, no HTML, produces no test code.
+        Use for in-flow judgements you would otherwise guess: did the last action already take effect, which of several similar elements the scenario means, is this the expected page or dialog.
+        Not for final assertions (use verify/finish) and not for anything page_aria does not show, such as styling or visual state (use see).
+        Phrase the question literally and concretely.
       `,
       inputSchema: z.object({
         question: z.string().describe('The statement to confirm, or the question the options answer'),

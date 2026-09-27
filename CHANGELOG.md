@@ -2,6 +2,8 @@
 
 ## 2026-09-25
 
+### Changes
+- [Tester] With the decision model on, the tester is now told when to use it: quick checks about the current page, such as whether the last action already took effect or which of several similar elements the scenario means. These used to go to the slower screenshot check or were guessed. Final assertions and visual state still go through `verify` and `see`.
 ### Configuration
 - **`ai.decisionModel.threshold`** — How sure the decision model must be before Explorbot acts on its answer, between 0 and 1. A value outside that range stops Explorbot at startup. Default: `0.7`.
 
