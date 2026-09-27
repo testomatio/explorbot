@@ -491,6 +491,14 @@ class Action {
     }
   }
 
+  public async attemptExactElementIndex(codeBlock: string, elementIndex: number, originalMessage?: string): Promise<boolean> {
+    const applyElementIndex = (step: any) => {
+      step.opts = { ...step.opts, elementIndex };
+    };
+    codeceptjs.event.dispatcher.once(codeceptjs.event.step.started, applyElementIndex);
+    return this.attempt(codeBlock, originalMessage).finally(() => codeceptjs.event.dispatcher.off(codeceptjs.event.step.started, applyElementIndex));
+  }
+
   async exitIframe(): Promise<void> {
     if (!this.playwrightHelper.frame) return;
     debugLog('Switching to main frame');

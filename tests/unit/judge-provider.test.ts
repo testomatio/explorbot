@@ -1,5 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { JudgeProvider } from '../../src/ai/judge-provider.ts';
+import { Observability } from '../../src/observability.ts';
 
 const KEYS = ['OPENROUTER_API_KEY', 'TYPESAFE_API_KEY'];
 let saved: Record<string, string | undefined> = {};
@@ -59,6 +60,17 @@ describe('JudgeProvider.decide', () => {
     const answer = await provider.decide({ page: 'x' }, 'The form is submitted.');
     expect(JSON.parse(calls[0].init.body)).toEqual({ model: 'typesafe/jev-1.13', state: { page: 'x' }, questions: { q: { type: 'noul', instructions: 'The form is submitted.' } } });
     expect(answer).toEqual({ value: 'yes', probability: 0.9 });
+  });
+
+  it('records the exact request body and endpoint on the span so the call can be replayed', async () => {
+    const attributes: Record<string, unknown> = {};
+    const getSpan = spyOn(Observability, 'getSpan').mockReturnValue({ setAttribute: (key: string, value: unknown) => (attributes[key] = value) } as any);
+    const provider = new JudgeProvider('openrouter', 'typesafe/jev-1.13');
+    const calls = capturing(provider);
+    await provider.decide({ page: 'x' }, 'q');
+    getSpan.mockRestore();
+    expect(attributes['langfuse.observation.input']).toBe(calls[0].init.body);
+    expect(attributes['ai.telemetry.metadata.judgeEndpoint']).toBe('https://openrouter.ai/api/alpha/decisions');
   });
 
   it('asks a list as a choice and returns the chosen option with its probability', async () => {

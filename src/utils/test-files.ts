@@ -1,4 +1,5 @@
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, symlinkSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import chalk from 'chalk';
 import { highlight } from 'cli-highlight';
@@ -9,6 +10,8 @@ import store from 'codeceptjs/lib/store';
 import figureSet from 'figures';
 import { ConfigParser } from '../config.ts';
 
+const nodeRequire = createRequire(import.meta.url);
+
 export function listTestFiles(testsDir: string): string[] {
   if (!existsSync(testsDir)) return [];
 
@@ -17,10 +20,32 @@ export function listTestFiles(testsDir: string): string[] {
     .map((f) => path.resolve(testsDir, f));
 }
 
+/**
+ * Generated tests import `codeceptjs/steps`, but in global mode they lie in ~/.explorbot,
+ * far from any node_modules. Link the bot's own codeceptjs next to them so Node resolves it.
+ */
+export function ensureCodeceptResolvable(dir: string): void {
+  const link = path.join(dir, 'node_modules', 'codeceptjs');
+  if (existsSync(link)) return;
+  let target: string;
+  try {
+    target = path.dirname(nodeRequire.resolve('codeceptjs/package.json'));
+  } catch {
+    return;
+  }
+  try {
+    mkdirSync(path.dirname(link), { recursive: true });
+    symlinkSync(target, link, process.platform === 'win32' ? 'junction' : 'dir');
+  } catch {
+    // Best effort: a project install already resolves codeceptjs without the link.
+  }
+}
+
 export function loadTestSuites(testsDir: string): any[] {
   const jsFiles = listTestFiles(testsDir);
   if (jsFiles.length === 0) return [];
 
+  ensureCodeceptResolvable(testsDir);
   codeceptjs.container.createMocha();
   const mocha = codeceptjs.container.mocha();
   mocha.files = jsFiles;
@@ -93,6 +118,7 @@ export async function dryRunTestFile(filePath: string): Promise<void> {
   codeceptjs.container.createMocha();
   const mocha = codeceptjs.container.mocha();
   mocha.reporter(class {});
+  ensureCodeceptResolvable(path.dirname(absPath));
   mocha.files = [absPath];
   mocha.loadFiles();
 

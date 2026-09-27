@@ -1,10 +1,10 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { OpenTelemetry } from '@ai-sdk/otel';
 import { LangfuseSpanProcessor } from '@langfuse/otel';
 import { NodeSDK } from '@opentelemetry/sdk-node';
-import { AsyncLocalStorage } from 'node:async_hooks';
-import dedent from 'dedent';
 import { APICallError, NoObjectGeneratedError, asSchema, extractJsonMiddleware, generateObject, generateText, isStepCount, parsePartialJson, registerTelemetry, tool, wrapLanguageModel } from 'ai';
 import type { ModelMessage } from 'ai';
+import dedent from 'dedent';
 import { z } from 'zod';
 import { clearActivity, setActivity } from '../activity.ts';
 import { type AIConfig, configuredModels, modelName as getModelName } from '../config.js';
@@ -60,14 +60,15 @@ function extractCachedTokens(usage: any): number {
   return usage?.inputTokenDetails?.cacheReadTokens ?? 0;
 }
 
-function abortAfterIdle(ms: number, cancel: { cancelled: boolean }, controller: AbortController, busy: { tools: number }): Promise<never> {
+function abortAfterIdle(ms: number, state: { cancelled: boolean; timedOut: boolean }, controller: AbortController, busy: { tools: number }): Promise<never> {
   return new Promise((_, reject) => {
     const tick = () => {
-      if (cancel.cancelled) return;
+      if (state.cancelled) return;
       if (executionController.isAwaitingInput() || busy.tools > 0) {
         setTimeout(tick, ms);
         return;
       }
+      state.timedOut = true;
       controller.abort();
       reject(new Error('AI request timeout'));
     };
@@ -252,13 +253,18 @@ export class Provider {
   }
 
   private async raceWithIdleTimeout<T>(fn: (signal: AbortSignal) => Promise<T>, timeoutMs: number, busy: { tools: number } = { tools: 0 }): Promise<T> {
-    const cancel = { cancelled: false };
+    const state = { cancelled: false, timedOut: false };
     const controller = new AbortController();
     const combinedSignal = combinedAbortSignal(controller);
     try {
-      return await Promise.race([fn(combinedSignal), abortAfterIdle(timeoutMs, cancel, controller, busy)]);
+      return await Promise.race([fn(combinedSignal), abortAfterIdle(timeoutMs, state, controller, busy)]);
+    } catch (error) {
+      if (state.timedOut && !executionController.getAbortSignal()?.aborted) {
+        throw new Error('AI request timeout', { cause: error });
+      }
+      throw error;
     } finally {
-      cancel.cancelled = true;
+      state.cancelled = true;
     }
   }
 

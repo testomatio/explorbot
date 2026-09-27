@@ -12,11 +12,21 @@ mock.module('codeceptjs', () => {
       const handlers = listeners.get(event) || [];
       listeners.set(event, [...handlers, handler]);
     },
+    once(event: string, handler: (...args: any[]) => void) {
+      const wrapper = Object.assign(
+        (...args: any[]) => {
+          dispatch.off(event, wrapper);
+          handler(...args);
+        },
+        { listener: handler }
+      );
+      dispatch.on(event, wrapper);
+    },
     off(event: string, handler: (...args: any[]) => void) {
       const handlers = listeners.get(event) || [];
       listeners.set(
         event,
-        handlers.filter((fn) => fn !== handler)
+        handlers.filter((fn: any) => fn !== handler && fn.listener !== handler)
       );
     },
     emit(event: string, ...args: any[]) {

@@ -8,6 +8,7 @@ import { tag } from '../../utils/logger.ts';
 import { relativeToCwd } from '../../utils/next-steps.ts';
 import { CODECEPT_TOOLS, isNonReusableCode, stripComments } from '../../utils/step-analyzer.ts';
 import { safeFilename } from '../../utils/strings.ts';
+import { ensureCodeceptResolvable } from '../../utils/test-files.ts';
 import type { Conversation } from '../conversation.ts';
 import { ASSERTION_TOOLS } from '../tools.ts';
 import type { Constructor } from './mixin.ts';
@@ -99,6 +100,7 @@ export function WithCodeceptJS<T extends Constructor>(Base: T) {
 
       const testsDir = ConfigParser.getInstance().getTestsDir();
       mkdirSync(testsDir, { recursive: true });
+      ensureCodeceptResolvable(testsDir);
 
       const filePath = join(testsDir, safeFilename(plan.title, '.js'));
       writeFileSync(filePath, lines.join('\n'));

@@ -1,3 +1,6 @@
+import { Observability } from '../observability.ts';
+import { redactSecrets } from '../utils/secrets.ts';
+
 const REQUEST_TIMEOUT_MS = 15000;
 
 export class JudgeProvider {
@@ -21,6 +24,9 @@ export class JudgeProvider {
     let q: Record<string, unknown> = { type: 'noul', instructions: question };
     if (options) q = { type: 'choice', instructions: question, criteria: Object.fromEntries(options.map((option, index) => [String(index), option])) };
     const body = JSON.stringify({ model: this.model, state, questions: { q } });
+    const span = Observability.getSpan();
+    span?.setAttribute('langfuse.observation.input', redactSecrets(body));
+    span?.setAttribute('ai.telemetry.metadata.judgeEndpoint', this.url);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.requestTimeoutMs);
     try {
