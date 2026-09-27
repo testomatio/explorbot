@@ -149,6 +149,16 @@ describe('ConfigParser environment mode', () => {
     expect(config.playwright.url).toBe('https://from-argument.example.com');
   });
 
+  it('lets the baseUrl argument pick the site over EXPLORBOT_URL', async () => {
+    process.env.EXPLORBOT_AI_MODEL = 'openrouter/openai/gpt-oss-120b';
+    process.env.EXPLORBOT_URL = 'https://env.example.com';
+
+    const config = await parser.loadConfig({ baseUrl: 'https://flag.example.com/teams/acme/' });
+
+    expect(config.playwright.url).toBe('https://flag.example.com');
+    expect(parser.getProjectRoot()).toBe(join(scratchDir, '.explorbot', 'sites', 'flag.example.com'));
+  });
+
   it('splits the model spec on the first slash only', async () => {
     const model = await resolveModel('openrouter/openai/gpt-oss-120b:nitro');
     expect(model.modelId).toBe('openai/gpt-oss-120b:nitro');
