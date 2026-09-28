@@ -237,6 +237,18 @@ describe('Navigator resolveState', () => {
     expect(retry).not.toContain('Choose exactly ONE path');
   });
 
+  it('leaves the page HTML out of the first prompt', async () => {
+    const harness = createHarness({
+      responses: ["```js\nI.click('a')\n```"],
+      attempt: () => false,
+    });
+
+    await harness.navigator.resolveState('reach /defects', fakeActionResult(), { expectedUrl: '/defects' });
+
+    expect(harness.sent[0]).not.toContain('<page_html>');
+    expect(harness.sent[1]).toContain('<page_html>');
+  });
+
   it('adds the full HTML context to the retry prompt only once', async () => {
     const harness = createHarness({
       responses: ["```js\nI.click('a')\n```", "```js\nI.click('b')\n```", "```js\nI.click('c')\n```"],

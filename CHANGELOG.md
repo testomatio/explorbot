@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-09-29
+
+### Changes
+- [Navigator] The first attempt to reach a page or recover from a failed step now sees only the page's accessibility tree, not its full HTML, and uses role and text locators, which only match elements on screen. The full HTML is added only if those attempts fail. This makes the first request several times smaller.
+
 ## 2026-09-26
 
 ### Changes
