@@ -145,6 +145,27 @@ describe('judging an ambiguous match', () => {
     expect(action.ran).toEqual([`I.click({"role":"switch"})`, `I.click({"role":"switch"}) #2`, `I.click('.other')`]);
   });
 
+  it('reports only the successful click when the judged element was clicked', async () => {
+    const { deps, action } = fakeDeps(() => multipleElementsError());
+    let state = { url: '/settings', html: '<html><body></body></html>', ariaSnapshot: '- switch', id: 'before' };
+    deps.stateManager.getCurrentState = () => state;
+    const executed = `I.click({"role":"switch"}, step.opts({"elementIndex":2}))`;
+    action.attemptExactElementIndex = async () => {
+      action.lastError = null;
+      action.executedSteps = [{ command: executed, success: true }];
+      state = { ...state, url: '/settings?enabled=1', id: 'after' };
+      return true;
+    };
+    const tools = createCodeceptJSTools({ ...deps, judge: judgePicking(1) } as any, fakeTask());
+
+    const result = await tools.click.execute({ commands: [`I.click({"role":"switch"})`], explanation: 'Toggle the control' }, {} as any);
+
+    expect(result.success).toBe(true);
+    expect(result.attempts).toEqual([{ command: executed, success: true }]);
+    expect(result.code).toBe(executed);
+    expect(JSON.stringify(result)).not.toContain('MultipleElementsFound');
+  });
+
   it('asks the judge once per click', async () => {
     const { judge, asked } = judgeAnswering((options) => options[0]);
     const { deps } = fakeDeps(() => multipleElementsError());

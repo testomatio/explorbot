@@ -112,7 +112,7 @@ export function createCodeceptJSTools({ explorer, stateManager, judge }: ToolDep
         let ambiguityError: Error | null = null;
 
         for (let i = 0; i < commands.length; i++) {
-          const command = transformContainsCommand(commands[i]);
+          let command = transformContainsCommand(commands[i]);
           let success = await action.attempt(command, explanation);
 
           const attempt: { command: string; success: boolean; error?: string } = { command, success };
@@ -125,10 +125,14 @@ export function createCodeceptJSTools({ explorer, stateManager, judge }: ToolDep
               const labels = (await extractWebElements(ambiguityError))?.map((el) => el.label) || [];
               const index = await judge.pick(PICK_ELEMENT_QUESTION, labels, { intent: explanation, task: task.description });
               if (index) success = await action.attemptExactElementIndex(command, index, explanation);
+              if (success) command = action.executedSteps.map((step) => step.command).join('\n') || command;
             }
           }
 
           if (success) {
+            attempt.command = command;
+            attempt.success = true;
+            attempt.error = undefined;
             const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, command);
 
             if (!hasObservablePageChange(toolResult)) {

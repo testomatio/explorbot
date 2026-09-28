@@ -587,6 +587,10 @@ export const attachStepLogger = (target: ExecutedStep[], assertionsTarget?: Arra
     if (batchFailed) return;
 
     const executed: ExecutedStep = { command: step.toCode(), success: !error };
+    if (Object.keys(step.opts || {}).length) {
+      const args = [step.humanizeArgs(), `step.opts(${JSON.stringify(step.opts)})`].filter(Boolean).join(', ');
+      executed.command = `${step.prefix}${step.actor}.${step.title}(${args})${step.suffix}`;
+    }
     if (error) {
       executed.error = errorToString(error);
       batchFailed = true;

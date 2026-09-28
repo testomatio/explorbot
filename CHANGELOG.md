@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-09-28
+
+### Changes
+- [Tester] When a click matches several elements and the decision model's pick is clicked, the tester is now told the click succeeded and which element index was used. Previously it saw the ambiguous attempt as failed and clicked again, which switched toggles such as filter tabs back off.
+- Generated tests now keep the element index chosen for an ambiguous click, as `step.opts({ elementIndex: N })`, so they replay without failing on multiple matches. Step options the tester writes itself are kept as well.
+
 ## 2026-09-25
 
 ### Changes
