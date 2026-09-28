@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-09-29
+
+### Changes
+- Page HTML given to the AI no longer includes parts of the page hidden by CSS, such as a mobile layout hidden on a desktop screen. On sites that render the same form twice (mobile and desktop), the AI used to pick the hidden copy and fail to fill it. Hidden checkboxes and file inputs operated through their labels, and options of a closed dropdown, are still included.
+
 ## 2026-09-26
 
 ### Changes
