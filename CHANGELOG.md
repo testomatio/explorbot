@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-09-29
+
+### Changes
+- The mdq app icon joins the other product logos in `assets/logos/`, in two lettering variants, as SVG and PNG.
+
 ## 2026-09-26
 
 ### Changes
