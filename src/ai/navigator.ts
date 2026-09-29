@@ -284,7 +284,7 @@ class Navigator implements Agent {
             return;
           }
           tag('operation').log('Feeding failures back to AI for a new batch...');
-          conversation.addUserText(await this.buildRetryFeedback(batchFailures, !htmlContextAdded, actionResult));
+          conversation.addUserText(await this.buildRetryFeedback(batchFailures, !htmlContextAdded, action.actionResult ?? actionResult));
           htmlContextAdded = true;
           codeBlocks = [];
           batchFailures.length = 0;
