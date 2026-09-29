@@ -3,6 +3,7 @@
   "version": "0.0.0",
   "description": "Query and edit markdown with a selector language - jq, for markdown",
   "license": "MIT",
+  "homepage": "https://github.com/testomatio/explorbot/blob/main/src/utils/mdq/README.md",
   "type": "module",
   "main": "./index.js",
   "types": "./types/query.d.ts",
