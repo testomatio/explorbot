@@ -21,6 +21,19 @@ The collector starts at the path you give it. For each page it:
 
 It repeats this until the queue is empty or the page budget is spent. Only same-origin links are followed.
 
+## Research depth
+
+In static mode the Researcher runs in a **light, single pass**: one AI call maps the sections and interactive elements, and the locator validation, repair conversations, and screenshot annotation passes of a full research run are skipped. Docs describe pages rather than click them, so unverified locators are a fair trade for roughly one AI call per page.
+
+Interactive mode needs locators it can actually click, so it keeps the full pipeline: every locator is validated in the browser, broken ones get fixed, and a vision pass adds coordinates. Override the automatic choice with `research`:
+
+```ts
+docs: {
+  research: 'full', // always run the verified pipeline
+  // research: 'light', // single pass even in interactive mode
+}
+```
+
 ## Configure
 
 The collector runs on your regular Explorbot setup — the AI provider and browser come from `explorbot.config.js` (see [configuration](../reference/configuration.md)). Crawl behavior lives in a separate file: `docbot.config.ts` (`.js` and `.mjs` work too).
