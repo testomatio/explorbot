@@ -171,6 +171,7 @@ interface DocbotConfig {
     minCanActions?: number;
     minInteractiveElements?: number;
     interactive?: boolean;
+    research?: 'light' | 'full';
   };
 }
 

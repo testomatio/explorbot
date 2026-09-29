@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-09-29
+
+### Changes
+- [Docbot] Static doc collection now researches each page in a single light pass — one AI call per page, without locator verification, repair conversations, or screenshot annotation. Interactive collection keeps the full verified pipeline. Static pages with no interactive elements no longer trigger research retries, so page costs are predictable.
+- [Researcher] New `light` mode: stage 1 runs as usual while locator testing, AI fixing, visual annotation, backfills, and pagination probing are skipped. A light run never writes to the shared research cache, so it cannot replace a verified research result.
+- Link-only images (banners, icon links) are no longer missing from extracted page links — their `alt` text is used as the link title when the link has no text or `aria-label`. This makes doc collector page Navigation sections complete.
+
+### Configuration
+- **`docs.research`** — Overrides the doc collector's automatic research depth: `'light'` forces the single-pass mode even in interactive collection, `'full'` always verifies locators. Default: automatic — light for static collection, full for interactive.
+
 ## 2026-09-26
 
 ### Changes
