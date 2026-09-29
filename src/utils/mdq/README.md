@@ -94,7 +94,7 @@ const updated = mdq(source)
 ```bash
 npx mdq-cli 'h2' README.md     # run without installing
 npm install mdq-cli            # use as a library
-npm install -g mdq-cli         # install the mdq command globally
+npm install -g mdq-cli         # install the mdq-cli command globally
 ```
 
 mdq requires Node.js 18 or newer. Its implementation libraries are described in [Implementation](#implementation).
@@ -129,10 +129,10 @@ mdq(source)
 ## CLI reference
 
 ```text
-mdq [options] [selector] [file]
+mdq-cli [options] [selector] [file]
 ```
 
-Square brackets in `mdq [options] [selector] [file]` mean that an argument is optional; they are documentation notation, not characters to type.
+Square brackets in `mdq-cli [options] [selector] [file]` mean that an argument is optional; they are documentation notation, not characters to type.
 
 - `[selector]` is the query that chooses Markdown blocks.
 - `[file]` is the input file. When it is omitted, mdq reads the document from standard input.
