@@ -6,6 +6,7 @@ on:
 
 jobs:
   publish:
+    if: ${{ !startsWith(github.event.release.tag_name, 'mdq-') }}
     runs-on: ubuntu-latest
 
     permissions:
