@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-09-30
+
+### Changes
+- The mdq npm package is `mdq-cli`, and so is the command it installs. Earlier notes that said `npx mdq` and `import from 'mdq'` now read `npx mdq-cli` and `import from 'mdq-cli'`.
+  ```bash
+  npx mdq-cli 'h2' README.md       # run without installing
+  npm install -g mdq-cli           # then: mdq-cli 'h2' README.md
+  ```
+- `mdq-cli --help` prints the usage and options. It used to print only `(outputHelp)`.
+
 ## 2026-09-29
 
 ### Changes

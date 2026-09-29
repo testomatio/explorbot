@@ -1,5 +1,5 @@
 {
-  "name": "mdq",
+  "name": "mdq-cli",
   "version": "0.0.0",
   "description": "Query and edit markdown with a selector language - jq, for markdown",
   "license": "MIT",
@@ -13,7 +13,7 @@
     }
   },
   "bin": {
-    "mdq": "./bin/mdq.js"
+    "mdq-cli": "./bin/mdq.js"
   },
   "files": ["index.js", "types/", "bin/", "README.md"],
   "engines": {
