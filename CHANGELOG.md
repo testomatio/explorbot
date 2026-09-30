@@ -3,6 +3,7 @@
 ## 2026-09-29
 
 ### Changes
+- Page HTML given to the AI no longer includes parts of the page hidden by CSS, such as a mobile layout hidden on a desktop screen. On sites that render the same form twice (mobile and desktop), the AI used to pick the hidden copy and fail to fill it. Hidden checkboxes and file inputs operated through their labels, and options of a closed dropdown, are still included.
 - [Navigator] The first attempt to reach a page or recover from a failed step now sees only the page's accessibility tree, not its full HTML, and uses role and text locators, which only match elements on screen. The full HTML is added only if those attempts fail. This makes the first request several times smaller. When the HTML is added, it now reflects the page after the first attempts, not the page as it was before them.
 ## 2026-09-30
 

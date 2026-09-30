@@ -88,6 +88,7 @@ export const EXPLORBOT_ATTRS = {
   coveredBy: 'data-explorbot-covered-by',
   context: 'data-explorbot-context',
   eidx: 'data-explorbot-eidx',
+  hidden: 'data-explorbot-hidden',
   hit: 'data-explorbot-hit',
   variant: 'data-explorbot-variant',
 } as const;
@@ -187,6 +188,17 @@ export function captureHtmlForSnapshot(): string {
           .join(',')
       );
     }
+  }
+
+  const liveElements = Array.from(document.body?.querySelectorAll('*') || []);
+  const clonedElements = Array.from(clone.querySelector('body')?.querySelectorAll('*') || []);
+  for (let i = 0; i < liveElements.length; i++) {
+    const source = liveElements[i];
+    if (source.matches('input, textarea, select, option, optgroup')) continue;
+    if (source.checkVisibility()) continue;
+    if (!source.parentElement?.checkVisibility()) continue;
+    if (getComputedStyle(source).display === 'contents') continue;
+    clonedElements[i]?.setAttribute('data-explorbot-hidden', 'true');
   }
 
   return clone.outerHTML;
@@ -1513,6 +1525,7 @@ function getImgAlt(element: parse5TreeAdapter.Element): string {
 }
 
 function hasHiddenClass(element: parse5TreeAdapter.Element): boolean {
+  if (getAttribute(element, EXPLORBOT_ATTRS.hidden)) return true;
   const classAttr = element.attrs.find((attr) => attr.name === 'class');
   if (!classAttr) return false;
 
