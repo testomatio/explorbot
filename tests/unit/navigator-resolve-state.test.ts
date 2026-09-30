@@ -73,7 +73,7 @@ function createHarness(
   navigator.explorer = { action: () => action, capture: async () => state() };
   navigator.stateManager = action.stateManager;
 
-  return { navigator, page, sent, attempts, flows };
+  return { navigator, action, page, sent, attempts, flows };
 }
 
 describe('Navigator resolveState', () => {
@@ -235,6 +235,30 @@ describe('Navigator resolveState', () => {
     expect(retry).toContain('element not visible');
     expect(retry).toContain('intercepts pointer events');
     expect(retry).not.toContain('Choose exactly ONE path');
+  });
+
+  it('leaves the page HTML out of the first prompt', async () => {
+    const harness = createHarness({
+      responses: ["```js\nI.click('a')\n```"],
+      attempt: () => false,
+    });
+
+    await harness.navigator.resolveState('reach /defects', fakeActionResult(), { expectedUrl: '/defects' });
+
+    expect(harness.sent[0]).not.toContain('<page_html>');
+    expect(harness.sent[1]).toContain('<page_html>');
+  });
+
+  it('gives the retry the HTML of the page as it is now, not as it was at the start', async () => {
+    const harness = createHarness({
+      responses: ["```js\nI.click('Open menu')\n```"],
+      attempt: () => false,
+    });
+    harness.action.actionResult = { ...fakeActionResult(), combinedHtml: async () => '<html>menu opened</html>' };
+
+    await harness.navigator.resolveState('reach /defects', fakeActionResult(), { expectedUrl: '/defects' });
+
+    expect(harness.sent[1]).toContain('menu opened');
   });
 
   it('adds the full HTML context to the retry prompt only once', async () => {

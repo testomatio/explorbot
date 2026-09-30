@@ -30,6 +30,12 @@ describe('reads', () => {
     expect(JSON.parse(result.output)).toEqual([{ Method: 'GET', Path: '/users' }]);
   });
 
+  it('prints help', async () => {
+    const result = await runMdq(['--help'], async () => doc);
+    expect(result.output).toContain('Usage: mdq-cli');
+    expect(result.code).toBe(0);
+  });
+
   it('prints a count', async () => {
     expect((await runMdq(['h2', '--count'], async () => doc)).output.trim()).toBe('2');
   });

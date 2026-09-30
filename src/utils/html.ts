@@ -1505,6 +1505,25 @@ function getAttribute(element: parse5TreeAdapter.Element, name: string): string 
   return attr?.value;
 }
 
+function getImgAlt(element: parse5TreeAdapter.Element): string {
+  let alt = '';
+
+  function processNode(node: parse5TreeAdapter.Node) {
+    if (alt) return;
+    if ('tagName' in node) {
+      const el = node as parse5TreeAdapter.Element;
+      if (el.tagName.toLowerCase() === 'img') {
+        alt = getAttribute(el, 'alt') || '';
+        return;
+      }
+    }
+    if ('childNodes' in node) node.childNodes.forEach(processNode);
+  }
+
+  processNode(element);
+  return alt;
+}
+
 function hasHiddenClass(element: parse5TreeAdapter.Element): boolean {
   if (getAttribute(element, EXPLORBOT_ATTRS.hidden)) return true;
   const classAttr = element.attrs.find((attr) => attr.name === 'class');
@@ -1566,7 +1585,7 @@ export function extractLinks(html: string): ExtractedLink[] {
         if (href) {
           const shouldSkip = skipPrefixes.some((prefix) => href.startsWith(prefix));
           if (!shouldSkip) {
-            const rawTitle = getAttribute(element, 'aria-label') || getTextContent(element);
+            const rawTitle = getAttribute(element, 'aria-label') || getTextContent(element) || getImgAlt(element);
             const title = sanitizeLinkTitle(rawTitle);
             if (title && title.length <= 100) {
               const key = `${href}|${title}`;
