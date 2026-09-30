@@ -4,6 +4,26 @@
 
 ### Changes
 - [Navigator] The first attempt to reach a page or recover from a failed step now sees only the page's accessibility tree, not its full HTML, and uses role and text locators, which only match elements on screen. The full HTML is added only if those attempts fail. This makes the first request several times smaller. When the HTML is added, it now reflects the page after the first attempts, not the page as it was before them.
+## 2026-09-30
+
+### Changes
+- The mdq npm package is `mdq-cli`, and so is the command it installs. Earlier notes that said `npx mdq` and `import from 'mdq'` now read `npx mdq-cli` and `import from 'mdq-cli'`.
+  ```bash
+  npx mdq-cli 'h2' README.md       # run without installing
+  npm install -g mdq-cli           # then: mdq-cli 'h2' README.md
+  ```
+- `mdq-cli --help` prints the usage and options. It used to print only `(outputHelp)`.
+
+## 2026-09-29
+
+### Changes
+- [Docbot] Static doc collection now researches each page in a single light pass — one AI call per page, without locator verification, repair conversations, or screenshot annotation. Interactive collection keeps the full verified pipeline. Static pages with no interactive elements no longer trigger research retries, so page costs are predictable.
+- [Researcher] New `light` mode: stage 1 runs as usual while locator testing, AI fixing, visual annotation, backfills, and pagination probing are skipped. A light run never writes to the shared research cache, so it cannot replace a verified research result.
+- Link-only images (banners, icon links) are no longer missing from extracted page links — their `alt` text is used as the link title when the link has no text or `aria-label`. This makes doc collector page Navigation sections complete.
+- The mdq app icon joins the other product logos in `assets/logos/`, in two lettering variants, as SVG and PNG.
+
+### Configuration
+- **`docs.research`** — Overrides the doc collector's automatic research depth: `'light'` forces the single-pass mode even in interactive collection, `'full'` always verifies locators. Default: automatic — light for static collection, full for interactive.
 
 ## 2026-09-26
 

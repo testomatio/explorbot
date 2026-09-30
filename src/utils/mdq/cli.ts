@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync } from 'node:fs';
-import { Command } from 'commander';
+import { Command, type CommanderError } from 'commander';
 import { type MarkdownQuery, MdqError, mdq } from './query.ts';
 
 const EDIT_FLAGS = ['remove', 'replace', 'insertBefore', 'insertAfter', 'prepend', 'append', 'addRow', 'addItem', 'set'] as const;
@@ -7,7 +7,7 @@ const EDIT_FLAGS = ['remove', 'replace', 'insertBefore', 'insertAfter', 'prepend
 export async function runMdq(argv: string[], readStdin: StdinReader): Promise<CliResult> {
   const program = new Command();
   program
-    .name('mdq')
+    .name('mdq-cli')
     .description('query and edit markdown')
     .argument('[selector]', 'markdown selector')
     .argument('[file]', 'file to read; stdin when omitted')
@@ -31,6 +31,7 @@ export async function runMdq(argv: string[], readStdin: StdinReader): Promise<Cl
   try {
     program.parse(argv, { from: 'user' });
   } catch (error) {
+    if ((error as CommanderError).code === 'commander.helpDisplayed') return { output: program.helpInformation(), code: 0 };
     return { output: String((error as Error).message), code: 2 };
   }
 
