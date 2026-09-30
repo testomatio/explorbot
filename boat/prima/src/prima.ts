@@ -240,6 +240,10 @@ export class Prima {
     if (aiError) return this.failureEnvelope(command, aiError, previousState);
 
     if (trace.length && ledger.some((entry) => entry.status === 'open')) {
+      await this.settleLedgerByJudge(ledger, trace);
+    }
+
+    if (trace.length && ledger.some((entry) => entry.status === 'open')) {
       await this.settleLedger(conversation, provider, ledger, trace);
     }
 
@@ -308,6 +312,32 @@ export class Prima {
       trace.push({ label: `blocked: ${entry.text}`, ok: false, proof: entry.proof });
     }
     return true;
+  }
+
+  private async settleLedgerByJudge(ledger: LedgerEntry[], trace: Array<{ label: string; ok: boolean; proof: string }>): Promise<void> {
+    const judge = this.bot.judge?.();
+    if (!judge) return;
+
+    const current = this.bot.stateManager().getCurrentState();
+    let page = '';
+    if (current) page = ((await this.refAriaSnapshot(ActionResult.fromState(current))) || '').slice(0, JUDGE_PAGE_CAP);
+    const actions = trace
+      .map((step) => {
+        if (step.ok) return `ok ${step.label}`;
+        return `FAIL ${step.label}`;
+      })
+      .join('\n');
+    const state = { actions, finalUrl: current?.url || '', finalPage: page };
+
+    const open = ledger.filter((entry) => entry.status === 'open');
+    const decisions = await Promise.all(open.map((entry) => judge.decide(`The actions that ran and the final page show this instruction was carried out: ${entry.text}`, null, state)));
+
+    open.forEach((entry, index) => {
+      if (decisions[index].rejected) return;
+      entry.status = 'done';
+      entry.proof = 'judged from the actions that ran and the final page';
+      trace.push({ label: `done: ${entry.text}`, ok: true, proof: entry.proof });
+    });
   }
 
   private async settleLedger(conversation: any, provider: any, ledger: LedgerEntry[], trace: Array<{ label: string; ok: boolean; proof: string }>): Promise<void> {
@@ -455,9 +485,10 @@ export class Prima {
     }
 
     let navigationError: unknown = null;
+    let arrived = true;
 
     try {
-      await this.bot.agentNavigator().visit(target);
+      arrived = await this.bot.agentNavigator().visit(target, { recover: !isUrl });
     } catch (error) {
       navigationError = error;
     }
@@ -467,7 +498,9 @@ export class Prima {
     const used: string[] = [];
     if (isUrl) used.push(code);
     const result = await this.capturedResult(this.bot.stateManager().getCurrentState());
-    return this.successEnvelope(command, used, result, previousState);
+    const envelope = await this.successEnvelope(command, used, result, previousState);
+    if (!arrived) envelope.page.redirectedFrom = target;
+    return envelope;
   }
 
   async browserStart(): Promise<void> {

@@ -155,7 +155,7 @@ export class ExplorBot {
   }
 
   async visit(url: string): Promise<void> {
-    return this.agentNavigator().visit(this.configParser.resolveTargetPath(url));
+    await this.agentNavigator().visit(this.configParser.resolveTargetPath(url));
   }
 
   async openTab(): Promise<void> {

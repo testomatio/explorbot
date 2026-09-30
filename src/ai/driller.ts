@@ -6,6 +6,7 @@ import { setActivity } from '../activity.ts';
 import { Observability } from '../observability.ts';
 import { Plan, Test, TestResult } from '../test-plan.ts';
 import { collectInteractiveNodes } from '../utils/aria.ts';
+import { splitTopLevel } from '../utils/code-extractor.ts';
 import { EXPLORBOT_ATTRS, HTML_COMPOSITE_AREA_HINTS, HTML_COMPOSITE_TARGET_ROLES, HTML_EXTRACTION_LIMITS, HTML_FORM_CONTROL_ROLES, HTML_FORM_CONTROL_TAGS, HTML_INTERACTIVE_ROLES, HTML_SELECTORS, getComponentScopeHtmlExtractorSource, inferHtmlRole } from '../utils/html.ts';
 import { createDebug, tag } from '../utils/logger.ts';
 import { loop, pause } from '../utils/loop.ts';
@@ -1011,39 +1012,7 @@ function countTopLevelArgCount(line: string): number {
   const end = line.lastIndexOf(')');
   if (start === -1 || end === -1 || end <= start + 1) return 0;
 
-  const body = line.slice(start + 1, end);
-  let count = 1;
-  let depth = 0;
-  let quote = '';
-
-  for (let i = 0; i < body.length; i++) {
-    const char = body[i];
-    const escaped = body[i - 1] === '\\';
-
-    if (quote) {
-      if (char === quote && !escaped) quote = '';
-      continue;
-    }
-
-    if (char === '"' || char === "'" || char === '`') {
-      quote = char;
-      continue;
-    }
-
-    if (char === '(' || char === '[' || char === '{') {
-      depth++;
-      continue;
-    }
-
-    if (char === ')' || char === ']' || char === '}') {
-      depth = Math.max(0, depth - 1);
-      continue;
-    }
-
-    if (char === ',' && depth === 0) count++;
-  }
-
-  return count;
+  return splitTopLevel(line.slice(start + 1, end), ',').length;
 }
 
 function buildClassSelector(tag: string, classes: string[]): string {

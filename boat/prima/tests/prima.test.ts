@@ -8,6 +8,7 @@ import { getEndpointFilePath, listInstances } from '../../../src/browser-server.
 import { ConfigParser } from '../../../src/config.ts';
 import { ExplorBot } from '../../../src/explorbot.ts';
 import { TestResult } from '../../../src/test-plan.ts';
+import { renderEnvelope } from '../src/envelope.ts';
 import { Prima } from '../src/prima.ts';
 
 let artifactsRoot: string;
@@ -601,6 +602,49 @@ describe('Prima.do', () => {
 
     expect(envelope.ok).toBe(true);
     expect(prompts.join('\n')).toContain('The run is over and these instructions were never reported');
+    expect(envelope.steps?.every((step) => step.ok)).toBe(true);
+  });
+
+  test('a confident judge settles unreported instructions without asking the model again', async () => {
+    const { prima } = fakePrima();
+    const prompts: string[] = [];
+    const questions: Array<{ question: string; state: any }> = [];
+    (prima as any).bot.getProvider = () =>
+      fakeProvider(async () => {
+        if (!prompts.some((prompt) => prompt.includes('still unreported'))) return { toolExecutions: [toolExecution("I.click('Invoices')")] };
+        return { toolExecutions: [], response: { text: 'Done.' } };
+      }, prompts);
+    (prima as any).bot.judge = () => ({
+      decide: async (question: string, _options: null, state: any) => {
+        questions.push({ question, state });
+        return new Decision('yes', 0.9);
+      },
+    });
+
+    const envelope = await prima.do(['open the invoices page']);
+
+    expect(prompts.join('\n')).not.toContain('The run is over');
+    expect(questions[0].question).toContain('open the invoices page');
+    expect(questions[0].state.actions).toContain("I.click('Invoices')");
+    expect(envelope.steps?.every((step) => step.ok)).toBe(true);
+  });
+
+  test('an undecided judge leaves unreported instructions to the model', async () => {
+    const { prima } = fakePrima();
+    const prompts: string[] = [];
+    let calls = 0;
+    (prima as any).bot.getProvider = () =>
+      fakeProvider(async () => {
+        calls++;
+        if (calls === 1) return { toolExecutions: [toolExecution("I.click('Invoices')")] };
+        if (calls < 4) return { toolExecutions: [], response: { text: 'Done.' } };
+        return { toolExecutions: [completedExecution([1], 'the invoice list is open')] };
+      }, prompts);
+    (prima as any).bot.judge = () => ({ decide: async () => new Decision(null, 0.4) });
+
+    const envelope = await prima.do(['open the invoices page']);
+
+    expect(prompts.join('\n')).toContain('The run is over');
     expect(envelope.steps?.every((step) => step.ok)).toBe(true);
   });
 
@@ -1230,6 +1274,7 @@ describe('Prima.go', () => {
     (prima as any).bot.agentNavigator = () => ({
       visit: async (destination: string) => {
         visited.push(destination);
+        return true;
       },
     });
 
@@ -1241,12 +1286,38 @@ describe('Prima.go', () => {
     expect(envelope.used).toEqual([]);
   });
 
+  test('a url target reports a server redirect instead of recovering from it', async () => {
+    const { prima } = fakePrima();
+    const visits: Array<{ destination: string; opts: any }> = [];
+    (prima as any).bot.agentNavigator = () => ({
+      visit: async (destination: string, opts: any) => {
+        visits.push({ destination, opts });
+        return false;
+      },
+    });
+
+    const envelope = await prima.go('/projects/private');
+    expect(visits).toEqual([{ destination: '/projects/private', opts: { recover: false } }]);
+    expect(envelope.ok).toBe(true);
+    expect(envelope.page.redirectedFrom).toBe('/projects/private');
+    expect(renderEnvelope(envelope)).toContain('(redirected: /projects/private → ');
+  });
+
+  test('a url target that lands where asked reports no redirect', async () => {
+    const { prima } = fakePrima();
+    (prima as any).bot.agentNavigator = () => ({ visit: async () => true });
+
+    const envelope = await prima.go('/projects');
+    expect(envelope.page.redirectedFrom).toBeUndefined();
+  });
+
   test('a confident judge clicks a ref, confirms arrival, and skips the navigator', async () => {
     const { prima } = fakePrima();
     let visited = false;
     (prima as any).bot.agentNavigator = () => ({
       visit: async () => {
         visited = true;
+        return true;
       },
     });
     (prima as any).bot.judge = () => refJudge('Refreshed');
@@ -1280,6 +1351,7 @@ describe('Prima.go', () => {
     (prima as any).bot.agentNavigator = () => ({
       visit: async (destination: string) => {
         visited.push(destination);
+        return true;
       },
     });
     (prima as any).bot.judge = () => refJudge(null);
@@ -1295,6 +1367,7 @@ describe('Prima.go', () => {
     (prima as any).bot.agentNavigator = () => ({
       visit: async (destination: string) => {
         visited.push(destination);
+        return true;
       },
     });
     let arrivalAsked = false;
@@ -1324,6 +1397,7 @@ describe('Prima.go', () => {
     (prima as any).bot.agentNavigator = () => ({
       visit: async (destination: string) => {
         visited.push(destination);
+        return true;
       },
     });
     (prima as any).bot.judge = () => refJudge('Refreshed', false);
@@ -1353,6 +1427,7 @@ describe('Prima.go', () => {
     (prima as any).bot.agentNavigator = () => ({
       visit: async (destination: string) => {
         visited.push(destination);
+        return true;
       },
     });
     (prima as any).bot.judge = () => refJudge('Refreshed');
@@ -1377,6 +1452,7 @@ describe('Prima.go', () => {
     (prima as any).bot.agentNavigator = () => ({
       visit: async (destination: string) => {
         visited.push(destination);
+        return true;
       },
     });
     (prima as any).bot.judge = () => refJudge('Refreshed');
@@ -1405,6 +1481,7 @@ describe('Prima.go', () => {
     (prima as any).bot.agentNavigator = () => ({
       visit: async (destination: string) => {
         visited.push(destination);
+        return true;
       },
     });
     (prima as any).bot.stateManager = () => ({ getCurrentState: () => null, getVisitCount: () => 0 });
@@ -1439,6 +1516,7 @@ describe('Prima.go', () => {
     (prima as any).bot.agentNavigator = () => ({
       visit: async (destination: string) => {
         visited.push(destination);
+        return true;
       },
     });
 
@@ -1465,13 +1543,14 @@ describe('Prima.go', () => {
     expect(envelope.failure?.error).toContain('AI connection failed: no credentials');
   });
 
-  test('failed url navigation without ai degrades to a failure envelope', async () => {
+  test('a redirected url navigation without ai reports the redirect', async () => {
     const { prima } = fakePrima();
     const navigator = Object.create(Navigator.prototype) as any;
     navigator.provider = undefined;
     navigator.config = { playwright: { url: 'https://app.example.com' } };
     navigator.hooksRunner = { runBeforeHook: async () => {}, runAfterHook: async () => {} };
     navigator.explorer = {
+      capture: async () => {},
       action: () => ({
         execute: async () => {},
         lastError: null,
@@ -1485,9 +1564,8 @@ describe('Prima.go', () => {
     (prima as any).bot.agentNavigator = () => navigator;
 
     const envelope = await prima.go('/billing');
-    expect(envelope.ok).toBe(false);
-    expect(envelope).not.toHaveProperty('healed');
-    expect(envelope.failure?.error).toContain('AI-assisted recovery is unavailable');
+    expect(envelope.ok).toBe(true);
+    expect(envelope.page.redirectedFrom).toBe('/billing');
   });
 
   test('navigation error fails instead of reaching the target another way', async () => {

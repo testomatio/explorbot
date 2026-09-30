@@ -26,7 +26,7 @@ export interface EnvelopeData {
   ok: boolean;
   command: string;
   used?: string[];
-  page: { url: string; previousUrl?: string; title: string; state: string; visits: number };
+  page: { url: string; previousUrl?: string; redirectedFrom?: string; title: string; state: string; visits: number };
   changes?: string | null;
   steps?: Array<{ label: string; ok: boolean; unconfirmed?: boolean; proof: string }>;
   expectations?: Array<{ text: string; status: 'passed' | 'failed' | 'unverified' | 'contradiction'; evidence?: string }>;
@@ -35,7 +35,7 @@ export interface EnvelopeData {
   value?: string;
   answer?: string;
   research?: string;
-  assertions?: Array<{ code: string; passed: boolean; proof: string[] }>;
+  assertions?: Array<{ code: string; passed: boolean; proof: string[]; error?: string }>;
   failure?: { error: string; compactAria?: string };
   instance: InstanceInfo;
   status?: string;
@@ -88,12 +88,13 @@ function renderResult(data: EnvelopeData): string {
 }
 
 function renderPage(data: EnvelopeData): string {
-  const { url, previousUrl, title, state, visits } = data.page;
+  const { url, previousUrl, redirectedFrom, title, state, visits } = data.page;
   const urlLabel = `url: ${url}`;
   const stateLabel = `state: ${state}`;
   const width = Math.max(urlLabel.length, stateLabel.length) + 3;
   let changedMarker = '';
   if (previousUrl && previousUrl !== url) changedMarker = `(changed: ${previousUrl} → ${url})`;
+  if (redirectedFrom) changedMarker = `(redirected: ${redirectedFrom} → ${url})`;
   const lines = [align(urlLabel, changedMarker, width), `title: ${title}`, align(stateLabel, `(visit #${visits})`, width)];
   return section('Page', lines.join('\n'));
 }
@@ -153,7 +154,10 @@ function renderOutcome(data: EnvelopeData): string | null {
       .map((line) => line.trim())
       .filter((line) => line && !line.startsWith('//'))
       .join(' ');
-    return `${code}  => ${assertion.passed ? 'PASSED' : 'FAILED'}`;
+    if (assertion.passed) return `${code}  => PASSED`;
+    const reason = assertion.error?.split('\n').find(Boolean);
+    if (!reason) return `${code}  => FAILED`;
+    return `${code}  => FAILED\n      ${reason}`;
   });
 
   const proof = data.assertions.flatMap((assertion) => assertion.proof);

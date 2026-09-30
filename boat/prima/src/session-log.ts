@@ -82,7 +82,7 @@ function commandSteps(envelope: EnvelopeData): any[] {
     const entry: any = { category: 'user', title: assertion.code, status: 'passed', duration: 0, log: assertion.proof.join('\n') };
     if (!assertion.passed) {
       entry.status = 'failed';
-      entry.error = 'the assertion did not hold on the page';
+      entry.error = assertion.error || 'the assertion did not hold on the page';
     }
     steps.push(entry);
   }

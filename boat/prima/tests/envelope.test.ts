@@ -82,6 +82,17 @@ describe('renderEnvelope', () => {
     expect(out).not.toContain('passed: ');
   });
 
+  test('a failed assertion shows the first line of its error', () => {
+    const out = renderEnvelope({
+      ...base,
+      changes: undefined,
+      assertions: [{ code: "I.see('Saved', 'main')", passed: false, proof: [], error: 'expected main to include "Saved"\n    at see' }],
+    });
+
+    expect(out).toContain("I.see('Saved', 'main')  => FAILED\n      expected main to include \"Saved\"");
+    expect(out).not.toContain('at see');
+  });
+
   test('a multi-line assertion gets one result, not one per line', () => {
     const out = renderEnvelope({
       ...base,

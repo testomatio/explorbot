@@ -136,11 +136,11 @@ class Navigator implements Agent {
     return matchesNavigationUrl(expectedUrl, currentUrl);
   }
 
-  async visit(url: string): Promise<void> {
-    return this.visitOnce(url);
+  async visit(url: string, opts: { recover?: boolean } = {}): Promise<boolean> {
+    return this.visitOnce(url, opts.recover !== false);
   }
 
-  private async visitOnce(url: string): Promise<void> {
+  private async visitOnce(url: string, recover: boolean): Promise<boolean> {
     try {
       const action = this.explorer.action();
 
@@ -153,7 +153,10 @@ class Navigator implements Agent {
 
       await this.hooksRunner.runBeforeHook('navigator', url);
 
-      if (!this.isOnExpectedPage(url, action.stateManager)) {
+      if (!recover && action.lastError) throw new Error(`Navigation to ${url} failed: ${action.lastError.message}`);
+
+      const arrived = this.isOnExpectedPage(url, action.stateManager);
+      if (recover && !arrived) {
         const actualPath = action.stateManager.getCurrentState()?.url || '';
         const actionResult = action.actionResult || ActionResult.fromState(action.stateManager.getCurrentState()!);
         const originalMessage = `Navigate to: ${url}. Current page: ${actualPath}`;
@@ -177,6 +180,7 @@ class Navigator implements Agent {
       }
       await this.explorer.capture({ screenshot: true });
       await this.hooksRunner.runAfterHook('navigator', url);
+      return arrived || recover;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       if (errorMessage.includes('ERR_CONNECTION_REFUSED')) {
@@ -811,7 +815,9 @@ class Navigator implements Agent {
 
           const verified = await action.attempt(codeBlock, message);
           const proof = action.assertionSteps.map(renderAssertion).filter(Boolean);
-          results.push({ code: codeBlock, passed: verified, proof });
+          const result: AssertionResult = { code: codeBlock, passed: verified, proof };
+          if (!verified && action.lastError) result.error = action.lastError.message;
+          results.push(result);
 
           if (verified) {
             tag('success').log('Verification passed');
@@ -860,6 +866,6 @@ class Navigator implements Agent {
 
 type BatchFailure = { code: string; error: string; ariaChanges?: string | null; urlAfter?: string };
 
-export type AssertionResult = { code: string; passed: boolean; proof: string[] };
+export type AssertionResult = { code: string; passed: boolean; proof: string[]; error?: string };
 
 export { Navigator };
