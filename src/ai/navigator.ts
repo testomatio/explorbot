@@ -284,7 +284,7 @@ class Navigator implements Agent {
             return;
           }
           tag('operation').log('Feeding failures back to AI for a new batch...');
-          conversation.addUserText(await this.buildRetryFeedback(batchFailures, !htmlContextAdded, actionResult));
+          conversation.addUserText(await this.buildRetryFeedback(batchFailures, !htmlContextAdded, action.actionResult ?? actionResult));
           htmlContextAdded = true;
           codeBlocks = [];
           batchFailures.length = 0;
@@ -384,10 +384,6 @@ class Navigator implements Agent {
 
       <page>
         ${actionResult.toAiContext()}
-
-        <page_html>
-        ${await actionResult.combinedHtml()}
-        </page_html>
       </page>
 
       <task>
@@ -397,6 +393,8 @@ class Navigator implements Agent {
         Propose different solutions to achieve the result.
         Solution should be valid CodeceptJS code.
         Use only data from the <page> context to plan the solution.
+        The page is given as an ARIA snapshot only: use ARIA and text locators from it.
+        Full HTML is provided if these solutions fail.
         Try various ways to achieve the result
       </task>
 
