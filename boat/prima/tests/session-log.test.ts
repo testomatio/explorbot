@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { existsSync, rmSync } from 'node:fs';
 import { ConfigParser } from '../../../src/config.ts';
+import { SettledExpectation } from '../../../src/test-plan.ts';
 import type { EnvelopeData } from '../src/envelope.ts';
 import { latestSessionFile, readSession, recordCommand, sessionFile, sessionsDir } from '../src/session-log.ts';
 
@@ -61,10 +62,7 @@ describe('prima session log', () => {
       session,
       envelope({
         steps: [{ label: 'done: open the account menu', ok: true, proof: 'the menu is expanded' }],
-        expectations: [
-          { text: 'the theme is dark', status: 'passed' },
-          { text: 'the choice survives a reload', status: 'unverified' },
-        ],
+        expectations: [new SettledExpectation('the theme is dark', 'passed'), new SettledExpectation('the choice survives a reload', 'unverified'), new SettledExpectation('the toggle shows dark', 'contradiction')],
         assertions: [{ code: 'I.see("Dark")', passed: true, proof: ['locator("body").filter({ hasText: "Dark" })'] }],
         stepFiles: '/tmp/prima/abc123',
       }),
@@ -76,6 +74,7 @@ describe('prima session log', () => {
       ['done: open the account menu', 'passed'],
       ['expected: the theme is dark', 'passed'],
       ['expected: the choice survives a reload', 'skipped'],
+      ['expected: the toggle shows dark', 'failed'],
       ['I.see("Dark")', 'passed'],
     ]);
     expect(test.description).toContain('artifacts: /tmp/prima/abc123');

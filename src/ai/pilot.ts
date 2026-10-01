@@ -8,7 +8,7 @@ import type Explorer from '../explorer.ts';
 import type { PlaywrightRecorder } from '../playwright-recorder.ts';
 import type { StateManager } from '../state-manager.ts';
 import { Stats } from '../stats.ts';
-import { type Test, TestResult, TestStatus } from '../test-plan.ts';
+import { SettledExpectation, type SettledStatus, type Test, TestResult, TestStatus } from '../test-plan.ts';
 import { collectInteractiveNodes } from '../utils/aria.ts';
 import { ErrorPageError } from '../utils/error-page.ts';
 import { createDebug, tag } from '../utils/logger.ts';
@@ -625,7 +625,7 @@ export class Pilot implements Agent {
     let settledByJudge = new Map<string, SettledStatus>();
     if (!image) settledByJudge = await this.settleByJudge(task, undecided);
     undecided = undecided.filter((text) => !settledByJudge.has(text));
-    if (!undecided.length) return task.expected.map((text) => ({ text, status: settledByJudge.get(text) || decided(text) }));
+    if (!undecided.length) return task.expected.map((text) => new SettledExpectation(text, settledByJudge.get(text) || decided(text)));
 
     const schema = z.object({
       outcomes: z.array(
@@ -699,11 +699,11 @@ export class Pilot implements Agent {
     const judged = new Map((response?.object?.outcomes || []).map((outcome: any) => [outcome.expectation, outcome]));
     const settled = task.expected.map((text) => {
       const byJudge = settledByJudge.get(text);
-      if (byJudge) return { text, status: byJudge };
-      if (!undecided.includes(text)) return { text, status: decided(text) };
+      if (byJudge) return new SettledExpectation(text, byJudge);
+      if (!undecided.includes(text)) return new SettledExpectation(text, decided(text));
       const outcome = judged.get(text) as { status: SettledStatus; evidence?: string } | undefined;
-      if (!outcome) return { text, status: 'unverified' as SettledStatus };
-      return { text, status: outcome.status || 'unverified', evidence: outcome.evidence };
+      if (!outcome) return new SettledExpectation(text, 'unverified');
+      return new SettledExpectation(text, outcome.status || 'unverified', outcome.evidence);
     });
     return this.resolveContradictions(settled, finalState);
   }
@@ -711,12 +711,12 @@ export class Pilot implements Agent {
   private async resolveContradictions(outcomes: SettledExpectation[], finalState?: ActionResult): Promise<SettledExpectation[]> {
     const judge = this.judge;
     if (!judge || !finalState) return outcomes;
-    if (!outcomes.some((outcome) => outcome.status === 'contradiction')) return outcomes;
+    if (!outcomes.some((outcome) => outcome.contradicted)) return outcomes;
 
     const page = finalState.getCompactARIA().slice(0, JUDGE_PAGE_CAP);
     return Promise.all(
       outcomes.map(async (outcome) => {
-        if (outcome.status !== 'contradiction') return outcome;
+        if (!outcome.contradicted) return outcome;
         const decision = await judge.decide(`The screenshot and the run log disagree about the expected outcome: ${outcome.text}. Which side does the page structure support?`, [...Object.keys(CONTRADICTION_RESOLUTION), UNDECIDED], {
           expectation: outcome.text,
           disagreement: outcome.evidence || '',
@@ -724,7 +724,7 @@ export class Pilot implements Agent {
         });
         const resolved = CONTRADICTION_RESOLUTION[decision.value ?? ''];
         if (!resolved) return outcome;
-        return { ...outcome, ...resolved };
+        return outcome.resolve(resolved.status, resolved.resolution);
       })
     );
   }
@@ -1302,13 +1302,4 @@ export class Pilot implements Agent {
       ${stepsText}
     `;
   }
-}
-
-export type SettledStatus = 'passed' | 'failed' | 'unverified' | 'contradiction';
-
-export interface SettledExpectation {
-  text: string;
-  status: SettledStatus;
-  evidence?: string;
-  resolution?: string;
 }

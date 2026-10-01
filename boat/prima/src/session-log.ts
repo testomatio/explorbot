@@ -4,7 +4,7 @@ import { outputPath } from '../../../src/config.ts';
 import { safeFilename } from '../../../src/utils/strings.ts';
 import { type EnvelopeData, renderEnvelope } from './envelope.ts';
 
-const EXPECTATION_STATUS = { passed: 'passed', failed: 'failed', unverified: 'skipped' };
+const EXPECTATION_STATUS = { passed: 'passed', failed: 'failed', unverified: 'skipped', contradiction: 'failed' };
 
 export function sessionsDir(): string {
   return outputPath('prima', 'sessions');
@@ -74,7 +74,7 @@ function commandSteps(envelope: EnvelopeData): any[] {
 
   for (const expectation of envelope.expectations || []) {
     const entry: any = { category: 'user', title: `expected: ${expectation.text}`, status: EXPECTATION_STATUS[expectation.status], duration: 0 };
-    if (expectation.status === 'failed') entry.error = 'the run did not reach this outcome';
+    if (expectation.failed) entry.error = 'the run did not reach this outcome';
     steps.push(entry);
   }
 

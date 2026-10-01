@@ -7,7 +7,7 @@ import { Navigator } from '../../../src/ai/navigator.ts';
 import { getEndpointFilePath, listInstances } from '../../../src/browser-server.ts';
 import { ConfigParser } from '../../../src/config.ts';
 import { ExplorBot } from '../../../src/explorbot.ts';
-import { TestResult } from '../../../src/test-plan.ts';
+import { SettledExpectation, TestResult } from '../../../src/test-plan.ts';
 import { renderEnvelope } from '../src/envelope.ts';
 import { Prima } from '../src/prima.ts';
 
@@ -896,11 +896,7 @@ describe('Prima.check', () => {
       },
     });
     (prima as any).bot.agentPilot = () => ({
-      settleExpectations: async () => [
-        { text: 'the editor opens', status: 'passed' },
-        { text: 'the draft is saved', status: 'failed' },
-        { text: 'the list refreshes', status: 'unverified' },
-      ],
+      settleExpectations: async () => [new SettledExpectation('the editor opens', 'passed'), new SettledExpectation('the draft is saved', 'failed'), new SettledExpectation('the list refreshes', 'unverified')],
     });
 
     const envelope = await prima.check('edit and save a skill', ['the editor opens', 'the draft is saved', 'the list refreshes']);
@@ -923,7 +919,7 @@ describe('Prima.check', () => {
         return { success: false };
       },
     });
-    (prima as any).bot.agentPilot = () => ({ settleExpectations: async () => [{ text: 'the editor opens', status: 'passed' }] });
+    (prima as any).bot.agentPilot = () => ({ settleExpectations: async () => [new SettledExpectation('the editor opens', 'passed')] });
 
     const envelope = await prima.check('edit a skill', ['the editor opens']);
     const labels = envelope.steps?.map((step) => step.label) || [];
@@ -943,7 +939,7 @@ describe('Prima.check', () => {
         return { success: true };
       },
     });
-    (prima as any).bot.agentPilot = () => ({ settleExpectations: async () => [{ text: 'edit and save a skill', status: 'passed' }] });
+    (prima as any).bot.agentPilot = () => ({ settleExpectations: async () => [new SettledExpectation('edit and save a skill', 'passed')] });
 
     const envelope = await prima.check('edit and save a skill');
 
@@ -962,7 +958,7 @@ describe('Prima.check', () => {
         return { success: true };
       },
     });
-    (prima as any).bot.agentPilot = () => ({ settleExpectations: async () => [{ text: 'the editor opens', status: 'passed' }] });
+    (prima as any).bot.agentPilot = () => ({ settleExpectations: async () => [new SettledExpectation('the editor opens', 'passed')] });
 
     await prima.check('edit a skill', ['the editor opens']);
 
@@ -979,10 +975,7 @@ describe('Prima.check', () => {
       },
     });
     (prima as any).bot.agentPilot = () => ({
-      settleExpectations: async () => [
-        { text: 'the editor opens', status: 'passed' },
-        { text: 'the list refreshes', status: 'unverified' },
-      ],
+      settleExpectations: async () => [new SettledExpectation('the editor opens', 'passed'), new SettledExpectation('the list refreshes', 'unverified')],
     });
 
     const envelope = await prima.check('edit a skill', ['the editor opens', 'the list refreshes']);
@@ -1000,7 +993,7 @@ describe('Prima.check', () => {
         return { success: false };
       },
     });
-    (prima as any).bot.agentPilot = () => ({ settleExpectations: async () => [{ text: 'the draft is saved', status: 'failed' }] });
+    (prima as any).bot.agentPilot = () => ({ settleExpectations: async () => [new SettledExpectation('the draft is saved', 'failed')] });
 
     const envelope = await prima.check('save a skill', ['the draft is saved']);
 
@@ -1016,7 +1009,7 @@ describe('Prima.check', () => {
         return { success: false };
       },
     });
-    (prima as any).bot.agentPilot = () => ({ settleExpectations: async () => [{ text: 'the editor opens', status: 'unverified' }] });
+    (prima as any).bot.agentPilot = () => ({ settleExpectations: async () => [new SettledExpectation('the editor opens', 'unverified')] });
 
     const envelope = await prima.check('edit a skill', ['the editor opens']);
 
@@ -1040,7 +1033,7 @@ describe('Prima.check', () => {
     (prima as any).bot.agentPilot = () => ({
       settleExpectations: async (_test: any, finalState: any) => {
         judged = finalState;
-        return [{ text: 'the editor opens', status: 'passed' }];
+        return [new SettledExpectation('the editor opens', 'passed')];
       },
     });
 
@@ -1059,7 +1052,7 @@ describe('Prima.check', () => {
         return { success: true };
       },
     });
-    (prima as any).bot.agentPilot = () => ({ settleExpectations: async () => [{ text: 'the editor opens', status: 'passed' }] });
+    (prima as any).bot.agentPilot = () => ({ settleExpectations: async () => [new SettledExpectation('the editor opens', 'passed')] });
 
     const envelope = await prima.check('edit a skill', ['the editor opens']);
 
@@ -1079,7 +1072,7 @@ describe('Prima.check', () => {
       },
     });
     (prima as any).bot.agentPilot = () => ({
-      settleExpectations: async () => [{ text: 'the new row is listed', status: 'contradiction', evidence: 'the assertion found the row in the page structure; the screenshot shows an empty list' }],
+      settleExpectations: async () => [new SettledExpectation('the new row is listed', 'contradiction', 'the assertion found the row in the page structure; the screenshot shows an empty list')],
     });
 
     const envelope = await prima.check('add a row', ['the new row is listed']);

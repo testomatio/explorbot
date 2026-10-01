@@ -406,8 +406,8 @@ export class Prima {
       envelope.warning = 'These outcomes were settled from the run log alone — no screenshot backed them. Set ai.visionModel, or check anything visual with prima ask.';
     }
 
-    const unreached = envelope.expectations.filter((expectation) => expectation.status === 'failed');
-    const contradicted = envelope.expectations.filter((expectation) => expectation.status === 'contradiction');
+    const unreached = envelope.expectations.filter((expectation) => expectation.failed);
+    const contradicted = envelope.expectations.filter((expectation) => expectation.contradicted);
     envelope.ok = !unreached.length && !contradicted.length;
 
     const problems = [...unreached.map((expectation) => `not reached: ${expectation.text}`), ...contradicted.map((expectation) => `the picture and the run disagree about: ${expectation.text}`)];

@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import type { SettledExpectation } from '../../../src/test-plan.ts';
 
 export const STATUS_FILE = 'status.json';
 
@@ -29,7 +30,7 @@ export interface EnvelopeData {
   page: { url: string; previousUrl?: string; redirectedFrom?: string; title: string; state: string; visits: number };
   changes?: string | null;
   steps?: Array<{ label: string; ok: boolean; unconfirmed?: boolean; proof: string }>;
-  expectations?: Array<{ text: string; status: 'passed' | 'failed' | 'unverified' | 'contradiction'; evidence?: string; resolution?: string }>;
+  expectations?: SettledExpectation[];
   warning?: string;
   stepFiles?: string;
   value?: string;
@@ -131,7 +132,7 @@ function renderExpectations(data: EnvelopeData): string | null {
   data.expectations.forEach((expectation, index) => {
     lines.push(`${index + 1}. ${EXPECTATION_LABELS[expectation.status]} ${expectation.text}`);
     if (expectation.resolution) lines.push(`      resolved: ${expectation.resolution}`);
-    if (expectation.status !== 'contradiction' && expectation.status !== 'failed' && !expectation.resolution) return;
+    if (!expectation.contradicted && !expectation.failed && !expectation.resolution) return;
     for (const line of (expectation.evidence || '').split('\n').filter(Boolean)) lines.push(`      ${line}`);
   });
   return section('Expected outcomes', lines.join('\n'));
