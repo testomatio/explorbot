@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { SettledExpectation } from '../../../src/test-plan.ts';
 import { type EnvelopeData, STEP_FILES, readArtifacts, renderEnvelope, writeArtifacts } from '../src/envelope.ts';
 
 const base: EnvelopeData = {
@@ -82,6 +83,28 @@ describe('renderEnvelope', () => {
     expect(out).not.toContain('passed: ');
   });
 
+  test('a resolved contradiction shows how it was resolved and what each side showed', () => {
+    const out = renderEnvelope({
+      ...base,
+      expectations: [new SettledExpectation('the alert is shown', 'passed', 'the run did not find it; the screenshot shows it', 'the page structure agrees with the screenshot, so the run log was wrong')],
+    });
+
+    expect(out).toContain('1. PASSED');
+    expect(out).toContain('      resolved: the page structure agrees with the screenshot, so the run log was wrong');
+    expect(out).toContain('      the run did not find it; the screenshot shows it');
+  });
+
+  test('a failed assertion shows the first line of its error', () => {
+    const out = renderEnvelope({
+      ...base,
+      changes: undefined,
+      assertions: [{ code: "I.see('Saved', 'main')", passed: false, proof: [], error: 'expected main to include "Saved"\n    at see' }],
+    });
+
+    expect(out).toContain("I.see('Saved', 'main')  => FAILED\n      expected main to include \"Saved\"");
+    expect(out).not.toContain('at see');
+  });
+
   test('a multi-line assertion gets one result, not one per line', () => {
     const out = renderEnvelope({
       ...base,
@@ -131,11 +154,7 @@ describe('renderEnvelope', () => {
     const out = renderEnvelope({
       ...base,
       changes: undefined,
-      expectations: [
-        { text: 'the editor opens', status: 'passed' },
-        { text: 'the draft is saved', status: 'failed' },
-        { text: 'the list refreshes', status: 'unverified' },
-      ],
+      expectations: [new SettledExpectation('the editor opens', 'passed'), new SettledExpectation('the draft is saved', 'failed'), new SettledExpectation('the list refreshes', 'unverified')],
     });
 
     expect(out).toContain('### Expected outcomes');

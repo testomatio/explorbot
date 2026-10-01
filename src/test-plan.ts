@@ -66,6 +66,29 @@ export class ActiveNote {
   }
 }
 
+export type SettledStatus = 'passed' | 'failed' | 'unverified' | 'contradiction';
+
+export class SettledExpectation {
+  constructor(
+    readonly text: string,
+    readonly status: SettledStatus,
+    readonly evidence?: string,
+    readonly resolution?: string
+  ) {}
+
+  get failed(): boolean {
+    return this.status === 'failed';
+  }
+
+  get contradicted(): boolean {
+    return this.status === 'contradiction';
+  }
+
+  resolve(status: SettledStatus, resolution: string): SettledExpectation {
+    return new SettledExpectation(this.text, status, this.evidence, resolution);
+  }
+}
+
 export interface StepData {
   text: string;
   duration?: number;
