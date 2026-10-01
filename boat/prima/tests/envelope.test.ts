@@ -82,6 +82,17 @@ describe('renderEnvelope', () => {
     expect(out).not.toContain('passed: ');
   });
 
+  test('a resolved contradiction shows how it was resolved and what each side showed', () => {
+    const out = renderEnvelope({
+      ...base,
+      expectations: [{ text: 'the alert is shown', status: 'passed', evidence: 'the run did not find it; the screenshot shows it', resolution: 'the page structure agrees with the screenshot, so the run log was wrong' }],
+    });
+
+    expect(out).toContain('1. PASSED');
+    expect(out).toContain('      resolved: the page structure agrees with the screenshot, so the run log was wrong');
+    expect(out).toContain('      the run did not find it; the screenshot shows it');
+  });
+
   test('a failed assertion shows the first line of its error', () => {
     const out = renderEnvelope({
       ...base,

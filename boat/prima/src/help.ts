@@ -27,8 +27,10 @@ export const checkHelp = dedent`
               ### Expected outcomes as PASSED, FAILED, CONTRADICTION or not verified.
               "not verified" means never checked, not false.
   Proof is a full-page screenshot: what a user sees counts, the log only shows actions.
-  CONTRADICTION means screenshot and log disagree; judge the html, aria and
-  screenshot under ### Artifacts yourself.
+  When screenshot and log disagree, the page structure breaks the tie: the outcome
+  becomes PASSED or FAILED with a "resolved:" line naming the side that was wrong.
+  CONTRADICTION remains when it cannot be broken, or when the page holds something
+  it does not display; judge the html, aria and screenshot under ### Artifacts yourself.
   ok is false when any outcome FAILED or CONTRADICTED, or the run could not finish,
   reported as such rather than as an app failure.
   Side issues found on the way go under ### Answer, not as step failures.

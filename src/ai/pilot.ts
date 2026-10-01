@@ -39,6 +39,12 @@ const OUTCOME_STATUS: Record<string, SettledStatus> = {
   'The run shows this outcome did not happen.': 'failed',
 };
 
+const CONTRADICTION_RESOLUTION: Record<string, { status: SettledStatus; resolution: string }> = {
+  'The page structure agrees with the screenshot, and the outcome happened.': { status: 'passed', resolution: 'the page structure agrees with the screenshot, so the run log was wrong' },
+  'The page structure agrees with the screenshot, and the outcome did not happen.': { status: 'failed', resolution: 'the page structure agrees with the screenshot, so the run log was wrong' },
+  'The page structure agrees with the run log: the page holds it, but the screenshot does not show it.': { status: 'contradiction', resolution: 'the page structure agrees with the run log: the page holds it but does not display it, a likely rendering bug' },
+};
+
 export class Pilot implements Agent {
   emoji = '🧭';
   private provider: Provider;
@@ -691,7 +697,7 @@ export class Pilot implements Agent {
     if (!response) response = await settle(userContent, this.provider.getAgenticModel('pilot'));
 
     const judged = new Map((response?.object?.outcomes || []).map((outcome: any) => [outcome.expectation, outcome]));
-    return task.expected.map((text) => {
+    const settled = task.expected.map((text) => {
       const byJudge = settledByJudge.get(text);
       if (byJudge) return { text, status: byJudge };
       if (!undecided.includes(text)) return { text, status: decided(text) };
@@ -699,6 +705,28 @@ export class Pilot implements Agent {
       if (!outcome) return { text, status: 'unverified' as SettledStatus };
       return { text, status: outcome.status || 'unverified', evidence: outcome.evidence };
     });
+    return this.resolveContradictions(settled, finalState);
+  }
+
+  private async resolveContradictions(outcomes: SettledExpectation[], finalState?: ActionResult): Promise<SettledExpectation[]> {
+    const judge = this.judge;
+    if (!judge || !finalState) return outcomes;
+    if (!outcomes.some((outcome) => outcome.status === 'contradiction')) return outcomes;
+
+    const page = finalState.getCompactARIA().slice(0, JUDGE_PAGE_CAP);
+    return Promise.all(
+      outcomes.map(async (outcome) => {
+        if (outcome.status !== 'contradiction') return outcome;
+        const decision = await judge.decide(`The screenshot and the run log disagree about the expected outcome: ${outcome.text}. Which side does the page structure support?`, [...Object.keys(CONTRADICTION_RESOLUTION), UNDECIDED], {
+          expectation: outcome.text,
+          disagreement: outcome.evidence || '',
+          page,
+        });
+        const resolved = CONTRADICTION_RESOLUTION[decision.value ?? ''];
+        if (!resolved) return outcome;
+        return { ...outcome, ...resolved };
+      })
+    );
   }
 
   private async settleByJudge(task: Test, expectations: string[]): Promise<Map<string, SettledStatus>> {
@@ -1282,4 +1310,5 @@ export interface SettledExpectation {
   text: string;
   status: SettledStatus;
   evidence?: string;
+  resolution?: string;
 }
