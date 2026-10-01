@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { JSDOM } from 'jsdom';
 import { describe, expect, it } from 'vitest';
-import { captureHtmlForSnapshot, extractTargetedHtml, htmlCombinedSnapshot, htmlMinimalUISnapshot, htmlTextSnapshot, isBodyEmpty } from '../../src/utils/html.ts';
+import { captureHtmlForSnapshot, extractLinks, extractTargetedHtml, htmlCombinedSnapshot, htmlMinimalUISnapshot, htmlTextSnapshot, isBodyEmpty } from '../../src/utils/html.ts';
 
 // Load test HTML files
 const githubHtml = readFileSync(join(process.cwd(), 'test-data/github.html'), 'utf8');
@@ -757,6 +757,37 @@ describe('HTML Parsing Library', () => {
     it('should handle case-insensitive body tag', () => {
       const html = '<html><BODY>Content</BODY></html>';
       expect(isBodyEmpty(html)).toBe(false);
+    });
+  });
+
+  describe('extractLinks', () => {
+    it('should extract text and aria-label links', () => {
+      const html = '<div><a href="/login">Sign in</a><a href="/help" aria-label="Get help"><img src="icon.png" alt="ignored"/></a></div>';
+      const links = extractLinks(html);
+
+      expect(links).toContainEqual({ title: 'Sign in', url: '/login' });
+      expect(links).toContainEqual({ title: 'Get help', url: '/help' });
+    });
+
+    it('should use image alt text as title for image-only links', () => {
+      const html = '<a href="https://github.com/example/repo"><img src="forkme.png" alt="Fork me on GitHub"></a>';
+      const links = extractLinks(html);
+
+      expect(links).toEqual([{ title: 'Fork me on GitHub', url: 'https://github.com/example/repo' }]);
+    });
+
+    it('should skip javascript, mailto, tel and anchor-only links', () => {
+      const html = '<a href="javascript:void(0)">JS</a><a href="mailto:a@b.c">Mail</a><a href="tel:+123">Call</a><a href="#top">Top</a><a href="/kept">Kept</a>';
+      const links = extractLinks(html);
+
+      expect(links).toEqual([{ title: 'Kept', url: '/kept' }]);
+    });
+
+    it('should skip image-only links without alt text', () => {
+      const html = '<a href="/logo"><img src="logo.png"></a>';
+      const links = extractLinks(html);
+
+      expect(links).toEqual([]);
     });
   });
 

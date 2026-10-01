@@ -237,7 +237,7 @@ export const unexpectedPopupRule = dedent`
   If a modal/popup appeared that you didn't expect, dismiss it first before continuing with original task.
   If elements become hidden or unclickable (timeout errors on visible elements), a dialog or overlay may have appeared on top.
   If a click error mentions "intercepts pointer events", another element is covering the target — dismiss it first.
-  If buttons are disabled unexpectedly, check if a popup is blocking interaction or if required form fields are empty.
+  If buttons are disabled unexpectedly, trust any explanation the app gives (tooltip, hint text) over your own guess; otherwise check for a blocking popup or empty required fields.
 
   Dismiss strategy (try in order):
   1. I.pressKey('Escape') — press Escape to dismiss

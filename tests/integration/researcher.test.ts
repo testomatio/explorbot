@@ -224,12 +224,57 @@ describe('Researcher with aimock', () => {
     expect(mock.getRequests().length).toBe(1);
   });
 
+  it('light research stops after a single AI pass without locator validation', async () => {
+    const deps = createMockDeps();
+    const locatorCalls: string[] = [];
+    const originalLocator = deps.explorer.page.locator;
+    deps.explorer.page.locator = (selector: string) => {
+      locatorCalls.push(selector);
+      return originalLocator(selector);
+    };
+    const lightResearcher = new Researcher({ ...deps, ai: provider } as any);
+
+    const result = await lightResearcher.research(fakeState, { force: true, light: true });
+
+    expect(result).toContain('## Navigation');
+    expect(mock.getRequests().length).toBe(1);
+    expect(locatorCalls.filter((selector) => selector !== 'body')).toHaveLength(0);
+
+    await lightResearcher.research(fakeState, { force: true, fix: false });
+    expect(locatorCalls.filter((selector) => selector !== 'body').length).toBeGreaterThan(0);
+  });
+
+  it('light research accepts a page without locators instead of retrying', async () => {
+    mock.clearFixtures();
+    mock.on({}, { content: '# Informational page\n\nStatic text without interactive elements.' });
+
+    const result = await researcher.research(fakeState, { force: true, light: true });
+
+    expect(result).toContain('Static text without interactive elements');
+    expect(mock.getRequests().length).toBe(1);
+  });
+
+  it('full research retries when the model returns no locators', async () => {
+    mock.clearFixtures();
+    mock.on({}, { content: '# Informational page\n\nStatic text without interactive elements.' });
+
+    await researcher.research(fakeState, { force: true, fix: false });
+
+    expect(mock.getRequests().length).toBe(3);
+  });
+
   it('saves research result to cache after AI call', async () => {
     await researcher.research(fakeState, { fix: false });
 
     const cached = getCachedResearch(fakeStateBaseHash());
     expect(cached).toContain('## Navigation');
     expect(cached).toContain('Create Task');
+  });
+
+  it('light research does not write to the shared cache', async () => {
+    await researcher.research(fakeState, { force: true, light: true });
+
+    expect(getCachedResearch(fakeStateBaseHash())).toBe('');
   });
 
   it('caps the HTML diff of an expansion so a large overlay stays within context', async () => {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { Navigator } from '../../src/ai/navigator.ts';
 
-function createNavigator(invokeConversation: () => Promise<any>) {
+function createNavigator(invokeConversation: () => Promise<any>, attemptError?: Error) {
   const navigator = Object.create(Navigator.prototype) as any;
   navigator.systemPrompt = 'system';
   navigator.knowledgeTracker = { renderRelevantContext: () => '' };
@@ -12,8 +12,9 @@ function createNavigator(invokeConversation: () => Promise<any>) {
     page: null,
     action: () => ({
       assertionSteps: [],
+      lastError: attemptError,
       exitIframe: async () => {},
-      attempt: async () => true,
+      attempt: async () => !attemptError,
     }),
   };
   navigator.buildExperienceTools = () => ({});
@@ -54,5 +55,14 @@ describe('Navigator.verifyState', () => {
 
     expect(result.inexpressible).toBe(true);
     expect(result.verified).toBe(false);
+  });
+
+  it('keeps the error of an assertion that failed', async () => {
+    const navigator = createNavigator(async () => ({ response: { text: "```js\nI.see('Widget', 'main')\n```" } }), new Error('expected main to include "Widget"'));
+
+    const result = await navigator.verifyState('Widget is visible in the list', createActionResult());
+
+    expect(result.verified).toBe(false);
+    expect(result.results[0].error).toBe('expected main to include "Widget"');
   });
 });

@@ -701,6 +701,24 @@ describe('doc-collector scope and signal', () => {
     expect((bot as any).isInScope('/help')).toBe(false);
   });
 
+  it('uses light research for static collection and full research for interactive', () => {
+    const bot = new DocBot();
+    (bot as any).config = { docs: {} };
+    expect((bot as any).useLightResearch()).toBe(true);
+
+    (bot as any).config = { docs: { interactive: true } };
+    expect((bot as any).useLightResearch()).toBe(false);
+  });
+
+  it('lets docs.research override the automatic research depth', () => {
+    const bot = new DocBot();
+    (bot as any).config = { docs: { research: 'full' } };
+    expect((bot as any).useLightResearch()).toBe(false);
+
+    (bot as any).config = { docs: { research: 'light', interactive: true } };
+    expect((bot as any).useLightResearch()).toBe(true);
+  });
+
   it('marks pages with weak docs and few controls as low-signal', () => {
     const bot = new DocBot();
     (bot as any).config = { docs: { minCanActions: 1, minInteractiveElements: 3 } };

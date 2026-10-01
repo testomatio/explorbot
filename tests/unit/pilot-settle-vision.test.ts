@@ -158,3 +158,63 @@ describe('Pilot settling outcomes via the judge', () => {
     expect(modelAsked).toBe(false);
   });
 });
+
+describe('Pilot resolving a contradiction from the page structure', () => {
+  const contradicted = () => ({
+    hasVision: () => true,
+    getVisionModel: () => 'vision-model',
+    getAgenticModel: () => 'text-model',
+    generateObject: async () => ({
+      object: { outcomes: [{ expectation: 'the alert is shown', status: 'contradiction', evidence: 'the run did not find the alert text; the screenshot shows the alert' }] },
+    }),
+  });
+  const pageWithAria = (): any => ({ screenshot: Buffer.from('fake-png'), getCompactARIA: () => '- paragraph: Access is limited to trusted networks' });
+  const judgePicking = (fragment: string | null) => ({
+    decide: async (_question: string, options: string[], state: any) => {
+      judged.push(state);
+      return new Decision(options.find((option) => fragment && option.includes(fragment)) || null, 0.9);
+    },
+  });
+  let judged: any[] = [];
+
+  beforeEach(() => {
+    judged = [];
+    Stats.visionDisabled = false;
+  });
+
+  function addAlertTask(): Test {
+    const task = new Test('see the alert', 'normal', ['the alert is shown'], '/projects');
+    task.addNote('the alert is shown', TestResult.FAILED);
+    return task;
+  }
+
+  it('settles the outcome when the page structure agrees with the screenshot', async () => {
+    const pilot = buildPilot(contradicted(), judgePicking('outcome happened'));
+
+    const settled = await pilot.settleExpectations(addAlertTask(), pageWithAria());
+
+    expect(settled[0].status).toBe('passed');
+    expect(settled[0].resolution).toContain('run log was wrong');
+    expect(settled[0].evidence).toContain('screenshot shows the alert');
+    expect(judged[0].page).toContain('trusted networks');
+    expect(judged[0].disagreement).toContain('did not find the alert text');
+  });
+
+  it('keeps the contradiction and names a rendering problem when the page structure agrees with the run', async () => {
+    const pilot = buildPilot(contradicted(), judgePicking('agrees with the run log'));
+
+    const settled = await pilot.settleExpectations(addAlertTask(), pageWithAria());
+
+    expect(settled[0].status).toBe('contradiction');
+    expect(settled[0].resolution).toContain('does not display it');
+  });
+
+  it('keeps the contradiction untouched when the judge cannot decide', async () => {
+    const pilot = buildPilot(contradicted(), judgePicking(null));
+
+    const settled = await pilot.settleExpectations(addAlertTask(), pageWithAria());
+
+    expect(settled[0].status).toBe('contradiction');
+    expect(settled[0].resolution).toBeUndefined();
+  });
+});

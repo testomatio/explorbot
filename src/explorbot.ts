@@ -155,7 +155,7 @@ export class ExplorBot {
   }
 
   async visit(url: string): Promise<void> {
-    return this.agentNavigator().visit(this.configParser.resolveTargetPath(url));
+    await this.agentNavigator().visit(this.configParser.resolveTargetPath(url));
   }
 
   async openTab(): Promise<void> {
@@ -517,6 +517,8 @@ export class ExplorBot {
   setCurrentPlan(plan?: Plan): void {
     this.currentPlan = plan;
     if (!plan) return;
+    if (plan.url) plan.url = this.configParser.applyBasePath(plan.url);
+    for (const test of plan.tests) test.startUrl = this.configParser.applyBasePath(test.startUrl);
     if (!this.sessionPlans.includes(plan)) {
       this.sessionPlans.push(plan);
     }

@@ -1,0 +1,25 @@
+# Asks testomatio/testeiya to build the Explorbot VS Code extension for this
+# release. It attaches the .vsix here and publishes it to the marketplaces.
+# The extension is built there because it bundles the bot protocol from that repo.
+name: VS Code extension
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  dispatch:
+    if: ${{ !startsWith(github.event.release.tag_name, 'prima-') && !startsWith(github.event.release.tag_name, 'mdq-') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger the extension build
+        env:
+          TOKEN: ${{ secrets.TESTEIYA_DISPATCH_TOKEN }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          jq -n --arg tag "$TAG" '{event_type: "explorbot-release", client_payload: {tag: $tag}}' \
+            | curl -sS -f -X POST \
+              -H "Authorization: Bearer $TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              https://api.github.com/repos/testomatio/testeiya/dispatches \
+              -d @-

@@ -1,6 +1,7 @@
 import { faker } from '@faker-js/faker';
 import { hopeThat, retryTo, tryTo, within } from 'codeceptjs/lib/effects';
 import step from 'codeceptjs/steps';
+import { splitTopLevel } from './code-extractor.ts';
 
 const SHADOWED_GLOBALS = ['process', 'global', 'globalThis', 'fetch', 'Bun', 'require', 'module', 'exports'];
 const ALLOWED_COMMAND_HEADS = ['I.', 'page.', 'await page.', 'await I.'];
@@ -9,10 +10,9 @@ const PLAYWRIGHT_ARG_NAMES = ['page'];
 const CODECEPT_ARG_NAMES = ['I', 'tryTo', 'retryTo', 'within', 'hopeThat', 'step', 'faker'];
 
 export function sanitizeCodeBlock(code: string): string {
-  return code
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => ALLOWED_COMMAND_HEADS.some((head) => line.startsWith(head)))
+  return splitTopLevel(code, '\n')
+    .map((statement) => statement.trim())
+    .filter((statement) => ALLOWED_COMMAND_HEADS.some((head) => statement.startsWith(head)))
     .join('\n');
 }
 

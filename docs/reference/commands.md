@@ -66,10 +66,22 @@ Every CLI command that drives a browser accepts these options (`start`, `explore
 | `--debug` | Enable debug logging (same as `--verbose`) |
 | `-c, --config <path>` | Path to configuration file |
 | `-p, --path <path>` | Working directory path |
+| `--base-url <url>` | Run against this URL: its path scopes relative paths, its query params ride along with every page load |
 | `-s, --show` | Show browser window |
 | `--headless` | Run browser in headless mode |
 | `--incognito` | Run without recording experiences |
 | `--session [file]` | Save/restore browser session (cookies, localStorage) from file |
+
+### `--base-url`
+
+Points one run at one area of a site, leaving every config file alone. The origin selects the site, so the knowledge and experience already stored for that host still apply. The path prefixes every relative path a plan or a command gives, and the query params are added to each page load.
+
+```bash
+npx explorbot test tests/plans/runs.md '*' \
+  --base-url 'https://app.example.com/teams/acme/?preview=pr-42'
+```
+
+A plan whose tests start at `/runs` runs them at `/teams/acme/runs`, and every page load carries `?preview=pr-42` — enough to keep a preview deployment selected for a whole session. The param travels on the request rather than in the address bar, so Explorbot navigates to clean URLs, though an app that redirects can still echo the param back. Absolute URLs are never prefixed: `https://app.example.com/users/sign_in` still points outside the scoped area, as a login page usually must.
 
 ### `--knowledge`
 

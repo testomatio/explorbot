@@ -155,6 +155,14 @@ Expands hidden elements (dropdowns, accordions, tabs) to discover more UI. Click
 
 Extracts domain-specific content (articles, products, users) as structured data.
 
+#### Light Research
+
+```ts
+researcher.research(state, { light: true });
+```
+
+A single-pass mode for consumers that describe pages instead of acting on them. Stage 1 runs as usual; stages 2–5 (locator testing, AI fixing, the visual annotation pass, backfills, and pagination probing) are skipped, so the whole run is one AI call with no browser verification roundtrips. Locators in the UI map come straight from the model and are not verified; a light run never writes to the shared research cache, so it cannot replace a verified result. The [doc collector](../doc-collection/basics.md#research-depth) uses this mode by default.
+
 ## Page Sections
 
 The Researcher breaks each page into sections by UI purpose. Sections are identified in priority order:

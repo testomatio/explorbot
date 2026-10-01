@@ -118,9 +118,11 @@ class DocBot {
           }
         }
 
+        const light = this.useLightResearch();
         const research = await this.explorBot.agentResearcher().research(state, {
-          screenshot: this.shouldUseScreenshots(),
+          screenshot: !light && this.shouldUseScreenshots(),
           force: true,
+          light,
         });
         const pagePath = this.getPageFilePath(state.url);
         const captureState = this.shouldUseScreenshots()
@@ -219,6 +221,13 @@ class DocBot {
       return false;
     }
     return true;
+  }
+
+  private useLightResearch(): boolean {
+    const research = this.config.docs?.research;
+    if (research === 'light') return true;
+    if (research === 'full') return false;
+    return this.config.docs?.interactive !== true;
   }
 
   private shouldCollapseTemplates(override?: boolean): boolean {

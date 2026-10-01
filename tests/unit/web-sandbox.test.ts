@@ -16,6 +16,30 @@ describe('sanitizeCodeBlock', () => {
     const code = ["I.amOnPage('/login')", 'const x = 1', "page.fill('#user', 'admin')", "await fetch('http://evil')", "await page.click('#submit')"].join('\n');
     expect(sanitizeCodeBlock(code)).toBe(["I.amOnPage('/login')", "page.fill('#user', 'admin')", "await page.click('#submit')"].join('\n'));
   });
+
+  it('keeps a command whose arguments span several lines', () => {
+    const code = ["I.see(\n  'Access is limited to trusted networks.',\n  'main'\n);", "I.click('Save')"].join('\n');
+    expect(sanitizeCodeBlock(code)).toBe(code);
+  });
+
+  it('does not count brackets and newlines inside string literals', () => {
+    const code = ["I.see('closing ) inside')", 'I.fillField("Notes", `line one (\nline two`)', "await fetch('http://evil')"].join('\n');
+    expect(sanitizeCodeBlock(code)).toBe(["I.see('closing ) inside')", 'I.fillField("Notes", `line one (\nline two`)'].join('\n'));
+  });
+
+  it('drops a multi-line host expression as a whole', () => {
+    const code = ['fetch(\n  "http://evil"\n)', "I.click('Save')"].join('\n');
+    expect(sanitizeCodeBlock(code)).toBe("I.click('Save')");
+  });
+
+  it('keeps a statement left unterminated at the end whole', () => {
+    expect(sanitizeCodeBlock("I.click('Save')\nI.see(\n  'text'")).toBe("I.click('Save')\nI.see(\n  'text'");
+  });
+
+  it('ignores apostrophes in line comments', () => {
+    const code = ["I.click('Save') // the user's button", "I.see('Saved')"].join('\n');
+    expect(sanitizeCodeBlock(code)).toBe(["I.click('Save')", "I.see('Saved')"].join('\n'));
+  });
 });
 
 describe('playwrightSandbox', () => {

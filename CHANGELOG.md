@@ -5,6 +5,38 @@
 ### Changes
 - [Tester] When a click matches several elements and the decision model's pick is clicked, the tester is now told the click succeeded and which element index was used. Previously it saw the ambiguous attempt as failed and clicked again, which switched toggles such as filter tabs back off.
 - Generated tests now keep the element index chosen for an ambiguous click, as `step.opts({ elementIndex: N })`, so they replay without failing on multiple matches. Step options the tester writes itself are kept as well.
+## 2026-09-29
+
+### Changes
+- Page HTML given to the AI no longer includes parts of the page hidden by CSS, such as a mobile layout hidden on a desktop screen. On sites that render the same form twice (mobile and desktop), the AI used to pick the hidden copy and fail to fill it. Hidden checkboxes and file inputs operated through their labels, and options of a closed dropdown, are still included.
+- [Navigator] The first attempt to reach a page or recover from a failed step now sees only the page's accessibility tree, not its full HTML, and uses role and text locators, which only match elements on screen. The full HTML is added only if those attempts fail. This makes the first request several times smaller. When the HTML is added, it now reflects the page after the first attempts, not the page as it was before them.
+## 2026-09-30
+
+### Changes
+- The mdq npm package is `mdq-cli`, and so is the command it installs. Earlier notes that said `npx mdq` and `import from 'mdq'` now read `npx mdq-cli` and `import from 'mdq-cli'`.
+  ```bash
+  npx mdq-cli 'h2' README.md       # run without installing
+  npm install -g mdq-cli           # then: mdq-cli 'h2' README.md
+  ```
+- `mdq-cli --help` prints the usage and options. It used to print only `(outputHelp)`.
+
+## 2026-09-29
+
+### Changes
+- [Docbot] Static doc collection now researches each page in a single light pass — one AI call per page, without locator verification, repair conversations, or screenshot annotation. Interactive collection keeps the full verified pipeline. Static pages with no interactive elements no longer trigger research retries, so page costs are predictable.
+- [Researcher] New `light` mode: stage 1 runs as usual while locator testing, AI fixing, visual annotation, backfills, and pagination probing are skipped. A light run never writes to the shared research cache, so it cannot replace a verified research result.
+- Link-only images (banners, icon links) are no longer missing from extracted page links — their `alt` text is used as the link title when the link has no text or `aria-label`. This makes doc collector page Navigation sections complete.
+- The mdq app icon joins the other product logos in `assets/logos/`, in two lettering variants, as SVG and PNG.
+
+### Configuration
+- **`docs.research`** — Overrides the doc collector's automatic research depth: `'light'` forces the single-pass mode even in interactive collection, `'full'` always verifies locators. Default: automatic — light for static collection, full for interactive.
+
+## 2026-09-26
+
+### Changes
+- [Tester] When a click hits a disabled button, the tester now hovers it and reports the text the app shows (usually a tooltip explaining why it is disabled). Previously it guessed a missing precondition, such as an unset field nearby, and chased the wrong cause.
+- [Pilot] Sees the text shown on hover of a disabled button, so test results name the real reason an action was unavailable.
+- Screenshots used for visual checks no longer include the screencast's step captions. The AI previously read those captions as part of the page and tried to click them.
 
 ## 2026-09-25
 
@@ -106,6 +138,20 @@ Authenticates with `OPENROUTER_API_KEY` or `TYPESAFE_API_KEY`, depending on the 
   app icon and the wordmark, each for light and dark backgrounds, in SVG and PNG. The old logo files are removed.
 
 ## 2026-09-18
+
+### New CLI Options
+
+- **`--base-url <url>`** — Point one run at one area of a site without editing any config file. The origin selects the
+  site, so the knowledge and experience already stored for that host still apply. The path is prepended to relative
+  paths coming from plans and commands, so a plan written against `/runs` runs inside the area you name. The query
+  parameters are added to every page load, which keeps a preview deployment selected for the whole run. Absolute URLs
+  are left alone, so a login page outside the area still works.
+
+  ```bash
+  explorbot test plans/runs.md '*' --base-url 'https://app.example.com/teams/acme/'
+  explorbot test plans/runs.md '*' --base-url 'https://app.example.com/teams/acme/?preview=pr-42'
+  explorbot explore /settings --base-url 'https://app.example.com/teams/acme/'
+  ```
 
 ### Changes
 

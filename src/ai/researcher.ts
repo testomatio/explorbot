@@ -103,8 +103,8 @@ export class Researcher extends ResearcherBase implements Agent {
     `;
   }
 
-  async research(state: WebPageState, opts: { screenshot?: boolean; force?: boolean; deep?: boolean; data?: boolean; fix?: boolean; _retriesLeft?: number } = {}): Promise<string> {
-    const { screenshot = false, force = false, deep = false, data = false, fix = true } = opts;
+  async research(state: WebPageState, opts: { screenshot?: boolean; force?: boolean; deep?: boolean; data?: boolean; fix?: boolean; light?: boolean; _retriesLeft?: number } = {}): Promise<string> {
+    const { screenshot = false, force = false, deep = false, data = false, fix = true, light = false } = opts;
     const maxRetries = this.settings.retries ?? 2;
     let retriesLeft = opts._retriesLeft ?? maxRetries;
     this.actionResult = ActionResult.fromState(state);
@@ -133,6 +133,7 @@ export class Researcher extends ResearcherBase implements Agent {
     return Observability.run(sessionName, { tags: ['researcher'], sessionId: stateHash }, async () => {
       const displayUrl = state.fullUrl || state.url;
       tag('info').log(`Researching ${displayUrl} to understand the context...`);
+      if (light) tag('info').log('Light research: single pass, locator verification skipped');
       setActivity(`${this.emoji} Researching...`, 'action');
 
       await this.ensureNavigated(displayUrl, screenshot && this.provider.hasVision());
@@ -171,7 +172,7 @@ export class Researcher extends ResearcherBase implements Agent {
       }
 
       const isOnCurrentState = this.actionResult!.getStateHash() === this.stateManager.getCurrentState()?.hash;
-      this.hasScreenshotToAnalyze = screenshot && this.provider.hasVision() && isOnCurrentState;
+      this.hasScreenshotToAnalyze = !light && screenshot && this.provider.hasVision() && isOnCurrentState;
 
       const conversation = this.provider.startConversation(this.getSystemMessage(), 'researcher');
 
@@ -205,13 +206,13 @@ export class Researcher extends ResearcherBase implements Agent {
       result.parseLocators();
       debugLog(`Extracted ${result.locators.length} locators from research`);
 
-      if (!interrupted() && result.locators.length === 0 && retriesLeft > 0) {
+      if (!light && !interrupted() && result.locators.length === 0 && retriesLeft > 0) {
         tag('warning').log(`No locators parsed, retrying research (${maxRetries - retriesLeft + 1}/${maxRetries})...`);
         await new Promise((r) => setTimeout(r, 1000));
         return this.research(state, { ...opts, force: true, _retriesLeft: retriesLeft - 1 } as any);
       }
 
-      if (!interrupted()) {
+      if (!light && !interrupted()) {
         const brokenContainers = await this.resolveContainers(result);
         const containerCount = result.containers.length;
         if (containerCount > 0 && brokenContainers.length === containerCount && retriesLeft > 0) {
@@ -232,7 +233,7 @@ export class Researcher extends ResearcherBase implements Agent {
       }
 
       // Stage 3: Fix broken sections via AI conversation continuation
-      if (!interrupted() && fix && result.locators.some((l) => l.valid === false)) {
+      if (!light && !interrupted() && fix && result.locators.some((l) => l.valid === false)) {
         await this.fixBrokenSections(result, activeConversation);
       }
 
@@ -273,12 +274,12 @@ export class Researcher extends ResearcherBase implements Agent {
       }
 
       // Stage 5: Backfill broken elements
-      if (!interrupted()) {
+      if (!light && !interrupted()) {
         await this.backfillCoordinates(result);
         await this.backfillBrokenLocators(result);
       }
 
-      if (!interrupted()) {
+      if (!light && !interrupted()) {
         await this.detectPagination(result);
       }
 
@@ -309,7 +310,7 @@ export class Researcher extends ResearcherBase implements Agent {
       result.cleanup();
 
       let researchFile: string | null = null;
-      if (stateHash) {
+      if (stateHash && !light) {
         researchFile = saveResearch(researchState, result.text, combinedHtml);
       }
 
