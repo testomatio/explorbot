@@ -168,7 +168,7 @@ describe('Pilot resolving a contradiction from the page structure', () => {
       object: { outcomes: [{ expectation: 'the alert is shown', status: 'contradiction', evidence: 'the run did not find the alert text; the screenshot shows the alert' }] },
     }),
   });
-  const pageWithAria = () => ({ screenshot: Buffer.from('fake-png'), getCompactARIA: () => '- paragraph: Access is limited to trusted networks' });
+  const pageWithAria = (): any => ({ screenshot: Buffer.from('fake-png'), getCompactARIA: () => '- paragraph: Access is limited to trusted networks' });
   const judgePicking = (fragment: string | null) => ({
     decide: async (_question: string, options: string[], state: any) => {
       judged.push(state);
