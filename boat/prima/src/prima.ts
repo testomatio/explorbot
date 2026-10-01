@@ -240,7 +240,7 @@ export class Prima {
     if (aiError) return this.failureEnvelope(command, aiError, previousState);
 
     if (trace.length && ledger.some((entry) => entry.status === 'open')) {
-      await this.settleLedgerByJudge(ledger, trace);
+      await this.judgeUnreportedInstructions(ledger, trace);
     }
 
     if (trace.length && ledger.some((entry) => entry.status === 'open')) {
@@ -314,7 +314,7 @@ export class Prima {
     return true;
   }
 
-  private async settleLedgerByJudge(ledger: LedgerEntry[], trace: Array<{ label: string; ok: boolean; proof: string }>): Promise<void> {
+  private async judgeUnreportedInstructions(ledger: LedgerEntry[], trace: Array<{ label: string; ok: boolean; proof: string }>): Promise<void> {
     const judge = this.bot.judge?.();
     if (!judge) return;
 
