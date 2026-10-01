@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-10-02
+
+### Changes
+- [Navigator] No longer guesses logins or passwords. On a page with a password field, or with `login`, `sign_in` or `auth` in its URL, it signs in only with credentials it was given (for example in `knowledge/`). When none are given it stops and names what is missing; in the TUI you are then asked to step in.
+  ```bash
+  explorbot learn /login "Credentials: admin@example.com / secret123"
+  ```
+
 ## 2026-09-29
 
 ### Changes
