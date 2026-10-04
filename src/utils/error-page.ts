@@ -1,11 +1,14 @@
 import { ActionResult } from '../action-result.js';
 import type { WebPageState } from '../state-manager.js';
 import { isBodyEmpty } from './html.js';
+import { extractStatePath } from './url-matcher.js';
 
 const HTTP_ERRORS = ['400 Bad Request', '401 Unauthorized', '403 Forbidden', '404 Not Found', '405 Method Not Allowed', '408 Request Timeout', '500 Internal Server Error', '502 Bad Gateway', '503 Service Unavailable', '504 Gateway Timeout'];
 
 const SMALL_PAGE_THRESHOLD = 500;
 const LOADING_WORD = /\bloading\b/i;
+const PASSWORD_INPUT = /<input\b[^>]*\btype\s*=\s*["']?password\b/i;
+const AUTH_PATH = /\b(log[-_]?in|sign[-_]?in|auth)\b/i;
 
 export type PageCondition = 'ok' | 'loading' | 'error';
 
@@ -38,6 +41,11 @@ export function detectPageCondition(actionResult: ActionResult): PageCondition {
 
 export function isErrorPage(actionResult: ActionResult): boolean {
   return detectPageCondition(actionResult) === 'error';
+}
+
+export function isLoginPage(actionResult: ActionResult): boolean {
+  if (PASSWORD_INPUT.test(actionResult.html || '')) return true;
+  return AUTH_PATH.test(extractStatePath(actionResult.url || '').split('?')[0]);
 }
 
 export function getStateErrorPageError(state: WebPageState | null | undefined): ErrorPageError | null {
