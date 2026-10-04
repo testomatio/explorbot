@@ -3,6 +3,13 @@
 ## 2026-10-05
 
 ### Changes
+- [Prima] `prima browser start` is replaced by `prima browser`, which no longer launches its own browser. It checks that a playwright-cli session is open and prints it, or fails with the command to open one. The `--show` and `--headless` flags are removed, and so are `prima browser stop`, `status` and `list`: playwright-cli manages the browser.
+  ```bash
+  playwright-cli open https://app.example.com
+  prima browser                # browser: playwright-cli session "default" at ws://...
+  ```
+- [Prima] When no browser is open, prima commands now suggest only `playwright-cli open <url>`, filled in with `--url` when given.
+- prima-cli now runs on Node.js 22.13 and later. It previously required Node.js 24.
 - mdq selectors can be joined with `&&` and `||`, so one `mdq-cli` call can check several conditions. With `&&`, the call exits with `1` when any condition is missing.
   ```bash
   npx mdq-cli 'comment(/^suite/) && section("Steps") && section("Expected")' plan.md   # all must exist
