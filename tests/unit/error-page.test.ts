@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ActionResult } from '../../src/action-result.ts';
-import { detectPageCondition, isErrorPage } from '../../src/utils/error-page.ts';
+import { detectPageCondition, isErrorPage, isLoginPage } from '../../src/utils/error-page.ts';
 
 function createActionResult(data: { title?: string; h1?: string; h2?: string; html?: string; url?: string; httpStatus?: number }): ActionResult {
   const html = data.html ?? `<html><body><h1>${data.h1 ?? ''}</h1><h2>${data.h2 ?? ''}</h2></body></html>`;
@@ -169,5 +169,22 @@ describe('isErrorPage', () => {
       expect(detectPageCondition(actionResult)).toBe('loading');
       expect(isErrorPage(actionResult)).toBe(false);
     });
+  });
+});
+
+describe('isLoginPage', () => {
+  it('should detect a password input on any URL', () => {
+    expect(isLoginPage(createActionResult({ url: '/', html: '<html><body><form><input type="email"><input name="p" type="password"></form></body></html>' }))).toBe(true);
+  });
+
+  it('should detect an authentication path', () => {
+    expect(isLoginPage(createActionResult({ url: '/login' }))).toBe(true);
+    expect(isLoginPage(createActionResult({ url: '/users/sign_in' }))).toBe(true);
+    expect(isLoginPage(createActionResult({ url: 'https://app.example.com/auth/sso?next=/' }))).toBe(true);
+  });
+
+  it('should not flag regular pages', () => {
+    expect(isLoginPage(createActionResult({ url: '/authors', html: '<html><body><input type="text"></body></html>' }))).toBe(false);
+    expect(isLoginPage(createActionResult({ url: '/dashboard?redirect=/login' }))).toBe(false);
   });
 });

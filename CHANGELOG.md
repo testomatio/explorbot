@@ -10,6 +10,19 @@
   ```
 - [Prima] When no browser is open, prima commands now suggest only `playwright-cli open <url>`, filled in with `--url` when given.
 - prima-cli now runs on Node.js 22.13 and later. It previously required Node.js 24.
+- mdq selectors can be joined with `&&` and `||`, so one `mdq-cli` call can check several conditions. With `&&`, the call exits with `1` when any condition is missing.
+  ```bash
+  npx mdq-cli 'comment(/^suite/) && section("Steps") && section("Expected")' plan.md   # all must exist
+  npx mdq-cli 'section("Install") || section("Setup")' README.md                          # either section
+  ```
+- mdq: `parseQuery()` now returns a `QueryExpression`: a list of `||` alternatives, each a list of `&&` operands, each a list of segments. For a selector without operators, the segments are at `parseQuery(selector)[0][0]`.
+## 2026-10-02
+
+### Changes
+- [Navigator] No longer guesses logins or passwords. On a page with a password field, or with `login`, `sign_in` or `auth` in its URL, it signs in only with credentials it was given (for example in `knowledge/`). When none are given it stops and names what is missing; in the TUI you are then asked to step in.
+  ```bash
+  explorbot learn /login "Credentials: admin@example.com / secret123"
+  ```
 
 ## 2026-09-28
 
