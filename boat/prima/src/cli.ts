@@ -1,5 +1,4 @@
 import { Command } from 'commander';
-import { keepServerRunning } from '../../../src/browser-server.ts';
 import { RecommendedModelsCommand } from '../../../src/commands/recommended-models-command.ts';
 import { browserErrorMessage } from '../../../src/utils/browser-errors.ts';
 import { isVerboseMode, setQuietMode } from '../../../src/utils/logger.ts';
@@ -22,8 +21,6 @@ function buildOptions(subcommand: any): PrimaOptions {
     noVision: options.vision === false,
     url: options.url,
     baseUrl: options.baseUrl,
-    show: options.show,
-    headless: options.headless,
     endpoint: options.endpoint,
     pwSession: options.pwSession,
   };
@@ -181,16 +178,12 @@ export function createPrimaCommands(name = 'prima'): Command {
 
   const browser = cmd.command('browser').description('Manage the browsers prima drives');
 
-  addBrowserOptions(browser.command('start').description('Start a prima-owned browser and hold it open until Ctrl+C'))
-    .option('-s, --show', 'Launch the browser in a visible window')
-    .option('--headless', 'Launch the browser without a window')
-    .action(async (options) => {
-      await runBrowser(options, async (prima) => {
-        await prima.browserStart();
-        console.log(await prima.browserStatus());
-        return keepServerRunning(() => prima.browserStop());
-      });
+  addBrowserOptions(browser.command('start').description('Check that a playwright-cli session is open for prima to drive')).action(async (options) => {
+    await runBrowser(options, async (prima) => {
+      console.log(await prima.browserStart());
+      return true;
     });
+  });
 
   addBrowserOptions(browser.command('stop').description('Stop the browser of this instance'))
     .option('--all', 'Stop every running instance')

@@ -21,21 +21,16 @@ Requires Node.js 24+. Playwright browsers come from `npx playwright install chro
 
 ## Session
 
-Prima needs a browser to drive. Either attach to a `playwright-cli` session:
+Prima drives a browser opened by `playwright-cli` and never launches one itself:
 
 ```bash
 playwright-cli open https://app.example.com
+prima-cli browser start
 prima-cli check "the settings page saves a changed theme"
 playwright-cli close
 ```
 
-Or let prima own the browser:
-
-```bash
-prima-cli browser start --url https://app.example.com
-prima-cli do "open the account menu" "choose the settings entry"
-prima-cli browser stop
-```
+`browser start` checks that a `playwright-cli` session is open and fails with the command to open one when it is not.
 
 ## Commands
 

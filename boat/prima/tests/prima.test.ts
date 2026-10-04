@@ -352,7 +352,6 @@ describe('Prima attach ladder', () => {
     (prima as any).connectOwnInstance = async () => false;
 
     await expect(prima.start()).rejects.toThrow(/playwright-cli open/);
-    await expect(prima.start()).rejects.toThrow(/prima browser start/);
   });
 
   test('ambiguous sessions surface as tool error listing candidates', async () => {
@@ -1591,7 +1590,7 @@ describe('Prima.go', () => {
     };
     (prima as any).discover = () => ({ candidates: [] });
 
-    await expect(prima.start()).rejects.toThrow(/prima browser start/);
+    await expect(prima.start()).rejects.toThrow(/playwright-cli open/);
     expect(started).toBe(false);
     expect(existsSync(getEndpointFilePath('default'))).toBe(false);
   });
@@ -1610,24 +1609,19 @@ describe('Prima browser instances', () => {
     writeFileSync(file, `ws://127.0.0.1:1/${instance}`, 'utf8');
   }
 
-  test('browserStart launches the configured browser for the instance and keeps the server', async () => {
-    const { prima } = fakePrima({ instance: 'staging' });
-    const launches: any[] = [];
-    let closed = false;
-    (prima as any).launchOwnServer = async (opts: any, instance: string) => {
-      launches.push({ opts, instance });
-      return {
-        close: async () => {
-          closed = true;
-        },
-      };
-    };
+  test('browserStart reports the open playwright-cli session', async () => {
+    const { prima } = fakePrima();
+    (prima as any).discover = () => ({ match: { title: 'auth', endpoint: 'ws://127.0.0.1:4321/auth', workspaceDir: '' }, candidates: [] });
 
-    await prima.browserStart();
-    expect(launches).toEqual([{ opts: { browser: 'chromium', show: false }, instance: 'staging' }]);
+    expect(await prima.browserStart()).toBe('browser: playwright-cli session "auth" at ws://127.0.0.1:4321/auth');
+  });
 
-    await prima.browserStop();
-    expect(closed).toBe(true);
+  test('browserStart fails proposing playwright-cli open when no session is open', async () => {
+    const { prima } = fakePrima({ url: 'https://app.example.com' });
+    (prima as any).discover = () => ({ candidates: [] });
+
+    await expect(prima.browserStart()).rejects.toThrow(/playwright-cli open https:\/\/app.example.com/);
+    expect(listInstances()).toEqual([]);
   });
 
   test('browserStop with all clears every registered instance', async () => {
