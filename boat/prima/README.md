@@ -46,7 +46,6 @@ playwright-cli close
 | `status <hash>` | Show the artifacts and page detail recorded for an earlier command |
 | `report` | Turn every command of a session into one html and markdown report |
 | `browser` | Check that a playwright-cli session is open, and fail with the command to open one when it is not |
-| `browser stop\|status\|list` | Manage the browsers prima drives |
 | `config` | Show models, config file and paths used by this run |
 
 `check` takes an outcome rather than a click path. It runs on the page you are already on and never reloads it, so an open dialog survives the check. Each `--expected` outcome comes back as PASSED, FAILED, CONTRADICTION or not verified — settled against a screenshot of the whole page, because what a user can see is the proof.

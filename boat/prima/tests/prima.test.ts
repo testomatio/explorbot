@@ -1,10 +1,10 @@
 import { afterAll, afterEach, beforeAll, describe, expect, spyOn, test } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Decision } from '../../../src/ai/judge.ts';
 import { Navigator } from '../../../src/ai/navigator.ts';
-import { getEndpointFilePath, listInstances } from '../../../src/browser-server.ts';
+import { getEndpointFilePath } from '../../../src/browser-server.ts';
 import { ConfigParser } from '../../../src/config.ts';
 import { ExplorBot } from '../../../src/explorbot.ts';
 import { SettledExpectation, TestResult } from '../../../src/test-plan.ts';
@@ -438,21 +438,6 @@ describe('Prima attach ladder', () => {
 
     expect(await (prima as any).attachToEndpoint(descriptor)).toBe(false);
     expect((await prima.instanceInfo()).attached).toBeUndefined();
-  });
-
-  test('stop in attached mode never reaches the browser server kill path', async () => {
-    const { prima } = fakePrima();
-    const calls: string[] = [];
-    (prima as any).attached = 'playwright-cli session "default", workspace /work/app';
-    (prima as any).bot.stop = async () => calls.push('bot.stop');
-    (prima as any).stopInstance = async (instance: string) => {
-      calls.push(`stopInstance:${instance}`);
-      return true;
-    };
-
-    await prima.stop();
-    expect(await prima.browserStop()).toBe(false);
-    expect(calls).toEqual(['bot.stop']);
   });
 });
 
@@ -1603,12 +1588,6 @@ describe('Prima browser instances', () => {
     }
   });
 
-  function writeDeadEndpoint(instance: string) {
-    const file = getEndpointFilePath(instance);
-    mkdirSync(path.dirname(file), { recursive: true });
-    writeFileSync(file, `ws://127.0.0.1:1/${instance}`, 'utf8');
-  }
-
   test('browserCheck reports the open playwright-cli session', async () => {
     const { prima } = fakePrima();
     (prima as any).discover = () => ({ match: { title: 'auth', endpoint: 'ws://127.0.0.1:4321/auth', workspaceDir: '' }, candidates: [] });
@@ -1621,26 +1600,6 @@ describe('Prima browser instances', () => {
     (prima as any).discover = () => ({ candidates: [] });
 
     await expect(prima.browserCheck()).rejects.toThrow(/playwright-cli open https:\/\/app.example.com/);
-  });
-
-  test('browserStop with all clears every registered instance', async () => {
-    const { prima } = fakePrima();
-    writeDeadEndpoint('default');
-    writeDeadEndpoint('staging');
-    expect(listInstances().length).toBe(2);
-
-    await prima.browserStop(true);
-    expect(listInstances()).toEqual([]);
-  });
-
-  test('browserStatus reports the instance, tabs and other instances', async () => {
-    const { prima } = fakePrima();
-    writeDeadEndpoint('staging');
-
-    const status = await prima.browserStatus();
-    expect(status).toContain('instance: default (0 tabs)');
-    expect(status).toContain('staging');
-    expect(status).toContain('browser: not running');
   });
 
   test('session file is wired into the browser context options', () => {

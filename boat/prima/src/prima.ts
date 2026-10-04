@@ -12,7 +12,7 @@ import { JUDGE_PAGE_CAP, UNDECIDED } from '../../../src/ai/judge.ts';
 import { getPreviousResearch } from '../../../src/ai/researcher/cache.ts';
 import { actionRule, locatorRule } from '../../../src/ai/rules.ts';
 import { createAgentTools, createCodeceptJSTools, createRefTools } from '../../../src/ai/tools.ts';
-import { getAliveEndpoint, listInstances, stopServer } from '../../../src/browser-server.ts';
+import { getAliveEndpoint, listInstances } from '../../../src/browser-server.ts';
 import { ConfigCommand } from '../../../src/commands/config-command.ts';
 import { ConfigMissingError, ConfigParser, EXPLORBOT_ENV_VARS, type ExplorbotConfig, outputPath } from '../../../src/config.ts';
 import { ExplorBot } from '../../../src/explorbot.ts';
@@ -510,19 +510,6 @@ export class Prima {
     return `browser: ${this.attachmentLabel(match)} at ${match.endpoint}`;
   }
 
-  async browserStop(all = false): Promise<boolean> {
-    await this.loadConfig();
-    if (this.attached) return false;
-
-    if (!all) return stopServer(this.instanceName());
-
-    let stopped = false;
-    for (const instance of listInstances()) {
-      if (await stopServer(instance.name)) stopped = true;
-    }
-    return stopped;
-  }
-
   async config(json?: boolean): Promise<string> {
     const [site] = listSites();
     if (site && !this.configBaseUrl()) this.sessionUrl = site.url;
@@ -569,37 +556,6 @@ export class Prima {
       `markdown: ${outputPath('reports', `${Stats.sessionLabel()}-tests.md`)}`,
       `upload:   TESTOMATIO=<apiKey> npx @testomatio/reporter replay ${file}`,
     ].join('\n');
-  }
-
-  async browserStatus(): Promise<string> {
-    await this.loadConfig();
-    const info = await this.instanceInfo();
-    const endpoint = await getAliveEndpoint(info.name);
-    const others = info.others.map((other) => other.name).join(', ') || 'none';
-    const lines = [`instance: ${info.name} (${info.tabs} ${pluralize(info.tabs, 'tab')}) | other instances: ${others}`];
-    if (!endpoint) lines.push('browser: not running');
-    if (endpoint) lines.push(`browser: running at ${endpoint}`);
-    return lines.join('\n');
-  }
-
-  async browserList(): Promise<string> {
-    await this.loadConfig();
-
-    const lines: string[] = [];
-    for (const instance of listInstances()) {
-      const endpoint = await getAliveEndpoint(instance.name);
-      if (!endpoint) continue;
-      lines.push(`prima --instance ${instance.name}  ${endpoint}`);
-    }
-
-    const discovery = await this.discover();
-    await discovery.browser?.close().catch(() => {});
-    for (const descriptor of discovery.candidates) {
-      lines.push(`playwright-cli --pw-session ${descriptor.title}  ${descriptor.endpoint}`);
-    }
-
-    if (!lines.length) return 'no browser instances running';
-    return lines.join('\n');
   }
 
   async instanceInfo(): Promise<InstanceInfo> {

@@ -86,18 +86,6 @@ async function runPrima(options: any, command: string, run: (prima: Prima) => Pr
   process.exit(envelope.ok ? 0 : 1);
 }
 
-async function runBrowser(options: any, run: (prima: Prima) => Promise<boolean>): Promise<void> {
-  let ok = false;
-  try {
-    ok = await run(primaFor(options));
-  } catch (error) {
-    console.error(browserErrorMessage(error));
-    process.exit(1);
-  }
-
-  process.exit(ok ? 0 : 1);
-}
-
 export function createPrimaCommands(name = 'prima'): Command {
   const cmd = new Command(name);
   cmd.description('Drives a web app through described behaviour, not locators');
@@ -176,35 +164,14 @@ export function createPrimaCommands(name = 'prima'): Command {
       process.exit(0);
     });
 
-  const browser = addBrowserOptions(cmd.command('browser').description('Check that a playwright-cli session is open for prima to drive')).action(async (options) => {
-    await runBrowser(options, async (prima) => {
-      console.log(await prima.browserCheck());
-      return true;
-    });
-  });
-
-  addBrowserOptions(browser.command('stop').description('Stop the browser of this instance'))
-    .option('--all', 'Stop every running instance')
-    .action(async (options) => {
-      await runBrowser(options, async (prima) => {
-        const stopped = await prima.browserStop(options.all);
-        console.log(await prima.browserStatus());
-        return stopped;
-      });
-    });
-
-  addBrowserOptions(browser.command('status').description('Report the browser of this instance')).action(async (options) => {
-    await runBrowser(options, async (prima) => {
-      console.log(await prima.browserStatus());
-      return true;
-    });
-  });
-
-  addBrowserOptions(browser.command('list').description('List every browser instance that is running')).action(async (options) => {
-    await runBrowser(options, async (prima) => {
-      console.log(await prima.browserList());
-      return true;
-    });
+  addBrowserOptions(cmd.command('browser').description('Check that a playwright-cli session is open for prima to drive')).action(async (options) => {
+    try {
+      console.log(await primaFor(options).browserCheck());
+    } catch (error) {
+      console.error(browserErrorMessage(error));
+      process.exit(1);
+    }
+    process.exit(0);
   });
 
   return cmd;
