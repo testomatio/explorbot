@@ -733,16 +733,16 @@ html: /home/you/.explorbot/sites/app.example.com/output/prima/2026-08-04T10-04-2
 
 ### Browsers and sessions
 
-Prima never launches a browser implicitly. Open one first:
+Prima never launches a browser. Open a playwright-cli session first, and check prima sees it:
 
 ```bash
 playwright-cli open https://app.example.com   # the session prima attaches to by default
-npx explorbot prima browser start             # a prima-owned browser instead
+npx explorbot prima browser                   # prints the session, or fails with the command to open one
 ```
 
 By default prima attaches to the playwright-cli browser of the current workspace and works on the tabs it already has open — driving the same session from both tools is the intended usage. Stopping prima disconnects from an attached browser; it never closes it. `prima browser list` shows both kinds of browser, and the `### Instance` block names the one you are on.
 
-Prima reaches every browser over a Playwright browser-server endpoint — a playwright-cli session, an `--endpoint`, or a `prima browser start` instance — and that client needs the Node build, which is what `npx explorbot prima` and the published `prima` bin run on. Driving a browser by running the CLI from source under Bun does not connect.
+Prima reaches every browser over a Playwright browser-server endpoint — a playwright-cli session, an `--endpoint`, or an `explorbot browser start` instance — and that client needs the Node build, which is what `npx explorbot prima` and the published `prima` bin run on. Driving a browser by running the CLI from source under Bun does not connect.
 
 Every command takes these:
 
@@ -769,7 +769,6 @@ A few commands add their own:
 | `research` | `--data` | Include data extraction in the map |
 | `research` | `--deep` | Expand hidden elements for a deeper map |
 | `research` | `--fresh` | Ignore the cached map and research the page again |
-| `browser start` | `-s, --show` / `--headless` | Launch the browser with or without a window |
 | `browser stop` | `--all` | Stop every running instance |
 
 Prima carries no logging flags of its own. `DEBUG` in front of a command prints everything the run does — config and browser attachment, every step as it executes, and the debug stream of the agents behind it:

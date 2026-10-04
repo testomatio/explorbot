@@ -502,7 +502,7 @@ export class Prima {
     return envelope;
   }
 
-  async browserStart(): Promise<string> {
+  async browserCheck(): Promise<string> {
     await this.loadConfig();
     const { match, candidates, browser } = await this.discover();
     await browser?.close().catch(() => {});

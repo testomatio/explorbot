@@ -3,10 +3,10 @@
 ## 2026-10-05
 
 ### Changes
-- [Prima] `prima browser start` no longer launches its own browser. It checks that a playwright-cli session is open and prints it, or fails with the command to open one. The `--show` and `--headless` flags are removed.
+- [Prima] `prima browser start` is replaced by `prima browser`, which no longer launches its own browser. It checks that a playwright-cli session is open and prints it, or fails with the command to open one. The `--show` and `--headless` flags are removed.
   ```bash
   playwright-cli open https://app.example.com
-  prima browser start          # browser: playwright-cli session "default" at ws://...
+  prima browser                # browser: playwright-cli session "default" at ws://...
   ```
 - [Prima] When no browser is open, prima commands now suggest only `playwright-cli open <url>`, filled in with `--url` when given.
 

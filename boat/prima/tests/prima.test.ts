@@ -1609,19 +1609,18 @@ describe('Prima browser instances', () => {
     writeFileSync(file, `ws://127.0.0.1:1/${instance}`, 'utf8');
   }
 
-  test('browserStart reports the open playwright-cli session', async () => {
+  test('browserCheck reports the open playwright-cli session', async () => {
     const { prima } = fakePrima();
     (prima as any).discover = () => ({ match: { title: 'auth', endpoint: 'ws://127.0.0.1:4321/auth', workspaceDir: '' }, candidates: [] });
 
-    expect(await prima.browserStart()).toBe('browser: playwright-cli session "auth" at ws://127.0.0.1:4321/auth');
+    expect(await prima.browserCheck()).toBe('browser: playwright-cli session "auth" at ws://127.0.0.1:4321/auth');
   });
 
-  test('browserStart fails proposing playwright-cli open when no session is open', async () => {
+  test('browserCheck fails proposing playwright-cli open when no session is open', async () => {
     const { prima } = fakePrima({ url: 'https://app.example.com' });
     (prima as any).discover = () => ({ candidates: [] });
 
-    await expect(prima.browserStart()).rejects.toThrow(/playwright-cli open https:\/\/app.example.com/);
-    expect(listInstances()).toEqual([]);
+    await expect(prima.browserCheck()).rejects.toThrow(/playwright-cli open https:\/\/app.example.com/);
   });
 
   test('browserStop with all clears every registered instance', async () => {

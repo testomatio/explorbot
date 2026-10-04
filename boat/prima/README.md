@@ -25,12 +25,12 @@ Prima drives a browser opened by `playwright-cli` and never launches one itself:
 
 ```bash
 playwright-cli open https://app.example.com
-prima-cli browser start
+prima-cli browser
 prima-cli check "the settings page saves a changed theme"
 playwright-cli close
 ```
 
-`browser start` checks that a `playwright-cli` session is open and fails with the command to open one when it is not.
+`browser` checks that a `playwright-cli` session is open and fails with the command to open one when it is not.
 
 ## Commands
 
@@ -45,7 +45,8 @@ playwright-cli close
 | `pw <fn>` | Run a Playwright function expression against the open page |
 | `status <hash>` | Show the artifacts and page detail recorded for an earlier command |
 | `report` | Turn every command of a session into one html and markdown report |
-| `browser start\|stop\|status\|list` | Manage the browsers prima drives |
+| `browser` | Check that a playwright-cli session is open, and fail with the command to open one when it is not |
+| `browser stop\|status\|list` | Manage the browsers prima drives |
 | `config` | Show models, config file and paths used by this run |
 
 `check` takes an outcome rather than a click path. It runs on the page you are already on and never reloads it, so an open dialog survives the check. Each `--expected` outcome comes back as PASSED, FAILED, CONTRADICTION or not verified — settled against a screenshot of the whole page, because what a user can see is the proof.

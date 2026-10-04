@@ -176,11 +176,9 @@ export function createPrimaCommands(name = 'prima'): Command {
       process.exit(0);
     });
 
-  const browser = cmd.command('browser').description('Manage the browsers prima drives');
-
-  addBrowserOptions(browser.command('start').description('Check that a playwright-cli session is open for prima to drive')).action(async (options) => {
+  const browser = addBrowserOptions(cmd.command('browser').description('Check that a playwright-cli session is open for prima to drive')).action(async (options) => {
     await runBrowser(options, async (prima) => {
-      console.log(await prima.browserStart());
+      console.log(await prima.browserCheck());
       return true;
     });
   });
