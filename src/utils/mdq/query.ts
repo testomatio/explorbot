@@ -13,13 +13,12 @@ export class MarkdownQuery {
   }
 
   query(selector: string, matcher?: Matcher): MarkdownQuery {
-    const chains = parseQuery(selector);
-    for (const chain of chains) {
+    const expression = parseQuery(selector);
+    for (const chain of expression.flat()) {
       const last = chain.at(-1);
       if (matcher !== undefined && last) last.textMatch = this.valueMatcher(matcher);
     }
-    const candidates = this.expandSections(this.matches);
-    return new MarkdownQuery(this.source, this.union(chains.map((chain) => this.run(candidates, chain))));
+    return new MarkdownQuery(this.source, this.evaluate(this.expandSections(this.matches), expression));
   }
 
   section(matcher?: Matcher, options?: SelectorOptions): MarkdownQuery {
@@ -368,6 +367,16 @@ export class MarkdownQuery {
     return expanded;
   }
 
+  private evaluate(candidates: MatchedRange[], expression: QueryExpression): MatchedRange[] {
+    const results: MatchedRange[][] = [];
+    for (const operands of expression) {
+      const matched = operands.map((chain) => this.run(candidates, chain));
+      if (matched.some((ranges) => ranges.length === 0)) continue;
+      results.push(...matched);
+    }
+    return this.union(results);
+  }
+
   private union(results: MatchedRange[][]): MatchedRange[] {
     if (results.length === 1) return results[0];
 
@@ -380,17 +389,14 @@ export class MarkdownQuery {
   }
 
   private narrow(matches: MatchedRange[], segment: QuerySegment): MatchedRange[] {
-    let kept = matches;
-    if (segment.has) kept = matches.filter((range) => segment.has!.every((chains) => chains.some((chain) => this.run(range.innerTokens || [range], chain).length > 0)));
-
     if (segment.index !== null) {
       let index = segment.index;
-      if (index < 0) index = kept.length + index;
-      if (index < 0 || index >= kept.length) return [];
-      return [kept[index]];
+      if (index < 0) index = matches.length + index;
+      if (index < 0 || index >= matches.length) return [];
+      return [matches[index]];
     }
-    if (segment.slice) return kept.slice(segment.slice.from, segment.slice.to);
-    return kept;
+    if (segment.slice) return matches.slice(segment.slice.from, segment.slice.to);
+    return matches;
   }
 
   private filterByText(matches: MatchedRange[], segment: QuerySegment): MatchedRange[] {
@@ -467,10 +473,58 @@ export function mdq(source: Markdown): MarkdownQuery {
   return new MarkdownQuery(String(source));
 }
 
-export function parseQuery(input: string): QuerySegment[][] {
-  const { chains, end } = parseList(input, 0);
-  if (end < input.length) throw new MdqSelectorError(`Unexpected character "${input[end]}" in selector`, end);
-  return chains;
+export function parseQuery(input: string): QueryExpression {
+  const expression: QueryExpression = [[[]]];
+  let chain = expression[0][0];
+  SEGMENT.lastIndex = 0;
+
+  while (SEGMENT.lastIndex < input.length) {
+    const at = SEGMENT.lastIndex;
+    OPERATOR.lastIndex = at;
+    const operator = OPERATOR.exec(input);
+    if (operator) {
+      if (chain.length === 0) throw new MdqSelectorError(`Empty selector before ${operator[1]}`, at);
+      chain = [];
+      if (operator[1] === 'OR') expression.push([chain]);
+      if (operator[1] === 'AND') expression[expression.length - 1].push(chain);
+      SEGMENT.lastIndex = OPERATOR.lastIndex;
+      continue;
+    }
+
+    const match = SEGMENT.exec(input);
+    if (!match) throw new MdqSelectorError(`Unexpected character "${input[at]}" in selector`, at);
+
+    const [, prefix, name, negated, contains, quoted, pattern, flags, brackets] = match;
+    if (!SELECTOR_NAMES.has(name) && !/^(?:h|section)[1-6]$/.test(name)) throw new MdqSelectorError(`Unknown selector "${name}"`, at + prefix.length);
+
+    const segment: QuerySegment = { selector: name as SelectorType, index: null, slice: null };
+
+    if (quoted !== undefined) {
+      let mode: TextMatcher['mode'] = 'exact';
+      if (contains) mode = 'contains';
+      segment.textMatch = { mode, value: quoted.replace(/\\(.)/g, '$1'), negated: Boolean(negated) };
+    }
+    if (pattern !== undefined) {
+      segment.textMatch = { mode: 'regex', value: pattern, negated: Boolean(negated), flags };
+    }
+
+    for (const [, bounds] of brackets.matchAll(/\[([^\]]*)\]/g)) {
+      if (!bounds || !/^-?\d*(?::-?\d*)?$/.test(bounds)) continue;
+      if (!bounds.includes(':')) {
+        segment.index = Number.parseInt(bounds, 10);
+        continue;
+      }
+      const [from, to] = bounds.split(':');
+      segment.slice = {};
+      if (from) segment.slice.from = Number.parseInt(from, 10);
+      if (to) segment.slice.to = Number.parseInt(to, 10);
+    }
+
+    chain.push(segment);
+  }
+
+  if (expression.flat().length > 1 && chain.length === 0) throw new MdqSelectorError('Empty selector after operator', input.length);
+  return expression;
 }
 
 export function buildTokenIndex(source: string): MatchedRange[] {
@@ -493,80 +547,13 @@ export function buildTokenIndex(source: string): MatchedRange[] {
   return ranges;
 }
 
-function parseList(input: string, start: number): { chains: QuerySegment[][]; end: number } {
-  const chains: QuerySegment[][] = [[]];
-  let at = start;
-
-  while (at < input.length && input[at] !== ')') {
-    if (input[at] !== ',') {
-      const { segment, end } = parseSegment(input, at);
-      chains[chains.length - 1].push(segment);
-      at = end;
-      continue;
-    }
-    if (chains[chains.length - 1].length === 0) throw new MdqSelectorError('Empty selector before ","', at);
-    chains.push([]);
-    at++;
-  }
-
-  if (chains.length > 1 && chains[chains.length - 1].length === 0) throw new MdqSelectorError('Empty selector after ","', at);
-  return { chains, end: at };
-}
-
-function parseSegment(input: string, start: number): { segment: QuerySegment; end: number } {
-  SEGMENT_HEAD.lastIndex = start;
-  const match = SEGMENT_HEAD.exec(input);
-  if (!match) throw new MdqSelectorError(`Unexpected character "${input[start]}" in selector`, start);
-
-  const [, prefix, name, negated, contains, quoted, pattern, flags] = match;
-  if (!SELECTOR_NAMES.has(name) && !/^(?:h|section)[1-6]$/.test(name)) throw new MdqSelectorError(`Unknown selector "${name}"`, start + prefix.length);
-
-  const segment: QuerySegment = { selector: name as SelectorType, index: null, slice: null };
-
-  if (quoted !== undefined) {
-    let mode: TextMatcher['mode'] = 'exact';
-    if (contains) mode = 'contains';
-    segment.textMatch = { mode, value: quoted.replace(/\\(.)/g, '$1'), negated: Boolean(negated) };
-  }
-  if (pattern !== undefined) {
-    segment.textMatch = { mode: 'regex', value: pattern, negated: Boolean(negated), flags };
-  }
-
-  let at = SEGMENT_HEAD.lastIndex;
-  while (input.startsWith(':has(', at)) {
-    const { chains, end } = parseList(input, at + ':has('.length);
-    if (input[end] !== ')') throw new MdqSelectorError('Unclosed ":has("', at);
-    if (chains[0].length === 0) throw new MdqSelectorError('Empty ":has()"', at);
-    segment.has ||= [];
-    segment.has.push(chains);
-    at = end + 1;
-  }
-
-  SEGMENT_BRACKETS.lastIndex = at;
-  const [, brackets] = SEGMENT_BRACKETS.exec(input)!;
-
-  for (const [, bounds] of brackets.matchAll(/\[([^\]]*)\]/g)) {
-    if (!bounds || !/^-?\d*(?::-?\d*)?$/.test(bounds)) continue;
-    if (!bounds.includes(':')) {
-      segment.index = Number.parseInt(bounds, 10);
-      continue;
-    }
-    const [from, to] = bounds.split(':');
-    segment.slice = {};
-    if (from) segment.slice.from = Number.parseInt(from, 10);
-    if (to) segment.slice.to = Number.parseInt(to, 10);
-  }
-
-  return { segment, end: SEGMENT_BRACKETS.lastIndex };
-}
-
 const SELECTOR_NAMES = new Set(['section', 'heading', 'paragraph', 'table', 'list', 'item', 'code', 'blockquote', 'hr', 'html', 'comment']);
 
 const TOKEN_ALIASES: Record<string, string> = { item: 'list_item' };
 
-const SEGMENT_HEAD = /(\s*\.?)([A-Za-z]\w*)(?:\((!?)(~?)(?:"((?:[^"\\]|\\.)*)"|\/((?:[^/\\]|\\.)*)\/([a-z]*))\))?/y;
+const SEGMENT = /(\s*\.?)([A-Za-z]\w*)(?:\((!?)(~?)(?:"((?:[^"\\]|\\.)*)"|\/((?:[^/\\]|\\.)*)\/([a-z]*))\))?((?:\[[^\]]*\])*)\s*/y;
 
-const SEGMENT_BRACKETS = /((?:\[[^\]]*\])*)\s*/y;
+const OPERATOR = /\s*(AND|OR)(?=\s|$)\s*/y;
 
 export type Markdown = string | MarkdownQuery;
 
@@ -586,10 +573,11 @@ export interface TextMatcher {
   predicate?: (text: string) => boolean;
 }
 
+export type QueryExpression = QuerySegment[][][];
+
 export interface QuerySegment {
   selector: SelectorType;
   textMatch?: TextMatcher;
-  has?: QuerySegment[][][];
   index: number | null;
   slice: { from?: number; to?: number } | null;
 }

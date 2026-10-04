@@ -99,12 +99,12 @@ describe('exit codes', () => {
     expect((await runMdq(['h2', '--remove'], async () => doc)).code).toBe(0);
   });
 
-  it('returns 0 when any selector in a list matches', async () => {
-    expect((await runMdq(['h5, table'], async () => doc)).code).toBe(0);
+  it('returns 0 when either side of OR matches', async () => {
+    expect((await runMdq(['h5 OR table'], async () => doc)).code).toBe(0);
   });
 
-  it('returns 1 when :has() filters every match out', async () => {
-    expect((await runMdq(['section2:has(code)'], async () => doc)).code).toBe(1);
+  it('returns 1 when one side of AND fails', async () => {
+    expect((await runMdq(['table AND h5'], async () => doc)).code).toBe(1);
   });
 
   it('returns 2 without a selector', async () => {

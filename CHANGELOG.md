@@ -3,13 +3,12 @@
 ## 2026-10-05
 
 ### Changes
-- mdq selectors can now combine conditions. Commas match any of several selectors (OR), and `:has()` keeps only matches that contain something (AND when repeated). One `mdq-cli` call can now check several things, and its exit status reflects the whole check.
+- mdq selectors can be joined with `AND` and `OR`, so one `mdq-cli` call can check several conditions. With `AND`, the call exits with `1` when any condition is missing.
   ```bash
-  npx mdq-cli 'section("Install"), section("Setup")' README.md          # either section
-  npx mdq-cli 'section("API"):has(table):has(code)' README.md           # API section with a table and a code block
-  npx mdq-cli 'section2:has(table, code)' README.md                     # h2 sections with a table or a code block
+  npx mdq-cli 'comment(/^suite/) AND section("Steps") AND section("Expected")' plan.md   # all must exist
+  npx mdq-cli 'section("Install") OR section("Setup")' README.md                          # either section
   ```
-- mdq: `parseQuery()` now returns one list of segments per comma-separated selector (`QuerySegment[][]`) instead of a single list. Code that reads the parsed segments directly needs to take the first entry for a selector without commas.
+- mdq: `parseQuery()` now returns a `QueryExpression`: a list of `OR` alternatives, each a list of `AND` operands, each a list of segments. For a selector without operators, the segments are at `parseQuery(selector)[0][0]`.
 
 ## 2026-09-28
 

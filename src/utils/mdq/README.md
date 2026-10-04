@@ -22,14 +22,13 @@ Use a selector as a structural assertion. The command prints the matching Markdo
 npx mdq-cli 'section("Overview")' generated.md
 ```
 
-Validate more specific structure by composing selectors:
+Check several conditions in one call by joining selectors with `AND`. The command exits with `1` when any of them fails:
 
 ```bash
-npx mdq-cli 'section("API") table' generated.md
-npx mdq-cli 'section("Examples") code[0]' generated.md
+npx mdq-cli 'section("Overview") AND section("API") table AND section("Examples") code' generated.md
 ```
 
-These queries check for an **Overview** section, a table inside **API**, and at least one fenced code block inside **Examples**. An unknown selector raises an error instead of silently matching nothing.
+This checks for an **Overview** section, a table inside **API**, and at least one fenced code block inside **Examples**. An unknown selector raises an error instead of silently matching nothing.
 
 The same validation can be scripted in JavaScript:
 
@@ -268,22 +267,13 @@ section("API") table    every table inside the API section
 
 ### Combine selectors
 
-Separate selectors with commas to match any of them (OR). The result holds every match once, in document order. An index or slice applies to its own selector, not to the combined result:
+Join selectors with `AND` or `OR`, written in capitals. `AND` matches only when every selector matches; `OR` matches when any of them does. `AND` binds tighter than `OR`. The result holds the matches of the selectors that passed, each once, in document order. An index or slice applies to its own selector, not to the combined result:
 
 ```text
-section("Install"), section("Setup")    either section
-h2[0], h2[-1]                           the first and the last h2
+section("Steps") AND section("Expected")    both sections must exist
+section("Install") OR section("Setup")      either section
+h2[0] OR h2[-1]                             the first and the last h2
 ```
-
-Add `:has(selector)` to keep only the matches that contain something. `a:has(b)` keeps an `a` when `a b` would match inside it. Commas inside `:has()` mean OR, and repeating `:has()` means AND. The filter runs after the text matcher and before any index or slice, so `:has()` must come before the brackets:
-
-```text
-section("API"):has(table):has(code)    API section with a table and a code block
-section2:has(table, code)              h2 sections with a table or a code block
-section2:has(code)[0]                  first h2 section that has a code block
-```
-
-Use these to check several conditions with one CLI call. The exit status is `0` when the combined selector matches anything.
 
 A leading `.` is accepted and ignored, so `.h2` works if that is your habit from `jq`.
 
