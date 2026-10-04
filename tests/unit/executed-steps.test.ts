@@ -23,6 +23,18 @@ describe('executed steps', () => {
     expect(steps[1]?.error).toContain('still not present');
   });
 
+  it('records the step options the command ran with', () => {
+    const steps: ExecutedStep[] = [];
+    const detachSteps = attachStepLogger(steps);
+
+    const click = { prefix: '', suffix: '', actor: 'I', title: 'click', args: [], opts: { elementIndex: 2 }, humanizeArgs: () => '"Manual"', toCode: () => 'I.click("Manual")' };
+    codeceptjs.event.dispatcher.emit(codeceptjs.event.step.passed, click);
+
+    detachSteps();
+
+    expect(steps[0]?.command).toBe('I.click("Manual", step.opts({"elementIndex":2}))');
+  });
+
   it('reports a successful command even when a later one fails', () => {
     const report = formatExecutedSteps(
       [
