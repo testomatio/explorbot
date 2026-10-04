@@ -62,84 +62,84 @@ Some final paragraph.
 describe('Markdown Query (mdq)', () => {
   describe('parseQuery', () => {
     it('should parse simple selector', () => {
-      const segments = parseQuery('heading');
+      const [segments] = parseQuery('heading');
       expect(segments).toHaveLength(1);
       expect(segments[0].selector).toBe('heading');
     });
 
     it('should parse h3 selector', () => {
-      const segments = parseQuery('h3');
+      const [segments] = parseQuery('h3');
       expect(segments[0].selector).toBe('h3');
     });
 
     it('should parse section3 selector', () => {
-      const segments = parseQuery('section3(~"Auth")');
+      const [segments] = parseQuery('section3(~"Auth")');
       expect(segments[0].selector).toBe('section3');
       expect(segments[0].textMatch).toEqual({ mode: 'contains', value: 'Auth', negated: false });
     });
 
     it('should parse exact text matcher', () => {
-      const segments = parseQuery('section("API")');
+      const [segments] = parseQuery('section("API")');
       expect(segments[0].textMatch).toEqual({ mode: 'exact', value: 'API', negated: false });
     });
 
     it('should parse contains text matcher', () => {
-      const segments = parseQuery('section(~"Settings")');
+      const [segments] = parseQuery('section(~"Settings")');
       expect(segments[0].textMatch).toEqual({ mode: 'contains', value: 'Settings', negated: false });
     });
 
     it('should parse regex text matcher', () => {
-      const segments = parseQuery('heading(/api/)');
+      const [segments] = parseQuery('heading(/api/)');
       expect(segments[0].textMatch).toEqual({ mode: 'regex', value: 'api', negated: false, flags: '' });
     });
 
     it('should keep regex flags', () => {
-      const segments = parseQuery('section(/^api$/i)');
+      const [segments] = parseQuery('section(/^api$/i)');
       expect(segments[0].textMatch).toEqual({ mode: 'regex', value: '^api$', negated: false, flags: 'i' });
     });
 
     it('should parse negated text matcher', () => {
-      const segments = parseQuery('section(!"API")');
+      const [segments] = parseQuery('section(!"API")');
       expect(segments[0].textMatch).toEqual({ mode: 'exact', value: 'API', negated: true });
     });
 
     it('should parse negated contains matcher', () => {
-      const segments = parseQuery('section(!~"Set")');
+      const [segments] = parseQuery('section(!~"Set")');
       expect(segments[0].textMatch).toEqual({ mode: 'contains', value: 'Set', negated: true });
     });
 
     it('should parse negated regex matcher', () => {
-      const segments = parseQuery('heading(!/api/)');
+      const [segments] = parseQuery('heading(!/api/)');
       expect(segments[0].textMatch).toEqual({ mode: 'regex', value: 'api', negated: true, flags: '' });
     });
 
     it('should parse numeric index', () => {
-      const segments = parseQuery('table[0]');
+      const [segments] = parseQuery('table[0]');
       expect(segments[0].index).toBe(0);
     });
 
     it('should parse negative index', () => {
-      const segments = parseQuery('table[-1]');
+      const [segments] = parseQuery('table[-1]');
       expect(segments[0].index).toBe(-1);
     });
 
     it('should parse slice', () => {
-      const segments = parseQuery('heading[1:3]');
+      const [segments] = parseQuery('heading[1:3]');
       expect(segments[0].slice).toEqual({ from: 1, to: 3 });
     });
 
     it('should parse slice from start', () => {
-      const segments = parseQuery('heading[:2]');
+      const [segments] = parseQuery('heading[:2]');
       expect(segments[0].slice).toEqual({ from: undefined, to: 2 });
     });
 
     it('should parse slice to end', () => {
-      const segments = parseQuery('heading[2:]');
+      const [segments] = parseQuery('heading[2:]');
       expect(segments[0].slice).toEqual({ from: 2, to: undefined });
     });
 
     it('should parse compound query', () => {
-      const segments = parseQuery('section("API") table[0]');
+      const [segments] = parseQuery('section("API") table[0]');
       expect(segments).toHaveLength(2);
       expect(segments[0].selector).toBe('section');
       expect(segments[0].textMatch?.value).toBe('API');

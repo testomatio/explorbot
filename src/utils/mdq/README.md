@@ -266,6 +266,25 @@ Separate selectors with spaces to scope each selector inside the previous one:
 section("API") table    every table inside the API section
 ```
 
+### Combine selectors
+
+Separate selectors with commas to match any of them (OR). The result holds every match once, in document order. An index or slice applies to its own selector, not to the combined result:
+
+```text
+section("Install"), section("Setup")    either section
+h2[0], h2[-1]                           the first and the last h2
+```
+
+Add `:has(selector)` to keep only the matches that contain something. `a:has(b)` keeps an `a` when `a b` would match inside it. Commas inside `:has()` mean OR, and repeating `:has()` means AND. The filter runs after the text matcher and before any index or slice, so `:has()` must come before the brackets:
+
+```text
+section("API"):has(table):has(code)    API section with a table and a code block
+section2:has(table, code)              h2 sections with a table or a code block
+section2:has(code)[0]                  first h2 section that has a code block
+```
+
+Use these to check several conditions with one CLI call. The exit status is `0` when the combined selector matches anything.
+
 A leading `.` is accepted and ignored, so `.h2` works if that is your habit from `jq`.
 
 An unknown selector throws `MdqSelectorError`. The error carries the `index` of the offending character; mdq never silently treats an unknown selector as an empty result.
