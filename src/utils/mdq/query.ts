@@ -485,8 +485,8 @@ export function parseQuery(input: string): QueryExpression {
     if (operator) {
       if (chain.length === 0) throw new MdqSelectorError(`Empty selector before ${operator[1]}`, at);
       chain = [];
-      if (operator[1] === 'OR') expression.push([chain]);
-      if (operator[1] === 'AND') expression[expression.length - 1].push(chain);
+      if (operator[1] === '||') expression.push([chain]);
+      if (operator[1] === '&&') expression[expression.length - 1].push(chain);
       SEGMENT.lastIndex = OPERATOR.lastIndex;
       continue;
     }
@@ -553,7 +553,7 @@ const TOKEN_ALIASES: Record<string, string> = { item: 'list_item' };
 
 const SEGMENT = /(\s*\.?)([A-Za-z]\w*)(?:\((!?)(~?)(?:"((?:[^"\\]|\\.)*)"|\/((?:[^/\\]|\\.)*)\/([a-z]*))\))?((?:\[[^\]]*\])*)\s*/y;
 
-const OPERATOR = /\s*(AND|OR)(?=\s|$)\s*/y;
+const OPERATOR = /\s*(&&|\|\|)\s*/y;
 
 export type Markdown = string | MarkdownQuery;
 

@@ -22,10 +22,10 @@ Use a selector as a structural assertion. The command prints the matching Markdo
 npx mdq-cli 'section("Overview")' generated.md
 ```
 
-Check several conditions in one call by joining selectors with `AND`. The command exits with `1` when any of them fails:
+Check several conditions in one call by joining selectors with `&&`. The command exits with `1` when any of them fails:
 
 ```bash
-npx mdq-cli 'section("Overview") AND section("API") table AND section("Examples") code' generated.md
+npx mdq-cli 'section("Overview") && section("API") table && section("Examples") code' generated.md
 ```
 
 This checks for an **Overview** section, a table inside **API**, and at least one fenced code block inside **Examples**. An unknown selector raises an error instead of silently matching nothing.
@@ -267,12 +267,12 @@ section("API") table    every table inside the API section
 
 ### Combine selectors
 
-Join selectors with `AND` or `OR`, written in capitals. `AND` matches only when every selector matches; `OR` matches when any of them does. `AND` binds tighter than `OR`. The result holds the matches of the selectors that passed, each once, in document order. An index or slice applies to its own selector, not to the combined result:
+Join selectors with `&&` or `||`. `&&` matches only when every selector matches; `||` matches when any of them does. `&&` binds tighter than `||`. The result holds the matches of the selectors that passed, each once, in document order. An index or slice applies to its own selector, not to the combined result:
 
 ```text
-section("Steps") AND section("Expected")    both sections must exist
-section("Install") OR section("Setup")      either section
-h2[0] OR h2[-1]                             the first and the last h2
+section("Steps") && section("Expected")    both sections must exist
+section("Install") || section("Setup")      either section
+h2[0] || h2[-1]                             the first and the last h2
 ```
 
 A leading `.` is accepted and ignored, so `.h2` works if that is your habit from `jq`.

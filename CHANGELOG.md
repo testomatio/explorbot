@@ -3,12 +3,12 @@
 ## 2026-10-05
 
 ### Changes
-- mdq selectors can be joined with `AND` and `OR`, so one `mdq-cli` call can check several conditions. With `AND`, the call exits with `1` when any condition is missing.
+- mdq selectors can be joined with `&&` and `||`, so one `mdq-cli` call can check several conditions. With `&&`, the call exits with `1` when any condition is missing.
   ```bash
-  npx mdq-cli 'comment(/^suite/) AND section("Steps") AND section("Expected")' plan.md   # all must exist
-  npx mdq-cli 'section("Install") OR section("Setup")' README.md                          # either section
+  npx mdq-cli 'comment(/^suite/) && section("Steps") && section("Expected")' plan.md   # all must exist
+  npx mdq-cli 'section("Install") || section("Setup")' README.md                          # either section
   ```
-- mdq: `parseQuery()` now returns a `QueryExpression`: a list of `OR` alternatives, each a list of `AND` operands, each a list of segments. For a selector without operators, the segments are at `parseQuery(selector)[0][0]`.
+- mdq: `parseQuery()` now returns a `QueryExpression`: a list of `||` alternatives, each a list of `&&` operands, each a list of segments. For a selector without operators, the segments are at `parseQuery(selector)[0][0]`.
 
 ## 2026-09-28
 
