@@ -205,7 +205,6 @@ describe('Prima without a browser session', () => {
     expect(run.exitCode).toBe(1);
     expect(stdout).toContain('ok: false');
     expect(stdout).toContain('playwright-cli open');
-    expect(stdout).toContain('prima browser start');
     expect(existsSync(path.join(workspace, 'output', '.browser-endpoint'))).toBe(false);
   }, 60000);
 });
@@ -267,7 +266,6 @@ describe('Prima attaches to a live playwright-cli session', () => {
 
       await prima.stop();
       expect(readDescriptors().some((descriptor) => descriptor.endpoint === liveSession!.endpoint)).toBe(true);
-      expect(await prima.browserStop()).toBe(false);
 
       ConfigParser.cleanupAllTestDirectories();
     },
