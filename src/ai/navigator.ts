@@ -13,6 +13,7 @@ import { type StateManager, normalizeUrl } from '../state-manager.js';
 import { isFatalBrowserError } from '../utils/browser-errors.ts';
 import { getCliName } from '../utils/cli-name.ts';
 import { extractCodeBlocks } from '../utils/code-extractor.js';
+import { isLoginPage } from '../utils/error-page.ts';
 import { HooksRunner } from '../utils/hooks-runner.ts';
 import { createDebug, pluralize, tag } from '../utils/logger.js';
 import { loop, pause } from '../utils/loop.js';
@@ -24,7 +25,7 @@ import type { Conversation } from './conversation.js';
 import { type Decision, JUDGE_PAGE_CAP, type Judge, UNDECIDED } from './judge.ts';
 import type { Provider } from './provider.js';
 import { Researcher } from './researcher.ts';
-import { actionRule, locatorRule, unexpectedPopupRule } from './rules.js';
+import { actionRule, credentialsRule, locatorRule, unexpectedPopupRule } from './rules.js';
 import { isInteractive } from './task-agent.js';
 import { createLearnExperienceTool } from './tools.ts';
 
@@ -59,7 +60,7 @@ class Navigator implements Agent {
     NEVER use executeScript, executeAsyncScript, or any JS evaluation to change the URL, bypass redirects, or fake the page state.
     If the target URL redirects to an authentication/login page, DO NOT try to force the original URL. Instead:
       1. Look for credentials in the provided knowledge/hint context and perform a real login through the form.
-      2. If no credentials are available, ask the user for credentials or ask the user to log in manually.
+      2. If no credentials are available, stop and name the credentials that are missing. Never guess them.
     A redirect to /login, /sign_in, /auth, or similar is a signal that authentication is required — treat it as such, never as an obstacle to bypass.
   </constraints>
   `;
@@ -381,6 +382,9 @@ class Navigator implements Agent {
       experience = this.experienceTracker.renderExperienceFor(actionResult);
     }
 
+    let credentials = '';
+    if (isLoginPage(actionResult)) credentials = credentialsRule;
+
     return dedent`
       <message>
         ${message}
@@ -405,6 +409,8 @@ class Navigator implements Agent {
       ${actionRule}
 
       ${unexpectedPopupRule}
+
+      ${credentials}
 
       ${RulesLoader.loadRules('navigator', ['multiple-locator', 'output'], actionResult.url || '').replace('{{maxAttempts}}', String(this.MAX_ATTEMPTS))}
 

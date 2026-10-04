@@ -99,6 +99,14 @@ describe('exit codes', () => {
     expect((await runMdq(['h2', '--remove'], async () => doc)).code).toBe(0);
   });
 
+  it('returns 0 when either side of || matches', async () => {
+    expect((await runMdq(['h5 || table'], async () => doc)).code).toBe(0);
+  });
+
+  it('returns 1 when one side of && fails', async () => {
+    expect((await runMdq(['table && h5'], async () => doc)).code).toBe(1);
+  });
+
   it('returns 2 without a selector', async () => {
     expect((await runMdq([], async () => doc)).code).toBe(2);
   });

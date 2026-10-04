@@ -13,9 +13,12 @@ export class MarkdownQuery {
   }
 
   query(selector: string, matcher?: Matcher): MarkdownQuery {
-    const segments = parseQuery(selector);
-    if (matcher !== undefined && segments.length > 0) segments[segments.length - 1].textMatch = this.valueMatcher(matcher);
-    return new MarkdownQuery(this.source, this.run(this.expandSections(this.matches), segments));
+    const expression = parseQuery(selector);
+    for (const chain of expression.flat()) {
+      const last = chain.at(-1);
+      if (matcher !== undefined && last) last.textMatch = this.valueMatcher(matcher);
+    }
+    return new MarkdownQuery(this.source, this.evaluate(this.expandSections(this.matches), expression));
   }
 
   section(matcher?: Matcher, options?: SelectorOptions): MarkdownQuery {
@@ -364,6 +367,27 @@ export class MarkdownQuery {
     return expanded;
   }
 
+  private evaluate(candidates: MatchedRange[], expression: QueryExpression): MatchedRange[] {
+    const results: MatchedRange[][] = [];
+    for (const operands of expression) {
+      const matched = operands.map((chain) => this.run(candidates, chain));
+      if (matched.some((ranges) => ranges.length === 0)) continue;
+      results.push(...matched);
+    }
+    return this.union(results);
+  }
+
+  private union(results: MatchedRange[][]): MatchedRange[] {
+    if (results.length === 1) return results[0];
+
+    const unique = new Map<string, MatchedRange>();
+    for (const range of results.flat()) {
+      const key = `${range.start}:${range.length}:${Boolean(range.innerTokens)}`;
+      if (!unique.has(key)) unique.set(key, range);
+    }
+    return [...unique.values()].sort((a, b) => a.start - b.start || b.length - a.length);
+  }
+
   private narrow(matches: MatchedRange[], segment: QuerySegment): MatchedRange[] {
     if (segment.index !== null) {
       let index = segment.index;
@@ -449,12 +473,24 @@ export function mdq(source: Markdown): MarkdownQuery {
   return new MarkdownQuery(String(source));
 }
 
-export function parseQuery(input: string): QuerySegment[] {
-  const segments: QuerySegment[] = [];
+export function parseQuery(input: string): QueryExpression {
+  const expression: QueryExpression = [[[]]];
+  let chain = expression[0][0];
   SEGMENT.lastIndex = 0;
 
   while (SEGMENT.lastIndex < input.length) {
     const at = SEGMENT.lastIndex;
+    OPERATOR.lastIndex = at;
+    const operator = OPERATOR.exec(input);
+    if (operator) {
+      if (chain.length === 0) throw new MdqSelectorError(`Empty selector before ${operator[1]}`, at);
+      chain = [];
+      if (operator[1] === '||') expression.push([chain]);
+      if (operator[1] === '&&') expression[expression.length - 1].push(chain);
+      SEGMENT.lastIndex = OPERATOR.lastIndex;
+      continue;
+    }
+
     const match = SEGMENT.exec(input);
     if (!match) throw new MdqSelectorError(`Unexpected character "${input[at]}" in selector`, at);
 
@@ -484,10 +520,11 @@ export function parseQuery(input: string): QuerySegment[] {
       if (to) segment.slice.to = Number.parseInt(to, 10);
     }
 
-    segments.push(segment);
+    chain.push(segment);
   }
 
-  return segments;
+  if (expression.flat().length > 1 && chain.length === 0) throw new MdqSelectorError('Empty selector after operator', input.length);
+  return expression;
 }
 
 export function buildTokenIndex(source: string): MatchedRange[] {
@@ -516,6 +553,8 @@ const TOKEN_ALIASES: Record<string, string> = { item: 'list_item' };
 
 const SEGMENT = /(\s*\.?)([A-Za-z]\w*)(?:\((!?)(~?)(?:"((?:[^"\\]|\\.)*)"|\/((?:[^/\\]|\\.)*)\/([a-z]*))\))?((?:\[[^\]]*\])*)\s*/y;
 
+const OPERATOR = /\s*(&&|\|\|)\s*/y;
+
 export type Markdown = string | MarkdownQuery;
 
 export type Matcher = string | RegExp | ((text: string) => boolean);
@@ -533,6 +572,8 @@ export interface TextMatcher {
   flags?: string;
   predicate?: (text: string) => boolean;
 }
+
+export type QueryExpression = QuerySegment[][][];
 
 export interface QuerySegment {
   selector: SelectorType;
