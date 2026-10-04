@@ -9,6 +9,7 @@
   prima browser                # browser: playwright-cli session "default" at ws://...
   ```
 - [Prima] When no browser is open, prima commands now suggest only `playwright-cli open <url>`, filled in with `--url` when given.
+- prima-cli now runs on Node.js 22.13 and later. It previously required Node.js 24.
 
 ## 2026-09-28
 

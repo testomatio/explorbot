@@ -17,7 +17,7 @@ npm install -g prima-cli      # or install it
 
 Prima also ships inside [explorbot](https://www.npmjs.com/package/explorbot), so `npx explorbot prima <command>` runs the same tool if you already have it.
 
-Requires Node.js 24+. Playwright browsers come from `npx playwright install chromium`.
+Requires Node.js 22.13+. Playwright browsers come from `npx playwright install chromium`.
 
 ## Session
 
