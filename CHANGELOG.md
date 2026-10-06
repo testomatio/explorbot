@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-10-06
+
+### Configuration
+- **`ai.decisionModel`** — OpenRouter now recommends JEV (`typesafe/jev-latest`) as the decision model. Choosing OpenRouter through `EXPLORBOT_AI_PROVIDER=openrouter` turns it on automatically, and `explorbot init` with OpenRouter writes it into the generated config. `EXPLORBOT_DECISION_MODEL` or `--decision-model` still override it. Other providers have no recommended decision model, so it stays off for them unless set.
+  ```bash
+  EXPLORBOT_AI_PROVIDER=openrouter explorbot start https://app.example.com
+  ```
+
+### Changes
+- `explorbot recommended-models` lists the decision model and its `EXPLORBOT_DECISION_MODEL` env line for providers that recommend one.
+
 ## 2026-09-28
 
 ### Changes

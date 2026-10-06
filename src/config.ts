@@ -675,6 +675,8 @@ export class ConfigParser {
     if (agenticSpec) ai.agenticModel = await resolveModel(agenticSpec, 'agenticModel');
     if (!agenticSpec && recommended.agenticModel) ai.agenticModel = await resolveModel(provider!, 'agenticModel');
 
+    if (recommended.decisionModel) ai.decisionModel = { provider: provider!, model: recommended.decisionModel };
+
     const dirs = { knowledge: 'knowledge', experience: 'experience', output: 'output' };
     if (process.env.EXPLORBOT_OUTPUT) dirs.output = '.';
 

@@ -2,7 +2,8 @@
   "openrouter": {
     "model": "openai/gpt-oss-20b:nitro",
     "visionModel": "openai/gpt-5.6-luna",
-    "agenticModel": "openai/gpt-5.6-luna"
+    "agenticModel": "openai/gpt-5.6-luna",
+    "decisionModel": "typesafe/jev-latest"
   },
   "poolside": {
     "model": "poolside/laguna-xs-2.1"
