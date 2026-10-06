@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-10-06
+
+### Changes
+- A `url` in the config file can now point to an app in a subfolder, such as `https://example.com/apps/todo/`. The folder becomes the base path for the run, just like `--base-url`: `explorbot start` opens the app itself, and relative paths such as `/active` resolve to `/apps/todo/active`. Previously every navigation was built as `https://example.com/apps/todo///…` and the Navigator had to guess its way back, sometimes ending on the wrong page. `--base-url` still takes precedence over the config `url`.
+
 ## 2026-09-28
 
 ### Changes
