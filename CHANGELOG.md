@@ -5,6 +5,30 @@
 ### Changes
 - A `url` in the config file can now point to an app in a subfolder, such as `https://example.com/apps/todo/`. The folder becomes the base path for the run, just like `--base-url`: `explorbot start` opens the app itself, and relative paths such as `/active` resolve to `/apps/todo/active`. Previously every navigation was built as `https://example.com/apps/todo///…` and the Navigator had to guess its way back, sometimes ending on the wrong page. `--base-url` still takes precedence over the config `url`.
 
+## 2026-10-05
+
+### Changes
+- [Prima] `prima browser start` is replaced by `prima browser`, which no longer launches its own browser. It checks that a playwright-cli session is open and prints it, or fails with the command to open one. The `--show` and `--headless` flags are removed, and so are `prima browser stop`, `status` and `list`: playwright-cli manages the browser.
+  ```bash
+  playwright-cli open https://app.example.com
+  prima browser                # browser: playwright-cli session "default" at ws://...
+  ```
+- [Prima] When no browser is open, prima commands now suggest only `playwright-cli open <url>`, filled in with `--url` when given.
+- prima-cli now runs on Node.js 22.13 and later. It previously required Node.js 24.
+- mdq selectors can be joined with `&&` and `||`, so one `mdq-cli` call can check several conditions. With `&&`, the call exits with `1` when any condition is missing.
+  ```bash
+  npx mdq-cli 'comment(/^suite/) && section("Steps") && section("Expected")' plan.md   # all must exist
+  npx mdq-cli 'section("Install") || section("Setup")' README.md                          # either section
+  ```
+- mdq: `parseQuery()` now returns a `QueryExpression`: a list of `||` alternatives, each a list of `&&` operands, each a list of segments. For a selector without operators, the segments are at `parseQuery(selector)[0][0]`.
+## 2026-10-02
+
+### Changes
+- [Navigator] No longer guesses logins or passwords. On a page with a password field, or with `login`, `sign_in` or `auth` in its URL, it signs in only with credentials it was given (for example in `knowledge/`). When none are given it stops and names what is missing; in the TUI you are then asked to step in.
+  ```bash
+  explorbot learn /login "Credentials: admin@example.com / secret123"
+  ```
+
 ## 2026-09-28
 
 ### Changes

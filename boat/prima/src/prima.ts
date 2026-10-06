@@ -12,7 +12,7 @@ import { JUDGE_PAGE_CAP, UNDECIDED } from '../../../src/ai/judge.ts';
 import { getPreviousResearch } from '../../../src/ai/researcher/cache.ts';
 import { actionRule, locatorRule } from '../../../src/ai/rules.ts';
 import { createAgentTools, createCodeceptJSTools, createRefTools } from '../../../src/ai/tools.ts';
-import { getAliveEndpoint, launchServer, listInstances, stopServer } from '../../../src/browser-server.ts';
+import { getAliveEndpoint, listInstances } from '../../../src/browser-server.ts';
 import { ConfigCommand } from '../../../src/commands/config-command.ts';
 import { ConfigMissingError, ConfigParser, EXPLORBOT_ENV_VARS, type ExplorbotConfig, outputPath } from '../../../src/config.ts';
 import { ExplorBot } from '../../../src/explorbot.ts';
@@ -73,7 +73,6 @@ export class Prima {
   private artifactsDir?: string;
   private hash?: string;
   private sessionUrl?: string;
-  private server: { close: () => Promise<void> } | null = null;
   private attached: string | null = null;
   private session: SessionRun | null = null;
 
@@ -503,25 +502,12 @@ export class Prima {
     return envelope;
   }
 
-  async browserStart(): Promise<void> {
-    const config = await this.loadConfig();
-    let show = config.playwright.show || false;
-    if (this.options.show) show = true;
-    if (this.options.headless) show = false;
-    this.server = await this.launchOwnServer({ browser: config.playwright.browser, show }, this.instanceName());
-  }
-
-  async browserStop(all = false): Promise<boolean> {
+  async browserCheck(): Promise<string> {
     await this.loadConfig();
-    if (this.attached) return false;
-
-    if (!all) return this.stopInstance(this.instanceName());
-
-    let stopped = false;
-    for (const instance of listInstances()) {
-      if (await this.stopInstance(instance.name)) stopped = true;
-    }
-    return stopped;
+    const { match, candidates, browser } = await this.discover();
+    await browser?.close().catch(() => {});
+    if (!match) throw this.missingSessionError(candidates);
+    return `browser: ${this.attachmentLabel(match)} at ${match.endpoint}`;
   }
 
   async config(json?: boolean): Promise<string> {
@@ -570,37 +556,6 @@ export class Prima {
       `markdown: ${outputPath('reports', `${Stats.sessionLabel()}-tests.md`)}`,
       `upload:   TESTOMATIO=<apiKey> npx @testomatio/reporter replay ${file}`,
     ].join('\n');
-  }
-
-  async browserStatus(): Promise<string> {
-    await this.loadConfig();
-    const info = await this.instanceInfo();
-    const endpoint = await getAliveEndpoint(info.name);
-    const others = info.others.map((other) => other.name).join(', ') || 'none';
-    const lines = [`instance: ${info.name} (${info.tabs} ${pluralize(info.tabs, 'tab')}) | other instances: ${others}`];
-    if (!endpoint) lines.push('browser: not running');
-    if (endpoint) lines.push(`browser: running at ${endpoint}`);
-    return lines.join('\n');
-  }
-
-  async browserList(): Promise<string> {
-    await this.loadConfig();
-
-    const lines: string[] = [];
-    for (const instance of listInstances()) {
-      const endpoint = await getAliveEndpoint(instance.name);
-      if (!endpoint) continue;
-      lines.push(`prima --instance ${instance.name}  ${endpoint}`);
-    }
-
-    const discovery = await this.discover();
-    await discovery.browser?.close().catch(() => {});
-    for (const descriptor of discovery.candidates) {
-      lines.push(`playwright-cli --pw-session ${descriptor.title}  ${descriptor.endpoint}`);
-    }
-
-    if (!lines.length) return 'no browser instances running';
-    return lines.join('\n');
   }
 
   async instanceInfo(): Promise<InstanceInfo> {
@@ -666,22 +621,27 @@ export class Prima {
     const { match, candidates, browser } = discovered || (await this.discover());
     if (match && (await this.attachToEndpoint(match, browser))) return;
 
-    if (!match && candidates.length) {
+    if (!match && candidates.length) throw this.missingSessionError(candidates);
+
+    if (await this.connectOwnInstance()) return;
+
+    throw this.missingSessionError(candidates);
+  }
+
+  private missingSessionError(candidates: PwServerDescriptor[]): Error {
+    if (candidates.length) {
       const titles = candidates.map((candidate) => candidate.title).join(', ');
-      throw new Error(dedent`
+      return new Error(dedent`
         Several playwright-cli sessions are open: ${titles}
         Pick one with --pw-session <title>.
       `);
     }
 
-    if (await this.connectOwnInstance()) return;
-
-    throw new Error(dedent`
-      No browser to drive for instance "${this.instanceName()}".
-      Open one first:
-        playwright-cli open <url>   prima attaches to this workspace session by default
-        prima browser start         starts a prima-owned browser instead
-      Prima never launches a browser implicitly.
+    return new Error(dedent`
+      No playwright-cli session is open for prima to drive.
+      Start one first:
+        playwright-cli open ${this.options.url || '<url>'}
+      Prima attaches to this workspace session by default and never launches a browser itself.
     `);
   }
 
@@ -749,20 +709,6 @@ export class Prima {
     if (!endpoint) return false;
     this.session = { key: this.instanceName(), endpoint, title: `prima instance "${this.instanceName()}"` };
     return true;
-  }
-
-  private async launchOwnServer(opts: { browser?: string; show?: boolean }, instance: string): Promise<{ close: () => Promise<void> }> {
-    return launchServer(opts, instance);
-  }
-
-  private async stopInstance(instance: string): Promise<boolean> {
-    if (instance === this.instanceName()) {
-      const server = this.server;
-      this.server = null;
-      await server?.close();
-    }
-
-    return stopServer(instance);
   }
 
   private isUrlTarget(target: string): boolean {
@@ -1229,8 +1175,6 @@ export interface PrimaOptions {
   noVision?: boolean;
   url?: string;
   baseUrl?: string;
-  show?: boolean;
-  headless?: boolean;
   endpoint?: string;
   pwSession?: string;
 }

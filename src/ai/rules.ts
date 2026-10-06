@@ -147,6 +147,14 @@ export const formRequirementsRule = dedent`
   </form_requirements>
 `;
 
+export const credentialsRule = dedent`
+  <credentials>
+  Sign in to an existing account only with credentials present in the provided context (message, knowledge, experience).
+  Never invent, guess, or try default, common, or placeholder credentials for an existing account.
+  If the required credentials are not provided, call stop() and name what is missing — do not submit the form.
+  </credentials>
+`;
+
 // in rage mode we do not protect from irreversible actions
 export const protectionRule = dedent`
   <important>

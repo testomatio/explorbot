@@ -375,3 +375,15 @@ describe('Navigator resolveState', () => {
     expect(harness.navigator.lastFailureReason).toBeNull();
   });
 });
+
+describe('Navigator credentials rule', () => {
+  it('is added to the prompt on a login page only', async () => {
+    const onLogin = createHarness({ responses: [''] });
+    await onLogin.navigator.resolveState('reach /defects', fakeActionResult('/login'), { expectedUrl: '/defects' });
+    expect(onLogin.sent[0]).toContain('<credentials>');
+
+    const elsewhere = createHarness({ responses: [''] });
+    await elsewhere.navigator.resolveState('reach /defects', fakeActionResult('/projects'), { expectedUrl: '/defects' });
+    expect(elsewhere.sent[0]).not.toContain('<credentials>');
+  });
+});
