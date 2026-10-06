@@ -63,7 +63,7 @@ interface DrillOptions {
 }
 
 export class Driller extends TaskAgent implements Agent {
-  protected readonly ACTION_TOOLS = ['click', 'pressKey', 'form'];
+  protected readonly ACTION_TOOLS = ['click', 'dragAndDrop', 'pressKey', 'form'];
   emoji = 'D';
   private navigator: Navigator;
   private currentPlan?: Plan;

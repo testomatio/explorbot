@@ -1251,7 +1251,7 @@ export class Pilot implements Agent {
 
       To request more context, mention ATTACH_ARIA, ATTACH_SUMMARY, or ATTACH_UI_MAP — only when recent actions show failures.
 
-      Tester tools: click, pressKey, form, see, verify, interact, context, research, xpathCheck,
+      Tester tools: click, hover, dragAndDrop, pressKey, form, see, verify, interact, context, research, xpathCheck,
       visualClick, back, getVisitedStates, reset, stop, finish, record.
       Use tool names exactly as listed. Do not invent combined names or aliases.
       Reloading is not a tool: to re-read a page from the server, instruct Tester to run I.refreshPage() through form.

@@ -72,6 +72,10 @@ The agent starts with short semantic locators from ARIA or visible text. When a 
 
 When a locator fails, the agent tries the next strategy, then a visual click. Locators that worked are saved to experience and preferred on the next run.
 
+## Drag and drop
+
+The Tester's `dragAndDrop()` tool drags one element onto another — reordering lists and trees, moving cards between columns, dropping items into folders or zones. It drags with a real mouse simulation first and, when the drop changes nothing, retries the same drag with the native HTML5 drag and then with synthetic drag events on its own — the last step covers pages whose drag libraries cancel the mouse press, so a real mouse can never start the drag. A modifier key can be held during the drag for copy-drags; it is recorded as plain CodeceptJS (`I.pressKeyDown`, `I.dragAndDrop`, `I.pressKeyUp`), so generated tests replay unchanged.
+
 ## What happens after each action
 
 After every action, Explorbot captures the new page state and compares it with the previous one. The resulting diff tells the agent what changed — the URL, the accessibility tree, or the HTML — so it can confirm the action worked and decide what to do next. The Researcher turns a page into a structured UI map of sections and elements; see [Researcher](./researcher.md).

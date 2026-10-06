@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-10-06
+
+### Changes
+- [Tester] New `dragAndDrop()` tool, so scenarios that drag an item onto another item can be tested: reordering lists and trees, moving cards between columns, dropping items into folders or zones. The drag runs as a real mouse simulation first and, when the drop changes nothing, the same drag is retried with the native HTML5 drag and then with synthetic drag events — the last step covers pages whose drag libraries cancel the mouse press, so a real mouse can never start the drag. A modifier key can be held during the drag for copy-drags, and it is released even when the drag fails. Locators go to Playwright as written, so text is written as `text=...` — a bare string is read as CSS, and an object locator loses its text filter.
+  ```javascript
+  I.dragAndDrop('text=First chapter', 'text=Second chapter');   // move or reorder
+  ```
+  Copy-drag: pass the modifier (e.g. `Control`) to the tool; the generated test records it as plain CodeceptJS — `I.pressKeyDown('Control')`, `I.dragAndDrop(...)`, `I.pressKeyUp('Control')` — so it replays and heals in rerun like any other step.
+- Generated tests no longer break on a locator that contains quotes, such as `li:has-text("Item 2")`: executed commands are recorded with the quotes escaped, so the test file stays valid code and reruns instead of failing to load.
+  ```javascript
+  I.dragAndDrop('First chapter', 'Second chapter');   // move or reorder
+  ```
+  Copy-drag: pass the modifier (e.g. `Control`) to the tool; the generated test records it as plain CodeceptJS — `I.pressKeyDown('Control')`, `I.dragAndDrop(...)`, `I.pressKeyUp('Control')` — so it replays and heals in rerun like any other step.
+
 ## 2026-10-05
 
 ### Changes

@@ -31,7 +31,7 @@ import { createCodeceptJSTools, withdrawVisionTools } from './tools.ts';
 const debugLog = createDebug('explorbot:rerunner');
 
 export class Rerunner extends TaskAgent implements Agent {
-  protected readonly ACTION_TOOLS = ['click', 'pressKey', 'form'];
+  protected readonly ACTION_TOOLS = ['click', 'dragAndDrop', 'pressKey', 'form'];
   emoji = '🔄';
 
   private agentTools: any;
@@ -441,6 +441,7 @@ export class Rerunner extends TaskAgent implements Agent {
       <tools>
       - You MUST execute the replacement action — not just diagnose
       - Use click() for buttons, links — commands array is FALLBACK LOCATORS for the SAME element
+      - Use dragAndDrop() to drag an element onto another element, with a modifier for copy-drags
       - Use form() for text input, dropdown selection, file uploads
       - Use pressKey() for special keys or key combinations
       - Use wait() when page is loading — returns fresh ARIA automatically

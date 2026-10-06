@@ -505,6 +505,28 @@ export const actionRule = dedent`
 
   After hovering, use see() or context() to check what appeared.
 
+  ### I.dragAndDrop
+
+  Drags an element and drops it onto another element. Run via the dragAndDrop() tool, not form().
+  Use for reorderable lists and trees, moving cards between columns, dropping items into folders or zones.
+
+  I.dragAndDrop(<source>, <target>)
+
+  Unlike I.click, locators here go to Playwright as written: a bare string is read as CSS
+  and an object locator loses its text filter. Write text as 'text=...' and prefer CSS or XPath.
+  When an item drags only from a handle inside it, target the handle as the source.
+  After a result reported several matches, reuse that locator with step.opts({ elementIndex: N }) as the last argument.
+  For a drag with a modifier held (a copy-drag that duplicates the item), pass the modifier to the dragAndDrop() tool.
+
+  <example>
+    I.dragAndDrop('text=First chapter', 'text=Second chapter')
+    I.dragAndDrop('.card-new', '.column-done')
+  </example>
+
+  The tool drags with a real mouse simulation first and retries with the native HTML5 drag
+  and then synthetic drag events when the drop changes nothing. When a command fails, the problem
+  is the locators — change locators, not the mechanism.
+
   ### I.seeInClipboard / I.seeClipboardEquals / I.clearClipboard
 
   Check what a copy control put into the system clipboard. Run via form(), not click().

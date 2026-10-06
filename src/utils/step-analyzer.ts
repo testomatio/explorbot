@@ -2,12 +2,13 @@ import type { SessionStep } from '../experience-tracker.ts';
 import type { StepData } from '../test-plan.ts';
 import { isDynamicId } from './xpath.ts';
 
-export const CODECEPT_TOOLS = ['click', 'hover', 'pressKey', 'form'] as const;
+export const CODECEPT_TOOLS = ['click', 'hover', 'dragAndDrop', 'pressKey', 'form'] as const;
 export type CodeceptToolName = (typeof CODECEPT_TOOLS)[number];
 
 const INTERNAL_STEP_PREFIXES = ['grab', 'save'];
 
 const CODECEPT_FORM_COMMANDS: readonly string[] = ['I.fillField', 'I.type', 'I.selectOption', 'I.attachFile', 'I.checkOption', 'I.uncheckOption'];
+const CODECEPT_DRAG_COMMANDS: readonly string[] = ['I.pressKeyDown', 'I.pressKeyUp'];
 
 export function isCodeceptToolName(toolName: string): toolName is CodeceptToolName {
   return CODECEPT_TOOLS.includes(toolName as CodeceptToolName);
@@ -17,6 +18,7 @@ export function getCodeceptToolName(commandName: string): CodeceptToolName | nul
   const toolName = CODECEPT_TOOLS.find((name) => commandName === `I.${name}`);
   if (toolName) return toolName;
   if (CODECEPT_FORM_COMMANDS.includes(commandName)) return 'form';
+  if (CODECEPT_DRAG_COMMANDS.includes(commandName)) return 'dragAndDrop';
   return null;
 }
 
