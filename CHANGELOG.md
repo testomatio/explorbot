@@ -9,6 +9,7 @@
   ```
 
 ### Changes
+- Anthropic's recommended model is now Claude Haiku 5.5 (`claude-haiku-5-5`), used for the base, vision and agentic models. `EXPLORBOT_AI_PROVIDER=anthropic` and `explorbot init` with Anthropic pick it up.
 - `explorbot recommended-models` lists the decision model and its `EXPLORBOT_DECISION_MODEL` env line for providers that recommend one.
 
 ## 2026-09-28
