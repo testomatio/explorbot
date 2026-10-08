@@ -42,6 +42,38 @@ describe('ConfigParser runtime baseUrl overrides', () => {
       ConfigParser.resetForTesting();
     }
   });
+
+  it('treats a path in the configured url as the base path', async () => {
+    const parser = ConfigParser.getInstance();
+    const originalLoadConfigModule = (parser as any).loadConfigModule;
+    const originalFindConfigFile = (parser as any).findConfigFile;
+
+    (parser as any).findConfigFile = () => '/virtual/explorbot.config.ts';
+    (parser as any).loadConfigModule = async () => ({
+      default: {
+        playwright: { url: 'https://default.example.com/apps/todo/', browser: 'chromium' },
+        ai: { model: { modelId: 'test-model', provider: 'test' }, config: {} },
+      },
+    });
+
+    try {
+      const config = await parser.loadConfig();
+
+      expect(config.playwright.url).toBe('https://default.example.com');
+      expect(parser.getBasePath()).toBe('/apps/todo');
+      expect(parser.resolveTargetPath()).toBe('/apps/todo/');
+      expect(parser.resolveTargetPath('/apps/todo/')).toBe('/apps/todo/');
+      expect(parser.resolveTargetPath('/active')).toBe('/apps/todo/active');
+
+      const overridden = await parser.loadConfig({ baseUrl: 'https://default.example.com/other' });
+      expect(overridden.playwright.url).toBe('https://default.example.com');
+      expect(parser.getBasePath()).toBe('/other');
+    } finally {
+      (parser as any).loadConfigModule = originalLoadConfigModule;
+      (parser as any).findConfigFile = originalFindConfigFile;
+      ConfigParser.resetForTesting();
+    }
+  });
 });
 
 const ENV_KEYS = ['EXPLORBOT_AI_PROVIDER', 'EXPLORBOT_AI_MODEL', 'EXPLORBOT_VISION_MODEL', 'EXPLORBOT_AGENTIC_MODEL', 'EXPLORBOT_URL', 'EXPLORBOT_OUTPUT', 'EXPLORBOT_EPHEMERAL', 'EXPLORBOT_KNOWLEDGE', 'EXPLORBOT_KNOWLEDGE_FILE'];

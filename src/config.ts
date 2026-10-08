@@ -420,6 +420,11 @@ export class ConfigParser {
         log(`Configuration built from EXPLORBOT_* environment variables. Output: ${outputRoot}`);
       }
 
+      const configuredUrl = loadedConfig?.playwright?.url || loadedConfig?.web?.url || '';
+      if (!this.runBase && resolvedPath && !isGlobalConfigPath(resolvedPath) && URL.canParse(configuredUrl)) {
+        this.runBase = parseRunBase(configuredUrl);
+      }
+
       let config = this.resolveConfig(loadedConfig as ExplorbotConfig);
       await resolveConfigModels(config.ai);
       this.site = null;

@@ -1,5 +1,4 @@
 import { Command } from 'commander';
-import { keepServerRunning } from '../../../src/browser-server.ts';
 import { RecommendedModelsCommand } from '../../../src/commands/recommended-models-command.ts';
 import { browserErrorMessage } from '../../../src/utils/browser-errors.ts';
 import { isVerboseMode, setQuietMode } from '../../../src/utils/logger.ts';
@@ -22,8 +21,6 @@ function buildOptions(subcommand: any): PrimaOptions {
     noVision: options.vision === false,
     url: options.url,
     baseUrl: options.baseUrl,
-    show: options.show,
-    headless: options.headless,
     endpoint: options.endpoint,
     pwSession: options.pwSession,
   };
@@ -87,18 +84,6 @@ async function runPrima(options: any, command: string, run: (prima: Prima) => Pr
   console.log(renderEnvelope(envelope));
   await prima.stop().catch(() => {});
   process.exit(envelope.ok ? 0 : 1);
-}
-
-async function runBrowser(options: any, run: (prima: Prima) => Promise<boolean>): Promise<void> {
-  let ok = false;
-  try {
-    ok = await run(primaFor(options));
-  } catch (error) {
-    console.error(browserErrorMessage(error));
-    process.exit(1);
-  }
-
-  process.exit(ok ? 0 : 1);
 }
 
 export function createPrimaCommands(name = 'prima'): Command {
@@ -179,41 +164,14 @@ export function createPrimaCommands(name = 'prima'): Command {
       process.exit(0);
     });
 
-  const browser = cmd.command('browser').description('Manage the browsers prima drives');
-
-  addBrowserOptions(browser.command('start').description('Start a prima-owned browser and hold it open until Ctrl+C'))
-    .option('-s, --show', 'Launch the browser in a visible window')
-    .option('--headless', 'Launch the browser without a window')
-    .action(async (options) => {
-      await runBrowser(options, async (prima) => {
-        await prima.browserStart();
-        console.log(await prima.browserStatus());
-        return keepServerRunning(() => prima.browserStop());
-      });
-    });
-
-  addBrowserOptions(browser.command('stop').description('Stop the browser of this instance'))
-    .option('--all', 'Stop every running instance')
-    .action(async (options) => {
-      await runBrowser(options, async (prima) => {
-        const stopped = await prima.browserStop(options.all);
-        console.log(await prima.browserStatus());
-        return stopped;
-      });
-    });
-
-  addBrowserOptions(browser.command('status').description('Report the browser of this instance')).action(async (options) => {
-    await runBrowser(options, async (prima) => {
-      console.log(await prima.browserStatus());
-      return true;
-    });
-  });
-
-  addBrowserOptions(browser.command('list').description('List every browser instance that is running')).action(async (options) => {
-    await runBrowser(options, async (prima) => {
-      console.log(await prima.browserList());
-      return true;
-    });
+  addBrowserOptions(cmd.command('browser').description('Check that a playwright-cli session is open for prima to drive')).action(async (options) => {
+    try {
+      console.log(await primaFor(options).browserCheck());
+    } catch (error) {
+      console.error(browserErrorMessage(error));
+      process.exit(1);
+    }
+    process.exit(0);
   });
 
   return cmd;

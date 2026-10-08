@@ -17,25 +17,20 @@ npm install -g prima-cli      # or install it
 
 Prima also ships inside [explorbot](https://www.npmjs.com/package/explorbot), so `npx explorbot prima <command>` runs the same tool if you already have it.
 
-Requires Node.js 24+. Playwright browsers come from `npx playwright install chromium`.
+Requires Node.js 22.13+. Playwright browsers come from `npx playwright install chromium`.
 
 ## Session
 
-Prima needs a browser to drive. Either attach to a `playwright-cli` session:
+Prima drives a browser opened by `playwright-cli` and never launches one itself:
 
 ```bash
 playwright-cli open https://app.example.com
+prima-cli browser
 prima-cli check "the settings page saves a changed theme"
 playwright-cli close
 ```
 
-Or let prima own the browser:
-
-```bash
-prima-cli browser start --url https://app.example.com
-prima-cli do "open the account menu" "choose the settings entry"
-prima-cli browser stop
-```
+`browser` checks that a `playwright-cli` session is open and fails with the command to open one when it is not.
 
 ## Commands
 
@@ -50,7 +45,7 @@ prima-cli browser stop
 | `pw <fn>` | Run a Playwright function expression against the open page |
 | `status <hash>` | Show the artifacts and page detail recorded for an earlier command |
 | `report` | Turn every command of a session into one html and markdown report |
-| `browser start\|stop\|status\|list` | Manage the browsers prima drives |
+| `browser` | Check that a playwright-cli session is open, and fail with the command to open one when it is not |
 | `config` | Show models, config file and paths used by this run |
 
 `check` takes an outcome rather than a click path. It runs on the page you are already on and never reloads it, so an open dialog survives the check. Each `--expected` outcome comes back as PASSED, FAILED, CONTRADICTION or not verified — settled against a screenshot of the whole page, because what a user can see is the proof.
