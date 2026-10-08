@@ -249,7 +249,7 @@ export class Tester extends TaskAgent implements Agent {
       task.states.push(event.toState);
     });
 
-    const codeceptjsTools = createCodeceptJSTools(this.toolDeps, task);
+    const codeceptjsTools = createCodeceptJSTools({ ...this.toolDeps, researcher: this.researcher }, task);
     let assertionPerformed = false;
     let extensions = 0;
     let deadlineReached = false;

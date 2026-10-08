@@ -10,7 +10,7 @@ export function WithWebMode<T extends Constructor>(Base: T) {
     webModeTools(ctx: ModeContext): Record<string, any> {
       const explorer = ctx.explorBot.getExplorer();
       const toolDeps = { explorer, stateManager: ctx.explorBot.stateManager(), ai: ctx.explorBot.getProvider() };
-      const codeceptTools = createCodeceptJSTools(toolDeps, ctx.task);
+      const codeceptTools = createCodeceptJSTools({ ...toolDeps, researcher: ctx.explorBot.agentResearcher() }, ctx.task);
       const agentTools = createAgentTools({
         ...toolDeps,
         researcher: ctx.explorBot.agentResearcher(),

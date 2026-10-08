@@ -9,7 +9,6 @@ import { type Task, TestResult } from '../test-plan.js';
 import { ariaRefSelector, describeRef, refIsGone } from '../utils/aria-ref.ts';
 import { LARGE_ARIA_CHANGE_THRESHOLD } from '../utils/aria.ts';
 import { isFatalBrowserError } from '../utils/browser-errors.ts';
-import { splitTopLevel } from '../utils/code-extractor.ts';
 import { cleanHtmlSnippet } from '../utils/html.ts';
 import { createDebug, tag } from '../utils/logger.js';
 import { pause } from '../utils/loop.js';
@@ -34,7 +33,7 @@ interface AgentToolDeps extends ToolDeps {
 
 export const ASSERTION_TOOLS = ['verify'] as const;
 
-export function createCodeceptJSTools({ explorer, stateManager, judge }: ToolDeps, task: Task) {
+export function createCodeceptJSTools({ explorer, stateManager, judge, researcher }: ToolDeps & { researcher?: Researcher }, task: Task) {
   return {
     click: tool({
       description: dedent`
@@ -260,139 +259,108 @@ export function createCodeceptJSTools({ explorer, stateManager, judge }: ToolDep
 
     dragAndDrop: tool({
       description: dedent`
-        Drag an element and drop it onto another element by trying multiple CodeceptJS commands in order.
+        Drag something on the page and drop it somewhere else: reorder list or tree items, move cards
+        between columns, drop into folders or zones, drag slider handles, draw on a canvas.
 
-        Use for any drag-and-drop interaction: reordering list or tree items, moving cards between
-        columns, dropping items into folders or zones.
-
-        I.dragAndDrop(source, target) - drag the element matching the source locator onto the element
-        matching the target locator.
-        Unlike I.click, locators here go to Playwright as written: a bare string is read as CSS and
-        an object locator loses its text filter. Write text as 'text=...' and prefer CSS or XPath.
-        After a result reported several matches, reuse that locator with step.opts({ elementIndex: N })
-        as the last argument.
-
-        The tool drags with a real mouse simulation first and, when the drop changes nothing, retries
-        the same drag with the native HTML5 drag and then with synthetic drag events — you never choose
-        between them. When a command fails, the problem is the locators: change locators, not the mechanism.
-        For a drag with a modifier held (a copy-drag that duplicates the item), pass modifier.
-
-        CRITICAL: All commands MUST drag the SAME element onto the SAME target.
-        This is a FALLBACK list, NOT a sequence of different drags.
+        Give visual descriptions of what to grab and where to drop it — the tool locates both points
+        on the screenshot and drags between them with a real mouse. When items look alike, describe
+        the position (e.g. "the second card in the first column"). For a copy-drag that duplicates
+        the item, pass modifier.
       `,
       inputSchema: z.object({
-        commands: z.array(z.string()).describe(dedent`
-          FALLBACK commands for ONE drag. All commands must drag the SAME source onto the SAME target.
-          Each command is a full I.dragAndDrop(source, target) with both locators, ordered by reliability:
-          1. I.dragAndDrop('text=First chapter', 'text=Second chapter') - by visible text
-          2. I.dragAndDrop(CSS, CSS) - e.g. I.dragAndDrop('.card-new', '.column-done')
-          3. I.dragAndDrop(XPath, XPath) - when locators already include context
-          A bare string is read as CSS, and an object locator loses its text filter — never use them here.
-          After a result reporting multiple matches, reuse that locator with step.opts({ elementIndex: N }) as the last argument.
-        `),
+        from: z.string().describe('What to drag, by visible appearance and position (e.g. "card labeled Bug 5 in the first column", "round handle of the volume slider")'),
+        to: z.string().describe('Where to drop it, by visible appearance and position (e.g. "column labeled Done", "right end of the volume slider track")'),
         modifier: z.enum(['Control', 'Shift', 'Alt', 'Meta', 'CommandOrControl']).optional().describe('Modifier key held during the whole drag, e.g. Control for a copy-drag that duplicates the item.'),
         explanation: z.string().describe('Why you are dragging this element'),
       }),
-      execute: async ({ commands: rawCommands, modifier, explanation }) => {
+      execute: async ({ from, to, modifier, explanation }) => {
         const activeNote = task.startNote(explanation);
 
-        if (rawCommands.length === 0) {
+        if (!researcher || Stats.visionDisabled) {
           activeNote.commit(TestResult.FAILED);
-          return failedToolResult('dragAndDrop', 'No commands provided');
+          return failedToolResult('dragAndDrop', 'Drag points cannot be located in this session. Use form() with I.dragAndDrop(source, target) instead.');
         }
 
-        const commands = rawCommands.map((cmd) => cmd.trim());
-        const invalidCommands = commands.filter((cmd) => !cmd.startsWith('I.dragAndDrop'));
+        try {
+          const captured = await explorer.capture({ screenshot: true });
 
-        if (invalidCommands.length > 0) {
-          activeNote.commit(TestResult.FAILED);
-          return failedToolResult('dragAndDrop', `Invalid commands: ${invalidCommands.join(', ')}. Each command must be a full I.dragAndDrop(source, target).`, {
-            suggestion: 'Use click() to click elements, or form() for other command sequences.',
-          });
-        }
+          if (!captured.screenshot) {
+            activeNote.commit(TestResult.FAILED);
+            return failedToolResult('dragAndDrop', 'Failed to capture screenshot for locating the drag points');
+          }
 
-        const previousState = ActionResult.fromState(stateManager.getCurrentState()!);
-        const action = explorer.action();
-        const attempts: Array<{ command: string; success: boolean; error?: string }> = [];
+          const analysis = await researcher.checkDragPoints(captured, from, to);
 
-        for (let i = 0; i < commands.length; i++) {
-          const command = commands[i];
-          const block = withModifier(command, modifier);
-          const success = await action.attempt(block, explanation);
+          if (!analysis) {
+            activeNote.commit(TestResult.FAILED);
+            return failedToolResult('dragAndDrop', 'Visual analysis failed to process the screenshot');
+          }
 
-          const attempt: { command: string; success: boolean; error?: string } = { command: block, success };
-          if (action.lastError) attempt.error = errorText(action.lastError);
+          const points = dragPoints(analysis);
+
+          if (!points) {
+            activeNote.commit(TestResult.FAILED);
+            return failedToolResult('dragAndDrop', `Drag points not found: ${analysis}`, {
+              analysis,
+              suggestion: 'Describe what to drag and where to drop it more precisely, or scroll the target into view and retry.',
+            });
+          }
+
+          const previousState = ActionResult.fromState(stateManager.getCurrentState()!);
+          const action = explorer.action();
+          const dragCode = mouseDragCode(from, to, points);
+          const block = withModifier(dragCode, modifier);
+          const attempts: Array<{ command: string; success: boolean; error?: string }> = [];
+
+          const mouseSuccess = await action.attempt(block, explanation);
+          const attempt: { command: string; success: boolean; error?: string } = { command: dragCode, success: mouseSuccess };
+          if (!mouseSuccess && action.lastError) attempt.error = errorText(action.lastError);
           attempts.push(attempt);
 
-          if (!success) {
-            await releaseModifier(action, modifier);
-            continue;
+          if (mouseSuccess) {
+            const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, dragCode);
+
+            if (hasObservablePageChange(toolResult)) {
+              await commitNote(activeNote, TestResult.PASSED, toolResult, action);
+              return successToolResult('dragAndDrop', { ...toolResult, points, analysis, attempts, code: block }, action);
+            }
           }
+          await releaseModifier(action, modifier);
 
-          let executedCode = action.executedSteps.map((step) => step.command).join('\n') || block;
-          let toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, executedCode);
+          const dragged = await syntheticDragDrop(explorer, points, modifier);
+          attempts.push({ command: `${dragCode} (HTML5 drag events)`, success: dragged });
 
-          if (!hasObservablePageChange(toolResult) && !command.includes('force')) {
-            const forceBlock = withModifier(`${command.replace(/\)\s*$/, '')}, { force: true })`, modifier);
-            const forceSuccess = await action.attempt(forceBlock, explanation);
+          if (dragged) {
+            await explorer.capture();
+            const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, dragCode);
 
-            const forceAttempt: { command: string; success: boolean; error?: string } = { command: forceBlock, success: forceSuccess };
-            if (!forceSuccess && action.lastError) forceAttempt.error = errorText(action.lastError);
-            attempts.push(forceAttempt);
-
-            if (forceSuccess) {
-              executedCode = action.executedSteps.map((step) => step.command).join('\n') || forceBlock;
-              toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, executedCode);
-            } else {
-              await releaseModifier(action, modifier);
+            if (hasObservablePageChange(toolResult)) {
+              await commitNote(activeNote, TestResult.PASSED, toolResult, action);
+              return successToolResult('dragAndDrop', { ...toolResult, points, analysis, attempts, code: block, message: 'The drop landed only after HTML5 drag events were dispatched at the located points; the recorded mouse drag replays through the tool, which runs the same escalation.' }, action);
             }
           }
 
-          if (!hasObservablePageChange(toolResult)) {
-            const dragged = await syntheticDragDrop(explorer, command, modifier);
-            attempts.push({ command: `${command} (synthetic drag events)`, success: dragged });
-
-            if (!dragged) {
-              await releaseModifier(action, modifier);
-              continue;
-            }
-
-            const replayable = withModifier(command, modifier);
-            const syntheticResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, replayable);
-
-            if (!hasObservablePageChange(syntheticResult)) {
-              await releaseModifier(action, modifier);
-              continue;
-            }
-
-            executedCode = replayable;
-            toolResult = { ...syntheticResult, message: 'The drop landed only after synthetic drag events were dispatched; the recorded command replays through the tool, which runs the same chain again.' };
-          }
-
-          await commitNote(activeNote, TestResult.PASSED, toolResult, action);
-          const data: Record<string, any> = { ...toolResult, attempts, code: executedCode };
-          const notExecuted = commands.slice(i + 1);
-          if (notExecuted.length) {
-            data.notExecuted = notExecuted;
-            data.suggestion = `SKIPPED: ${notExecuted.join('; ')}`;
-          }
-          return successToolResult('dragAndDrop', data, action);
+          const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, dragCode);
+          await commitNote(activeNote, TestResult.FAILED, toolResult, action);
+          return failedToolResult(
+            'dragAndDrop',
+            'The drag changed nothing on the page',
+            {
+              ...toolResult,
+              points,
+              analysis,
+              attempts,
+              suggestion: 'Check that what you described is draggable and the target is a valid drop zone. When a drag starts from a handle, describe the handle as the grab point, not the whole card.',
+            },
+            action.lastError,
+            judge,
+            explanation
+          );
+        } catch (error) {
+          throwIfFatalBrowserError(error);
+          activeNote.commit(TestResult.FAILED);
+          return failedToolResult('dragAndDrop', `dragAndDrop tool failed: ${errorText(error)}`);
         }
-
-        const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, commands[0]);
-        await commitNote(activeNote, TestResult.FAILED, toolResult, action);
-        return failedToolResult(
-          'dragAndDrop',
-          'All dragAndDrop commands failed',
-          {
-            ...toolResult,
-            attempts,
-            suggestion: 'A failed drag is a locator problem, not a drag mechanism problem. Check with xpathCheck() that the source and the target each match exactly one element, and that the target is a valid drop zone.',
-          },
-          action.lastError,
-          judge,
-          explanation
-        );
       },
     }),
 
@@ -1394,40 +1362,26 @@ async function releaseModifier(action: any, modifier?: string): Promise<void> {
 
 const SYNTHETIC_MODIFIER_KEYS: Record<string, string> = { Control: 'ctrlKey', Shift: 'shiftKey', Alt: 'altKey', Meta: 'metaKey', CommandOrControl: 'auto' };
 
-function unquoteCommandArg(arg: string): string {
-  if (arg.startsWith('"')) {
-    try {
-      return JSON.parse(arg);
-    } catch {
-      return arg;
-    }
-  }
-  return arg
-    .replace(/^['"`]/, '')
-    .replace(/['"`]$/, '')
-    .replace(/\\(['"`])/g, '$1');
+export function dragPoints(analysis: string): DragPoints | null {
+  const match = analysis.match(/grab\s+(\d+)X,\s*(\d+)Y.*?drop\s+(\d+)X,\s*(\d+)Y/is);
+  if (!match) return null;
+  return {
+    from: { x: Number.parseInt(match[1], 10), y: Number.parseInt(match[2], 10) },
+    to: { x: Number.parseInt(match[3], 10), y: Number.parseInt(match[4], 10) },
+  };
 }
 
-function dragLocators(command: string): string[] {
-  const inner = command.replace(/^I\.dragAndDrop\(/, '').replace(/\)\s*$/, '');
-  return splitTopLevel(inner, ',')
-    .map((part) => part.trim())
-    .filter((part) => /^['"`]/.test(part))
-    .slice(0, 2)
-    .map(unquoteCommandArg);
+function mouseDragCode(from: string, to: string, points: DragPoints): string {
+  const { x: fx, y: fy } = points.from;
+  const { x: tx, y: ty } = points.to;
+  return `I.usePlaywrightTo(${JSON.stringify(`drag ${from} to ${to}`)}, async ({ page }) => { await page.mouse.move(${fx}, ${fy}); await page.mouse.down(); await page.waitForTimeout(200); await page.mouse.move(${tx}, ${ty}, { steps: 10 }); await page.waitForTimeout(200); await page.mouse.up(); })`;
 }
 
-export async function syntheticDragDrop(explorer: any, command: string, modifier?: string): Promise<boolean> {
-  const [src, dst] = dragLocators(command);
-  if (!src || !dst) return false;
+export async function syntheticDragDrop(explorer: any, points: DragPoints, modifier?: string): Promise<boolean> {
   const modifierKey = modifier ? SYNTHETIC_MODIFIER_KEYS[modifier] : undefined;
   return explorer
-    .withPage(async (page: any) => {
-      const [srcBox, dstBox] = await Promise.all([page.locator(src).boundingBox(), page.locator(dst).boundingBox()]);
-      if (!srcBox || !dstBox) return false;
-      const from = { x: srcBox.x + srcBox.width / 2, y: srcBox.y + srcBox.height / 2 };
-      const to = { x: dstBox.x + dstBox.width / 2, y: dstBox.y + dstBox.height / 2 };
-      return page.evaluate(
+    .withPage(async (page: any) =>
+      page.evaluate(
         ({ from, to, modifierKey }) => {
           const startEl = document.elementFromPoint(from.x, from.y);
           const endEl = document.elementFromPoint(to.x, to.y);
@@ -1446,9 +1400,9 @@ export async function syntheticDragDrop(explorer: any, command: string, modifier
           fire(startEl, 'dragend', from);
           return true;
         },
-        { from, to, modifierKey }
-      );
-    })
+        { from: points.from, to: points.to, modifierKey }
+      )
+    )
     .catch(() => false);
 }
 
@@ -1568,6 +1522,7 @@ export function withdrawVisionTools(tools: Record<string, any>): void {
   if (!Stats.visionDisabled) return;
   Reflect.deleteProperty(tools, 'see');
   Reflect.deleteProperty(tools, 'visualClick');
+  Reflect.deleteProperty(tools, 'dragAndDrop');
 }
 
 export function clickFailureSuggestion(attempts: Array<{ error?: string }>): string {
@@ -1673,4 +1628,9 @@ interface MatchedElement {
   text: string;
   label: string;
   visible?: boolean;
+}
+
+export interface DragPoints {
+  from: { x: number; y: number };
+  to: { x: number; y: number };
 }

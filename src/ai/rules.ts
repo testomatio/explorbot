@@ -508,24 +508,20 @@ export const actionRule = dedent`
   ### I.dragAndDrop
 
   Drags an element and drops it onto another element. Run via the dragAndDrop() tool, not form().
-  Use for reorderable lists and trees, moving cards between columns, dropping items into folders or zones.
-
-  I.dragAndDrop(<source>, <target>)
-
-  Unlike I.click, locators here go to Playwright as written: a bare string is read as CSS
-  and an object locator loses its text filter. Write text as 'text=...' and prefer CSS or XPath.
-  When an item drags only from a handle inside it, target the handle as the source.
-  After a result reported several matches, reuse that locator with step.opts({ elementIndex: N }) as the last argument.
-  For a drag with a modifier held (a copy-drag that duplicates the item), pass the modifier to the dragAndDrop() tool.
+  The tool takes visual descriptions of what to grab and where to drop it, locates both points
+  on the screenshot, and drags between them with a real mouse — this also covers sliders and canvas
+  drawing, where nothing can be addressed by a locator. When items look alike, describe the position
+  ("the second card in the first column"). When a drag starts from a handle, describe the handle
+  as the grab point, not the whole card. For a drag with a modifier held (a copy-drag that
+  duplicates the item), pass the modifier to the dragAndDrop() tool.
 
   <example>
-    I.dragAndDrop('text=First chapter', 'text=Second chapter')
-    I.dragAndDrop('.card-new', '.column-done')
+    dragAndDrop(from: "card labeled Bug 5 in the first column", to: "column labeled Done")
   </example>
 
-  The tool drags with a real mouse simulation first and retries with the native HTML5 drag
-  and then synthetic drag events when the drop changes nothing. When a command fails, the problem
-  is the locators — change locators, not the mechanism.
+  When form() must drag directly, I.dragAndDrop(<source>, <target>) takes Playwright locators
+  as written: a bare string is read as CSS and an object locator loses its text filter.
+  Write text as 'text=...' and prefer CSS or XPath.
 
   ### I.seeInClipboard / I.seeClipboardEquals / I.clearClipboard
 

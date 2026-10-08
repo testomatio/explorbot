@@ -74,7 +74,7 @@ When a locator fails, the agent tries the next strategy, then a visual click. Lo
 
 ## Drag and drop
 
-The Tester's `dragAndDrop()` tool drags one element onto another — reordering lists and trees, moving cards between columns, dropping items into folders or zones. It drags with a real mouse simulation first and, when the drop changes nothing, retries the same drag with the native HTML5 drag and then with synthetic drag events on its own — the last step covers pages whose drag libraries cancel the mouse press, so a real mouse can never start the drag. A modifier key can be held during the drag for copy-drags; it is recorded as plain CodeceptJS (`I.pressKeyDown`, `I.dragAndDrop`, `I.pressKeyUp`), so generated tests replay unchanged.
+The Tester's `dragAndDrop()` tool takes visual descriptions of what to grab and where to drop it. The vision model locates both points on the screenshot, and the drag runs as a real mouse press between them through the Playwright API — which also covers sliders and canvas drawing, where there is nothing to attach a locator to. When the drop changes nothing, the tool retries the same points with HTML5 drag events on its own; that covers pages whose drag libraries cancel the mouse press, so a real mouse can never start the drag. A modifier key can be held during the drag for copy-drags. The drag is recorded as a plain CodeceptJS `I.usePlaywrightTo` mouse sequence, so generated tests replay unchanged.
 
 ## What happens after each action
 

@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it } from 'bun:test';
-import { createCodeceptJSTools } from '../../src/ai/tools.ts';
+import { createCodeceptJSTools, dragPoints } from '../../src/ai/tools.ts';
 import { ConfigParser } from '../../src/config.ts';
-import { codeceptJSSandbox } from '../../src/utils/web-sandbox.ts';
+
+const ANALYSIS = 'The first card and the Done column are visible. grab 10X, 20Y; drop 30X, 40Y';
 
 function fakeDeps() {
   const holder: { state: any } = {
@@ -12,14 +13,21 @@ function fakeDeps() {
     executedSteps: [] as Array<{ command: string; success: boolean }>,
     ran: [] as string[],
     saveScreenshot: async () => undefined,
-    attempt: async (_command: string) => false,
+    attempt: async (command: string) => {
+      action.ran.push(command);
+      return false;
+    },
+  };
+  const researcher: any = {
+    checkDragPoints: async () => ANALYSIS,
   };
   const deps: any = {
-    explorer: { action: () => action },
+    explorer: { action: () => action, capture: async () => ({ screenshot: Buffer.from('png') }) },
     stateManager: { getCurrentState: () => holder.state },
     ai: {},
+    researcher,
   };
-  return { deps, action, holder };
+  return { deps, action, holder, researcher };
 }
 
 function fakeTask(): any {
@@ -36,140 +44,75 @@ function succeedWithReorder(action: any, holder: { state: any }) {
   };
 }
 
-describe('dragAndDrop validation', () => {
-  beforeEach(() => {
-    ConfigParser.resetForTesting();
-    ConfigParser.setupTestConfig();
+describe('dragPoints parsing', () => {
+  it('reads both points from the vision analysis', () => {
+    expect(dragPoints('grab 10X, 20Y; drop 30X, 40Y')).toEqual({
+      from: { x: 10, y: 20 },
+      to: { x: 30, y: 40 },
+    });
   });
 
-  it('rejects empty commands without touching the browser', async () => {
-    const { deps, action } = fakeDeps();
-    const tools = createCodeceptJSTools(deps, fakeTask());
-
-    const result = await tools.dragAndDrop.execute({ commands: [], explanation: 'nothing' }, {} as any);
-
-    expect(result.success).toBe(false);
-    expect(result.message).toContain('No commands provided');
-    expect(action.ran).toEqual([]);
+  it('reads the points from a sentence', () => {
+    expect(dragPoints('The card is in the first column. grab 5X, 6Y; drop 7X, 8Y')).toEqual({
+      from: { x: 5, y: 6 },
+      to: { x: 7, y: 8 },
+    });
   });
 
-  it('rejects non-dragAndDrop commands as invalid', async () => {
-    const { deps, action } = fakeDeps();
-    const tools = createCodeceptJSTools(deps, fakeTask());
-
-    const result = await tools.dragAndDrop.execute({ commands: ['I.click("Save")', 'I.dragAndDrop("A", "B")'], explanation: 'drag' }, {} as any);
-
-    expect(result.success).toBe(false);
-    expect(result.message).toContain('Invalid commands');
-    expect(result.message).toContain('I.click("Save")');
-    expect(action.ran).toEqual([]);
+  it('returns null when a point is missing', () => {
+    expect(dragPoints('The drop target was not found')).toBeNull();
+    expect(dragPoints('grab 10X, 20Y')).toBeNull();
   });
 });
 
-describe('dragAndDrop modifier', () => {
+describe('dragAndDrop tool', () => {
   beforeEach(() => {
     ConfigParser.resetForTesting();
     ConfigParser.setupTestConfig();
   });
 
-  const block = 'I.pressKeyDown("Control")\nI.dragAndDrop("First", "Second")\nI.pressKeyUp("Control")';
-
-  it('wraps the drag between pressKeyDown and pressKeyUp and reports the block as code', async () => {
+  it('drags between the located points with a real mouse and records replayable code', async () => {
     const { deps, action, holder } = fakeDeps();
     succeedWithReorder(action, holder);
     const tools = createCodeceptJSTools(deps, fakeTask());
 
-    const result = await tools.dragAndDrop.execute({ commands: ['I.dragAndDrop("First", "Second")'], modifier: 'Control', explanation: 'copy the item' }, {} as any);
+    const result = await tools.dragAndDrop.execute({ from: 'first card', to: 'Done column', explanation: 'move the card' }, {} as any);
 
     expect(result.success).toBe(true);
-    expect(result.code).toBe(block);
-    expect(result.attempts).toEqual([{ command: block, success: true }]);
-    expect(action.ran).toEqual([block]);
+    expect(action.ran).toHaveLength(1);
+    expect(action.ran[0]).toContain('I.usePlaywrightTo');
+    expect(action.ran[0]).toContain('page.mouse.move(10, 20)');
+    expect(action.ran[0]).toContain('page.mouse.move(30, 40, { steps: 10 })');
+    expect(result.code).toBe(action.ran[0]);
+    expect(result.points).toEqual({ from: { x: 10, y: 20 }, to: { x: 30, y: 40 } });
   });
 
-  it('releases the modifier after a failed drag attempt', async () => {
-    const { deps, action } = fakeDeps();
-    action.attempt = async (command: string) => {
-      action.ran.push(command);
-      action.lastError = null;
-      return command === 'I.pressKeyUp("Control")';
-    };
+  it('wraps the drag between pressKeyDown and pressKeyUp for a modifier', async () => {
+    const { deps, action, holder } = fakeDeps();
+    succeedWithReorder(action, holder);
     const tools = createCodeceptJSTools(deps, fakeTask());
 
-    const result = await tools.dragAndDrop.execute({ commands: ['I.dragAndDrop("First", "Second")'], modifier: 'Control', explanation: 'copy the item' }, {} as any);
+    const result = await tools.dragAndDrop.execute({ from: 'first card', to: 'Done column', modifier: 'Control', explanation: 'copy the card' }, {} as any);
+
+    expect(result.success).toBe(true);
+    expect(result.code).toBe(action.ran[0]);
+    expect(result.code.startsWith('I.pressKeyDown("Control")\n')).toBe(true);
+    expect(result.code.endsWith('I.pressKeyUp("Control")')).toBe(true);
+  });
+
+  it('fails without browser action when vision cannot locate both points', async () => {
+    const { deps, action } = fakeDeps();
+    deps.researcher.checkDragPoints = async () => 'The drop target was not found';
+    const tools = createCodeceptJSTools(deps, fakeTask());
+
+    const result = await tools.dragAndDrop.execute({ from: 'first card', to: 'Done column', explanation: 'move the card' }, {} as any);
 
     expect(result.success).toBe(false);
-    expect(action.ran).toEqual([block, 'I.pressKeyUp("Control")']);
+    expect(result.message).toContain('Drag points not found');
+    expect(action.ran).toEqual([]);
   });
 
-  it('executes the block in order through the CodeceptJS sandbox', () => {
-    const calls: string[] = [];
-    const actor: any = new Proxy(
-      {},
-      {
-        get:
-          (_t, prop) =>
-          (...args: any[]) =>
-            calls.push(`${String(prop)}:${JSON.stringify(args[0])}`),
-      }
-    );
-
-    codeceptJSSandbox(actor, block);
-
-    expect(calls).toEqual(['pressKeyDown:"Control"', 'dragAndDrop:"First"', 'pressKeyUp:"Control"']);
-  });
-});
-
-describe('dragAndDrop fallbacks', () => {
-  beforeEach(() => {
-    ConfigParser.resetForTesting();
-    ConfigParser.setupTestConfig();
-  });
-
-  it('escalates a silent no-op to the native HTML5 drag and reports it as code', async () => {
-    const { deps, action, holder } = fakeDeps();
-    action.attempt = async (command: string) => {
-      action.ran.push(command);
-      action.lastError = null;
-      action.executedSteps = command.split('\n').map((line) => ({ command: line, success: true }));
-      if (command.includes('force')) holder.state = { ...holder.state, ariaSnapshot: '- moved', id: 'after' };
-      return true;
-    };
-    const tools = createCodeceptJSTools(deps, fakeTask());
-
-    const result = await tools.dragAndDrop.execute({ commands: ['I.dragAndDrop("First", "Second")'], explanation: 'reorder' }, {} as any);
-
-    expect(result.success).toBe(true);
-    expect(result.code).toBe('I.dragAndDrop("First", "Second", { force: true })');
-    expect(result.attempts).toEqual([
-      { command: 'I.dragAndDrop("First", "Second")', success: true },
-      { command: 'I.dragAndDrop("First", "Second", { force: true })', success: true },
-    ]);
-  });
-
-  it('tries the next locator when a drag command fails', async () => {
-    const { deps, action, holder } = fakeDeps();
-    action.attempt = async (command: string) => {
-      action.ran.push(command);
-      if (command.includes('.card')) {
-        action.lastError = Object.assign(new Error('element (.card) was not found by text|CSS|XPath'), { name: 'ElementNotFound' });
-        return false;
-      }
-      action.lastError = null;
-      action.executedSteps = command.split('\n').map((line) => ({ command: line, success: true }));
-      holder.state = { ...holder.state, ariaSnapshot: '- moved', id: 'after' };
-      return true;
-    };
-    const tools = createCodeceptJSTools(deps, fakeTask());
-
-    const result = await tools.dragAndDrop.execute({ commands: ['I.dragAndDrop(".card", ".column")', 'I.dragAndDrop("First", "Second")'], explanation: 'reorder' }, {} as any);
-
-    expect(result.success).toBe(true);
-    expect(result.code).toBe('I.dragAndDrop("First", "Second")');
-    expect(result.notExecuted).toBeUndefined();
-  });
-
-  it('falls back to synthetic drag events when both drag mechanisms change nothing', async () => {
+  it('escalates a silent mouse drag to HTML5 drag events', async () => {
     const { deps, action, holder } = fakeDeps();
     action.attempt = async (command: string) => {
       action.ran.push(command);
@@ -177,21 +120,52 @@ describe('dragAndDrop fallbacks', () => {
       action.executedSteps = command.split('\n').map((line) => ({ command: line, success: true }));
       return true;
     };
+    let syntheticDone = false;
     deps.explorer = {
       action: () => action,
+      capture: async () => {
+        if (syntheticDone) holder.state = { ...holder.state, ariaSnapshot: '- moved', id: 'after' };
+        return { screenshot: Buffer.from('png') };
+      },
       withPage: async () => {
-        holder.state = { ...holder.state, ariaSnapshot: '- moved', id: 'after' };
+        syntheticDone = true;
         return true;
       },
     };
     const tools = createCodeceptJSTools(deps, fakeTask());
 
-    const result = await tools.dragAndDrop.execute({ commands: ['I.dragAndDrop("text=Item 2", "text=Item 1")'], explanation: 'reorder' }, {} as any);
+    const result = await tools.dragAndDrop.execute({ from: 'first card', to: 'Done column', explanation: 'move the card' }, {} as any);
 
     expect(result.success).toBe(true);
-    expect(result.attempts.map((attempt) => attempt.success)).toEqual([true, true, true]);
-    expect(result.attempts[2]?.command).toContain('synthetic drag events');
-    expect(result.message).toContain('synthetic drag events');
-    expect(result.code).toBe('I.dragAndDrop("text=Item 2", "text=Item 1")');
+    expect(result.message).toContain('HTML5 drag events');
+    expect(result.attempts.map((attempt: any) => attempt.success)).toEqual([true, true]);
+    expect(result.attempts[1]?.command).toContain('HTML5 drag events');
+  });
+
+  it('releases the modifier and fails when no mechanism changes the page', async () => {
+    const { deps, action } = fakeDeps();
+    action.attempt = async (command: string) => {
+      action.ran.push(command);
+      return command.startsWith('I.pressKeyUp');
+    };
+    deps.explorer.withPage = async () => false;
+    const tools = createCodeceptJSTools(deps, fakeTask());
+
+    const result = await tools.dragAndDrop.execute({ from: 'first card', to: 'Done column', modifier: 'Control', explanation: 'copy the card' }, {} as any);
+
+    expect(result.success).toBe(false);
+    expect(result.message).toContain('changed nothing');
+    expect(action.ran[action.ran.length - 1]).toBe('I.pressKeyUp("Control")');
+  });
+
+  it('reports drag as unavailable when there is no researcher', async () => {
+    const { deps, action } = fakeDeps();
+    const tools = createCodeceptJSTools({ ...deps, researcher: undefined }, fakeTask());
+
+    const result = await tools.dragAndDrop.execute({ from: 'first card', to: 'Done column', explanation: 'move the card' }, {} as any);
+
+    expect(result.success).toBe(false);
+    expect(result.message).toContain('cannot be located');
+    expect(action.ran).toEqual([]);
   });
 });
