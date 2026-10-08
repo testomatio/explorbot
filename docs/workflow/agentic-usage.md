@@ -103,7 +103,7 @@ On its own, without a provider, `EXPLORBOT_AI_MODEL` must carry the provider as 
 ```
 openrouter/openai/gpt-oss-120b:nitro   → openrouter, model "openai/gpt-oss-120b:nitro"
 groq/openai/gpt-oss-20b                → groq, model "openai/gpt-oss-20b"
-anthropic/claude-haiku-4-5-20251001    → anthropic, model "claude-haiku-4-5-20251001"
+anthropic/claude-haiku-5-5             → anthropic, model "claude-haiku-5-5"
 ```
 
 `EXPLORBOT_VISION_MODEL` and `EXPLORBOT_AGENTIC_MODEL` override those roles the same way — a provider name for its recommendation, or `provider/model-id` to pin one. Mix the forms to take a provider's recommendations and override one role:

@@ -2,6 +2,17 @@
 
 ## 2026-10-06
 
+### Configuration
+- **`ai.decisionModel`** — OpenRouter now recommends JEV (`typesafe/jev-latest`) as the decision model. Choosing OpenRouter through `EXPLORBOT_AI_PROVIDER=openrouter` turns it on automatically, and `explorbot init` with OpenRouter writes it into the generated config. `EXPLORBOT_DECISION_MODEL` or `--decision-model` still override it. Other providers have no recommended decision model, so it stays off for them unless set.
+  ```bash
+  EXPLORBOT_AI_PROVIDER=openrouter explorbot start https://app.example.com
+  ```
+
+### Changes
+- Anthropic's recommended model is now Claude Haiku 5.5 (`claude-haiku-5-5`), used for the base, vision and agentic models. `EXPLORBOT_AI_PROVIDER=anthropic` and `explorbot init` with Anthropic pick it up.
+- OpenRouter's recommended agentic model is now Claude Haiku 5.5 (`anthropic/claude-haiku-5.5`).
+- OpenAI's recommended vision and agentic model is now GPT-6 Luna (`gpt-6-luna`).
+- `explorbot recommended-models` lists the decision model and its `EXPLORBOT_DECISION_MODEL` env line for providers that recommend one.
 ### Changes
 - A `url` in the config file can now point to an app in a subfolder, such as `https://example.com/apps/todo/`. The folder becomes the base path for the run, just like `--base-url`: `explorbot start` opens the app itself, and relative paths such as `/active` resolve to `/apps/todo/active`. Previously every navigation was built as `https://example.com/apps/todo///…` and the Navigator had to guess its way back, sometimes ending on the wrong page. `--base-url` still takes precedence over the config `url`.
 

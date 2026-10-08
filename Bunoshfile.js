@@ -138,7 +138,10 @@ function syncProviderDocs(check) {
   const models = JSON.parse(readFileSync(resolve('models.json'), 'utf8'));
   for (const [provider, roles] of Object.entries(models)) {
     const config = Object.entries(roles)
-      .map(([role, id]) => `    ${role}: ${provider}('${id}'),`)
+      .map(([role, id]) => {
+        if (role === 'decisionModel') return `    decisionModel: { provider: '${provider}', model: '${id}' },`;
+        return `    ${role}: ${provider}('${id}'),`;
+      })
       .join('\n');
     let block = `\`\`\`javascript\nexport default {\n  ai: {\n${config}\n  },\n};\n\`\`\``;
 
