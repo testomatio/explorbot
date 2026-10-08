@@ -56,7 +56,8 @@ export default {
   ai: {
     model: openrouter('openai/gpt-oss-20b:nitro'),
     visionModel: openrouter('openai/gpt-5.6-luna'),
-    agenticModel: openrouter('openai/gpt-5.6-luna'),
+    agenticModel: openrouter('anthropic/claude-haiku-5.5'),
+    decisionModel: { provider: 'openrouter', model: 'typesafe/jev-latest' },
   },
 };
 ```
@@ -123,8 +124,8 @@ Set the recommended models in the exported config:
 export default {
   ai: {
     model: openai('gpt-5-nano'),
-    visionModel: openai('gpt-5.6-luna'),
-    agenticModel: openai('gpt-5.6-luna'),
+    visionModel: openai('gpt-6-luna'),
+    agenticModel: openai('gpt-6-luna'),
   },
 };
 ```
@@ -156,9 +157,9 @@ Set the recommended model in the exported config:
 ```javascript
 export default {
   ai: {
-    model: anthropic('claude-haiku-4-5-20251001'),
-    visionModel: anthropic('claude-haiku-4-5-20251001'),
-    agenticModel: anthropic('claude-haiku-4-5-20251001'),
+    model: anthropic('claude-haiku-5-5'),
+    visionModel: anthropic('claude-haiku-5-5'),
+    agenticModel: anthropic('claude-haiku-5-5'),
   },
 };
 ```

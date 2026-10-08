@@ -260,7 +260,9 @@ export function modelLines(provider: string, only?: ModelRole[]): string {
   let selected = roles;
   if (only) selected = roles.filter(([role]) => only.includes(role));
 
-  return selected.map(([role, comment]) => `    // ${comment}\n    ${role}: '${provider}/${recommended[role] || '<model-id>'}',`).join('\n');
+  const lines = selected.map(([role, comment]) => `    // ${comment}\n    ${role}: '${provider}/${recommended[role] || '<model-id>'}',`);
+  if (!only && recommended.decisionModel) lines.push(`    // decision model judging ambiguous outcomes\n    decisionModel: { provider: '${provider}', model: '${recommended.decisionModel}' },`);
+  return lines.join('\n');
 }
 
 function globalConfigTemplate(provider: string): string {

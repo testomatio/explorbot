@@ -52,6 +52,7 @@ export class RecommendedModelsCommand extends BaseCommand {
         if (roles[role]) models.push([label, roles[role]]);
         if (!roles[role]) models.push([label, chalk.dim('not served, pair with another provider')]);
       }
+      if (roles.decisionModel) models.push(['decisionModel (judge)', roles.decisionModel]);
       lines.push(...renderSection('models', models, 2));
 
       const envKey = PROVIDERS[provider]?.envKey;
@@ -70,6 +71,7 @@ export class RecommendedModelsCommand extends BaseCommand {
         env.push([label, `${ROLES[role].env}=${provider}/${roles[role]}`]);
         label = '';
       }
+      if (roles.decisionModel) env.push(['decision', `EXPLORBOT_DECISION_MODEL=${provider}/${roles.decisionModel}`]);
       lines.push(...renderSection('env variables', env, 2));
     }
 
