@@ -317,7 +317,7 @@ export class ExplorBot {
         const researcher = this.agentResearcher();
         const navigator = this.agentNavigator();
         const tools = createAgentTools({ ...deps, researcher, navigator, withExperience: false });
-        return new Rerunner(deps, tools);
+        return new Rerunner(deps, tools, researcher);
       });
       if (this.isHistorianEnabled()) this.agents.rerunner.setHistorian(this.agentHistorian());
     }
@@ -327,7 +327,7 @@ export class ExplorBot {
   agentDriller(): Driller {
     return (this.agents.driller ||= this.createAgent((deps) => {
       const navigator = this.agentNavigator();
-      return new Driller(deps, navigator);
+      return new Driller(deps, navigator, this.agentResearcher());
     }));
   }
 

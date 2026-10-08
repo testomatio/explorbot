@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-10-08
+
+### Changes
+- [Tester] New `dragAndDrop()` tool, so scenarios that drag something onto something else can be tested: reordering lists and trees, moving cards between columns, dropping items into folders or zones — and dragging slider handles or drawing on canvas, where nothing can be addressed by a locator. The tool takes visual descriptions of what to grab and where to drop it, the vision model locates both points on the screenshot, and the drag runs as a real mouse press between them through the Playwright API. When the drop changes nothing, the same points are retried with HTML5 drag events — covering pages whose drag libraries cancel the mouse press.
+  ```javascript
+  dragAndDrop({ from: 'card labeled Bug 5 in the first column', to: 'column labeled Done' });   // move or reorder
+  ```
+  Copy-drag: pass the modifier (e.g. `Control`) to the tool; the generated test records the drag as a plain CodeceptJS `I.usePlaywrightTo` mouse sequence — so it replays and heals in rerun like any other step.
+
 ## 2026-10-06
 
 ### Configuration
@@ -13,8 +22,8 @@
 - OpenRouter's recommended agentic model is now Claude Haiku 5.5 (`anthropic/claude-haiku-5.5`).
 - OpenAI's recommended vision and agentic model is now GPT-6 Luna (`gpt-6-luna`).
 - `explorbot recommended-models` lists the decision model and its `EXPLORBOT_DECISION_MODEL` env line for providers that recommend one.
-### Changes
 - A `url` in the config file can now point to an app in a subfolder, such as `https://example.com/apps/todo/`. The folder becomes the base path for the run, just like `--base-url`: `explorbot start` opens the app itself, and relative paths such as `/active` resolve to `/apps/todo/active`. Previously every navigation was built as `https://example.com/apps/todo///…` and the Navigator had to guess its way back, sometimes ending on the wrong page. `--base-url` still takes precedence over the config `url`.
+- Generated tests no longer break on a locator that contains quotes, such as `li:has-text("Item 2")`: executed commands are recorded with the quotes escaped, so the test file stays valid code and reruns instead of failing to load.
 
 ## 2026-10-05
 

@@ -24,6 +24,7 @@ import type { Agent, AgentDeps } from './agent.ts';
 import { toolExecutionLabel } from './conversation.ts';
 import type { Navigator } from './navigator.ts';
 import { Provider } from './provider.ts';
+import type { Researcher } from './researcher.ts';
 import { actionRule, locatorRule, sectionContextRule } from './rules.ts';
 import { TaskAgent } from './task-agent.ts';
 import { createCodeceptJSTools, withdrawVisionTools } from './tools.ts';
@@ -31,17 +32,19 @@ import { createCodeceptJSTools, withdrawVisionTools } from './tools.ts';
 const debugLog = createDebug('explorbot:rerunner');
 
 export class Rerunner extends TaskAgent implements Agent {
-  protected readonly ACTION_TOOLS = ['click', 'pressKey', 'form'];
+  protected readonly ACTION_TOOLS = ['click', 'dragAndDrop', 'pressKey', 'form'];
   emoji = '🔄';
 
   private agentTools: any;
+  private researcher?: Researcher;
   private healedSteps: Array<{ original: string; healed: string }> = [];
   private traceDir = '';
   private static pluginsWired = false;
 
-  constructor(deps: AgentDeps, agentTools?: any) {
+  constructor(deps: AgentDeps, agentTools?: any, researcher?: Researcher) {
     super(deps);
     this.agentTools = agentTools;
+    this.researcher = researcher;
   }
 
   protected getNavigator(): Navigator {
@@ -312,7 +315,7 @@ export class Rerunner extends TaskAgent implements Agent {
       });
 
       const healTask = new Task(`Heal: ${failedCode}`);
-      const codeceptTools = createCodeceptJSTools(this.toolDeps, healTask);
+      const codeceptTools = createCodeceptJSTools({ ...this.toolDeps, researcher: this.researcher }, healTask);
 
       let healed = false;
       let healedCommand = '';
@@ -441,6 +444,7 @@ export class Rerunner extends TaskAgent implements Agent {
       <tools>
       - You MUST execute the replacement action — not just diagnose
       - Use click() for buttons, links — commands array is FALLBACK LOCATORS for the SAME element
+      - Use dragAndDrop() to drag something onto something else — describe both visually; a modifier makes copy-drags
       - Use form() for text input, dropdown selection, file uploads
       - Use pressKey() for special keys or key combinations
       - Use wait() when page is loading — returns fresh ARIA automatically
