@@ -920,7 +920,9 @@ npx explorbot init --config-path ./explorbot.config.js
 npx explorbot init --force
 ```
 
-Passing `--config-path` or `--path` means local, and so does running outside a terminal (agents, CI): the chooser is skipped and the project config is written as before.
+The local wizard picks the provider, takes the API key (optionally checked with one test AI call), and asks for your app's URL — then writes everything: the key goes into `.env`, the URL into `web.url`, and the models come from `ai.recommendedModels: '<provider>'`. Nothing is left to edit by hand.
+
+Passing `--config-path` or `--path` means local, and so does running outside a terminal (agents, CI): the chooser is skipped and the project config is written with placeholder values instead. Init then prints the exact paths of the files that still need attention, a demo command to try Explorbot on a sample app (`npx explorbot explore https://todomvc.com/examples/react/dist/`), and links to the [VS Code extension](https://testomat.ai/explorbot) and the [docs](https://testomat.ai/docs/explorbot).
 
 `--global` runs the global wizard instead — pick a provider, paste the API key, optionally check it with one test AI call. The wizard writes `~/.explorbot/config.js` with the recommended model ids of this Explorbot version and stores the key in `~/.explorbot/.env`.
 
@@ -939,7 +941,8 @@ The global config holds models and keys, never a site: every command names the s
 | `-p, --path <path>` | Working directory for initialization |
 | `-g, --global` | Configure `~/.explorbot` to run from anywhere |
 | `--provider <name>` | AI provider for the global config, skips the wizard |
-| `--api-key <key>` | API key stored in `~/.explorbot/.env` |
+| `--api-key <key>` | API key stored in `~/.explorbot/.env` (local init: written to the project `.env`) |
+| `--url <url>` | Web application URL written to `web.url` in the local config |
 
 See [Configuration](configuration.md#running-from-anywhere-the-global-installation) for the directory layout and how a site is resolved.
 

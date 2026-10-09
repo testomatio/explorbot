@@ -558,6 +558,14 @@ export class ExploreCommand extends BaseCommand {
       });
     }
 
+    sections.push({
+      label: 'Explore more',
+      commands: [
+        { label: 'Whole site', command: `${cli} explore /` },
+        { label: 'Docs', command: 'https://testomat.ai/docs/explorbot' },
+      ],
+    });
+
     printNextSteps(sections);
   }
 

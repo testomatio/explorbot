@@ -1,25 +1,30 @@
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, extname, join, resolve } from 'node:path';
 import chalk from 'chalk';
+import figureSet from 'figures';
 import { ConfigParser, type ModelRole, PROVIDERS, missingModelRoles } from '../config.ts';
 import { findGlobalConfig, globalConfigPath, globalDir, globalEnvPath } from '../global-config.ts';
 import { getCliName } from '../utils/cli-name.ts';
 import { log, tag } from '../utils/logger.js';
-import { relativeToCwd } from '../utils/next-steps.ts';
+import { type NextStepCommand, type NextStepSection, printNextSteps, relativeToCwd } from '../utils/next-steps.ts';
 
-function defaultConfigTemplate(provider: string): string {
+function defaultConfigTemplate(provider: string, url?: string): string {
+  const appUrl = url || 'http://<your-app-host-here>';
   return `// 'provider/model-id' uses a bundled provider.
 // It is also possible to import provider as a module from Vercel AI SDK.
-// https://github.com/testomatio/explorbot/blob/main/docs/basics/providers.md
+// https://testomat.ai/docs/explorbot
 
 const config = {
   web: {
     // use application host without path prefix (e.g., http://localhost:3000)
-    url: 'http://<your-app-host-here>',
+    url: '${appUrl}',
   },
 
   ai: {
-${modelLines(provider)}
+    // every role (model, visionModel, agenticModel) takes the recommended ${provider} models bundled with this version
+    // override a single role as 'provider/model-id':
+    // model: '${provider}/<model-id>',
+    recommendedModels: '${provider}',
   },
 
   reporter: {
@@ -69,10 +74,10 @@ export async function runInit(options: InitCommandOptions): Promise<void> {
   const choice = await renderInitWizard('choose');
   if (choice !== 'local') return;
 
-  const provider = await renderLocalProviderWizard();
-  if (!provider) return;
+  const setup = await renderLocalSetupWizard();
+  if (!setup) return;
 
-  runInitCommand({ ...options, provider });
+  runInitCommand({ ...options, ...setup });
 }
 
 export function writeGlobalConfig(provider: string, apiKey?: string): void {
@@ -82,11 +87,11 @@ export function writeGlobalConfig(provider: string, apiKey?: string): void {
 
   mkdirSync(globalDir(), { recursive: true });
   writeFileSync(globalConfigPath(), globalConfigTemplate(provider), 'utf8');
-  log(`Created global config: ${globalConfigPath()}`);
+  tag('success').log(`${figureSet.tick} Created global config: ${globalConfigPath()}`);
 
   const envKey = PROVIDERS[provider].envKey;
   writeEnvKey(envKey, apiKey || '');
-  log(`Stored ${envKey} in ${globalEnvPath()}`);
+  tag('success').log(`${figureSet.tick} Stored ${envKey} in ${globalEnvPath()}`);
 
   const missing = missingModelRoles(provider);
   if (missing.length) {
@@ -97,9 +102,13 @@ export function writeGlobalConfig(provider: string, apiKey?: string): void {
   }
 
   log('');
-  log('Explorbot now runs from any directory:');
-  tag('substep').log(chalk.yellow(`${getCliName()} explore https://your-app.example.com`));
-  tag('substep').log(chalk.yellow(`${getCliName()} sites`));
+  log(`${figureSet.star} What's next:`);
+  printInitNextSteps({
+    siteCommands: [
+      { label: 'Any site', command: `${getCliName()} explore https://your-app.example.com` },
+      { label: 'Saved sites', command: `${getCliName()} sites` },
+    ],
+  });
 }
 
 export function runInitCommand(options: InitCommandOptions): void {
@@ -141,15 +150,27 @@ export function runInitCommand(options: InitCommandOptions): void {
       process.exit(1);
     }
 
-    writeFileSync(outPath, defaultConfigTemplate(provider), 'utf8');
-    log(`Created config file: ${relativeToCwd(outPath)}`);
+    writeFileSync(outPath, defaultConfigTemplate(provider, options.url), 'utf8');
+    tag('success').log(`${figureSet.tick} Created config file: ${relativeToCwd(outPath)}`);
 
     const envPath = resolve(process.cwd(), '.env');
     if (!existsSync(envPath)) {
       writeFileSync(envPath, `${envTemplate(provider)}\n`, 'utf8');
-      log(`Created env file: ${relativeToCwd(envPath)}`);
+      tag('success').log(`${figureSet.tick} Created env file: ${relativeToCwd(envPath)}`);
     } else {
       log(`Env file already exists: ${relativeToCwd(envPath)}`);
+    }
+
+    const envKey = PROVIDERS[provider].envKey;
+    if (options.apiKey) {
+      writeEnvKey(envKey, options.apiKey, envPath);
+      tag('success').log(`${figureSet.tick} Stored ${envKey} in ${relativeToCwd(envPath)}`);
+    }
+    if (!options.apiKey && !process.env[envKey]) {
+      tag('warning').log(`Add your API key to ${envKey}= in ${relativeToCwd(envPath)}`);
+    }
+    if (!options.url) {
+      tag('warning').log(`Set your application URL in web.url: ${relativeToCwd(outPath)}`);
     }
 
     const missing = missingModelRoles(provider);
@@ -157,22 +178,14 @@ export function runInitCommand(options: InitCommandOptions): void {
       tag('warning').log(`No recommended ${missing.join(' and ')} for ${provider} — set the model ids in ${relativeToCwd(outPath)}`);
     }
 
-    log('');
-    log('Next steps:');
-    log('1. Configure AI provider in .env');
-    log('2. Set AI models config file');
-    log('3. Set web application URL in the config file');
-    log('4. Add initial knowledge (how to authorize to the application, etc.)');
-    tag('substep').log(chalk.yellow(`${getCliName()} learn '*' 'to authorize use these credentials: admin@example.com / secret123'`));
-    tag('substep').log('You can use ${env.LOGIN} and ${env.PASSWORD} to reference environment variables.');
-
-    log('5. Launch application on a relative URL');
-    tag('substep').log(chalk.yellow(`${getCliName()} start /dashboard`));
-
     if (!existsSync('./output')) {
       mkdirSync('./output', { recursive: true });
-      log('Created directory: output');
+      tag('success').log(`${figureSet.tick} Created directory: output`);
     }
+
+    log('');
+    log(`${figureSet.star} What's next:`);
+    printInitNextSteps({ url: options.url });
   } catch (error) {
     log('Failed to create config file:', error);
     process.exit(1);
@@ -227,13 +240,13 @@ async function renderInitWizard(mode: 'choose' | 'global'): Promise<'local' | 'g
   });
 }
 
-async function renderLocalProviderWizard(): Promise<string | null> {
+async function renderLocalSetupWizard(): Promise<LocalSetup | null> {
   const [{ render }, React, InitWizard] = await Promise.all([import('ink'), import('react'), import('../components/InitWizard.js').then((m) => m.default)]);
 
   return new Promise((resolve) => {
-    const finish = (provider: string | null) => {
+    const finish = (setup: LocalSetup | null) => {
       unmount();
-      resolve(provider);
+      resolve(setup);
     };
     const { unmount } = render(
       React.createElement(InitWizard, {
@@ -242,7 +255,7 @@ async function renderLocalProviderWizard(): Promise<string | null> {
         onLocal: () => finish(null),
         onComplete: () => finish(null),
         onCancel: () => finish(null),
-        onLocalProvider: (provider: string) => finish(provider),
+        onLocalSetup: (setup) => finish(setup),
       }),
       { exitOnCtrlC: false, patchConsole: false }
     );
@@ -274,7 +287,7 @@ function globalConfigTemplate(provider: string): string {
 // Models are written as 'provider/model-id' so they resolve without a local node_modules.
 // The key is read from ${envKey} in ~/.explorbot/.env
 // Model ids are snapshotted from the recommendations of this Explorbot version.
-// https://github.com/testomatio/explorbot/blob/main/docs/basics/providers.md
+// https://testomat.ai/docs/explorbot
 const config = {
   ai: {
 ${modelLines(provider)}
@@ -292,8 +305,47 @@ export default config;
 `;
 }
 
-function writeEnvKey(key: string, value: string): void {
-  const envPath = globalEnvPath();
+function printInitNextSteps(options: { url?: string; siteCommands?: NextStepCommand[] }): void {
+  const cli = getCliName();
+  const sections: NextStepSection[] = [
+    {
+      label: 'Try the demo on a sample app',
+      commands: [{ command: `${cli} explore https://todomvc.com/examples/react/dist/` }],
+    },
+  ];
+
+  if (options.url) {
+    sections.push({
+      label: 'Explore your app',
+      commands: [
+        { label: 'Whole site', command: `${cli} explore ${options.url}` },
+        { label: 'One page', command: `${cli} explore /dashboard` },
+      ],
+    });
+  }
+
+  if (options.siteCommands) sections.push({ label: 'Explore any site', commands: options.siteCommands });
+
+  sections.push(
+    {
+      label: 'Run it from VS Code',
+      commands: [{ command: 'https://testomat.ai/explorbot' }],
+    },
+    {
+      label: 'Docs',
+      commands: [{ command: 'https://testomat.ai/docs/explorbot' }],
+    }
+  );
+
+  printNextSteps(sections);
+
+  log('');
+  log('Add knowledge (logins, credentials) — created on first use in ./knowledge:');
+  tag('substep').log(chalk.yellow(`${cli} learn '*' 'to authorize use these credentials: admin@example.com / secret123'`));
+  tag('substep').log('You can use ${env.LOGIN} and ${env.PASSWORD} to reference environment variables.');
+}
+
+function writeEnvKey(key: string, value: string, envPath = globalEnvPath()): void {
   let content = '# AI provider API keys';
   if (existsSync(envPath)) content = readFileSync(envPath, 'utf8').trimEnd();
 
@@ -306,6 +358,12 @@ function writeEnvKey(key: string, value: string): void {
   writeFileSync(envPath, `${lines.join('\n').trimEnd()}\n`, 'utf8');
 }
 
+type LocalSetup = {
+  provider: string;
+  apiKey: string;
+  url: string;
+};
+
 type InitCommandOptions = {
   configPath?: string;
   force?: boolean;
@@ -313,4 +371,5 @@ type InitCommandOptions = {
   global?: boolean;
   provider?: string;
   apiKey?: string;
+  url?: string;
 };

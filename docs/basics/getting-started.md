@@ -15,21 +15,15 @@ You need Node.js 24+ (or Bun), an AI provider key, and a modern terminal — iTe
 
 ## 2. Configure
 
-Create the config files:
+Run the setup wizard:
 
 ```bash
 npx explorbot init
 ```
 
-This writes `explorbot.config.js`, an `.env` file for your keys, and an `output/` folder.
+It asks for your AI provider, its API key, and your app's URL, then writes everything for you: `explorbot.config.js`, an `.env` file with the key stored, and an `output/` folder. No manual file editing.
 
-Open `.env` and add your provider key:
-
-```bash
-OPENROUTER_API_KEY=sk-...
-```
-
-Then open `explorbot.config.js` and set your app's base URL — the host only, no path:
+The generated config keeps models simple — one line picks the recommended set for your provider:
 
 ```javascript
 export default {
@@ -37,10 +31,21 @@ export default {
     url: 'http://localhost:3000',
   },
   ai: {
-    model: 'openrouter/openai/gpt-oss-20b:nitro',
-    visionModel: 'openrouter/openai/gpt-5.6-luna',
-    agenticModel: 'openrouter/anthropic/claude-haiku-5.5',
-    decisionModel: { provider: 'openrouter', model: 'typesafe/jev-latest' },
+    recommendedModels: 'openrouter',
+  },
+};
+```
+
+`ai.recommendedModels` fills every model role from the provider's bundled recommendations. To pin a single role instead, write it as `'provider/model-id'` — it overrides the recommendation:
+
+```javascript
+export default {
+  web: {
+    url: 'http://localhost:3000',
+  },
+  ai: {
+    recommendedModels: 'openrouter',
+    agenticModel: 'groq/openai/gpt-oss-120b',
   },
 };
 ```
@@ -83,6 +88,14 @@ Explorbot uses three models. Pick each one for speed and cost:
 | `agenticModel` | `ai.agenticModel` | Captain and Pilot — they read short action logs and make the big decisions | a smarter model (e.g. MiniMax 2.5, Grok Fast) |
 
 Captain and Pilot barely use tokens, so a smarter `agenticModel` improves results for almost no extra cost. OpenRouter is the simplest start — one key, many models. To use OpenAI, Anthropic, Groq, or others, see [Providers](./providers.md). For every config option, see [Configuration](../reference/configuration.md).
+
+Want to see Explorbot work before pointing it at your app? Run it on the sample app:
+
+```bash
+npx explorbot explore https://todomvc.com/examples/react/dist/
+```
+
+You can also run it from the [VS Code extension](https://testomat.ai/explorbot) — pick a site, start a bot, and watch it test without leaving the editor. Full documentation lives at [testomat.ai/docs/explorbot](https://testomat.ai/docs/explorbot).
 
 ## 3. Tell Explorbot how to log in
 

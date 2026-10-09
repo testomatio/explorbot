@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os, { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ConfigParser, EXPLORBOT_ENV_VARS, materializeKnowledge, resolveModel, resolveOutputRoot } from '../../src/config.ts';
+import { ConfigParser, EXPLORBOT_ENV_VARS, materializeKnowledge, resolveConfigModels, resolveModel, resolveOutputRoot } from '../../src/config.ts';
 
 describe('ConfigParser runtime baseUrl overrides', () => {
   beforeEach(() => {
@@ -238,6 +238,84 @@ describe('ConfigParser environment mode', () => {
 
     expect(config.ai.model.modelId).toBe(ConfigParser.recommendedModels().openrouter.model);
     expect(config.ai.agenticModel.modelId).toBe('openai/gpt-oss-120b');
+  });
+
+  it('fills every role from ai.recommendedModels in a config file', async () => {
+    const originalLoadConfigModule = (parser as any).loadConfigModule;
+    (parser as any).findConfigFile = () => '/virtual/explorbot.config.ts';
+    (parser as any).loadConfigModule = async () => ({
+      default: {
+        playwright: { url: 'https://file.example.com', browser: 'chromium' },
+        ai: { model: null, recommendedModels: 'openrouter' },
+      },
+    });
+
+    try {
+      const config = await parser.loadConfig();
+      const recommended = ConfigParser.recommendedModels().openrouter;
+
+      expect(config.ai.model.modelId).toBe(recommended.model);
+      expect(config.ai.visionModel.modelId).toBe(recommended.visionModel);
+      expect(config.ai.agenticModel.modelId).toBe(recommended.agenticModel);
+      expect(config.ai.decisionModel).toEqual({ provider: 'openrouter', model: recommended.decisionModel });
+    } finally {
+      (parser as any).loadConfigModule = originalLoadConfigModule;
+    }
+  });
+
+  it('lets an explicit role in the config file override ai.recommendedModels', async () => {
+    const originalLoadConfigModule = (parser as any).loadConfigModule;
+    (parser as any).findConfigFile = () => '/virtual/explorbot.config.ts';
+    (parser as any).loadConfigModule = async () => ({
+      default: {
+        playwright: { url: 'https://file.example.com', browser: 'chromium' },
+        ai: { model: null, recommendedModels: 'openrouter', agenticModel: 'groq/openai/gpt-oss-120b' },
+      },
+    });
+
+    try {
+      const config = await parser.loadConfig();
+      const recommended = ConfigParser.recommendedModels().openrouter;
+
+      expect(config.ai.model.modelId).toBe(recommended.model);
+      expect(config.ai.visionModel.modelId).toBe(recommended.visionModel);
+      expect(config.ai.agenticModel.modelId).toBe('openai/gpt-oss-120b');
+    } finally {
+      (parser as any).loadConfigModule = originalLoadConfigModule;
+    }
+  });
+
+  it('leaves roles unset when ai.recommendedModels has no recommendation for them', async () => {
+    const originalRecommended = (ConfigParser as any).recommended;
+    (ConfigParser as any).recommended = { groq: { model: 'openai/gpt-oss-20b' } };
+    const ai = { model: null, recommendedModels: 'groq' };
+
+    try {
+      await resolveConfigModels(ai);
+    } finally {
+      (ConfigParser as any).recommended = originalRecommended;
+    }
+
+    expect(ai.model.modelId).toBe('openai/gpt-oss-20b');
+    expect(ai.visionModel).toBeUndefined();
+    expect(ai.agenticModel).toBeUndefined();
+  });
+
+  it('rejects ai.recommendedModels for a provider without recommendations', async () => {
+    const originalLoadConfigModule = (parser as any).loadConfigModule;
+    (parser as any).findConfigFile = () => '/virtual/explorbot.config.ts';
+    (parser as any).loadConfigModule = async () => ({
+      default: {
+        playwright: { url: 'https://file.example.com', browser: 'chromium' },
+        ai: { model: null, recommendedModels: 'nosuchprovider' },
+      },
+    });
+
+    try {
+      await expect(parser.loadConfig()).rejects.toThrow(/No recommended models for "nosuchprovider"/);
+    } finally {
+      (parser as any).loadConfigModule = originalLoadConfigModule;
+    }
   });
 
   it('leaves other roles unset when an explicit model id is given', async () => {

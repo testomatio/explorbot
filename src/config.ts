@@ -169,6 +169,7 @@ interface AgentsConfig {
 
 interface AIConfig {
   model: any;
+  recommendedModels?: string;
   apiKey?: string;
   config?: Record<string, any>;
   langfuse?: {
@@ -890,9 +891,32 @@ export async function resolveConfigModels(ai?: AIConfig): Promise<void> {
     if (typeof ai[role] === 'string') ai[role] = await resolveModel(ai[role], role);
   }
 
+  await fillRecommendedModels(ai);
+
   for (const agent of Object.values(ai.agents || {})) {
     if (typeof agent?.model === 'string') agent.model = await resolveModel(agent.model);
   }
+}
+
+async function fillRecommendedModels(ai: AIConfig): Promise<void> {
+  const provider = ai.recommendedModels;
+  if (!provider) return;
+
+  const recommended = ConfigParser.recommendedModels()[provider];
+  if (!recommended) {
+    throw new Error(`No recommended models for "${provider}". Use a provider with recommendations: ${Object.keys(ConfigParser.recommendedModels()).join(', ')}`);
+  }
+
+  for (const role of MODEL_ROLES) {
+    if (ai[role]) continue;
+    if (!recommended[role]) continue;
+    ai[role] = await resolveModel(provider, role);
+  }
+
+  if (!ai.decisionModel && recommended.decisionModel) ai.decisionModel = { provider, model: recommended.decisionModel };
+
+  const missing = missingModelRoles(provider);
+  if (missing.length) tag('warning').log(`No recommended ${missing.join(' and ')} for ${provider} — set them explicitly as "provider/model-id"`);
 }
 
 export function resolveLangfuse(ai?: AIConfig): void {
