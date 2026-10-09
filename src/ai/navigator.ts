@@ -20,6 +20,7 @@ import { loop, pause } from '../utils/loop.js';
 import { RulesLoader } from '../utils/rules-loader.ts';
 import { normalizeInlineText } from '../utils/strings.ts';
 import { extractStatePath, isSameHostFamily, matchesNavigationUrl } from '../utils/url-matcher.js';
+import type { UrlFilter } from '../utils/url-filter.ts';
 import type { Agent, AgentDeps } from './agent.js';
 import type { Conversation } from './conversation.js';
 import { type Decision, JUDGE_PAGE_CAP, type Judge, UNDECIDED } from './judge.ts';
@@ -564,7 +565,7 @@ class Navigator implements Agent {
     return { learnExperience: createLearnExperienceTool({ getExperienceTracker: () => this.experienceTracker, getState }) };
   }
 
-  async freeSail(opts?: { strategy?: 'deep' | 'shallow'; scope?: string; visitedUrls?: Set<string> }, actionResult?: ActionResult): Promise<{ target: string; reason: string } | null> {
+  async freeSail(opts?: { strategy?: 'deep' | 'shallow'; scope?: string; visitedUrls?: Set<string>; urlFilter?: UrlFilter }, actionResult?: ActionResult): Promise<{ target: string; reason: string } | null> {
     const stateManager = this.stateManager;
     const state = stateManager.getCurrentState();
     if (!state) {
@@ -611,6 +612,12 @@ class Navigator implements Agent {
     let scopeInstruction = '';
     if (opts?.scope) {
       scopeInstruction = `IMPORTANT: Only suggest URLs that start with "${opts.scope}". Do not suggest URLs outside this scope.`;
+    }
+    if (opts?.urlFilter?.include.length) {
+      scopeInstruction += `\nOnly suggest URLs matching one of these patterns: ${opts.urlFilter.include.join(', ')}`;
+    }
+    if (opts?.urlFilter?.exclude.length) {
+      scopeInstruction += `\nNever suggest URLs matching these patterns: ${opts.urlFilter.exclude.join(', ')}`;
     }
 
     const prompt = dedent`
@@ -662,6 +669,11 @@ class Navigator implements Agent {
 
         if (opts?.scope && !target.startsWith(opts.scope)) {
           conversation.addUserText(`"${target}" is outside scope "${opts.scope}". Suggest a URL within scope.`);
+          return;
+        }
+
+        if (opts?.urlFilter && !opts.urlFilter.allows(target)) {
+          conversation.addUserText(`"${target}" does not pass the URL filter. Suggest a URL that does.`);
           return;
         }
 
