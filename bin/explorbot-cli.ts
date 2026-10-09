@@ -23,6 +23,8 @@ import { isVerboseMode, log, setPreserveConsoleLogs, setQuietMode, tag } from '.
 import { jsonToTable } from '../src/utils/markdown-parser.js';
 import { parseMarkdownToTerminal } from '../src/utils/markdown-terminal.js';
 import { type NextStepSection, printNextSteps, relativeToCwd } from '../src/utils/next-steps.ts';
+import { readCliSitemap } from '../src/utils/sitemap.ts';
+import { UrlFilter } from '../src/utils/url-filter.ts';
 
 const program = new Command();
 const cli = getCliName();
@@ -153,8 +155,10 @@ addCommonOptions(program.command('start [path]').description('Start web explorat
 
 addCommonOptions(
   program
-    .command('explore <path>')
+    .command('explore [path]')
     .description('Explore a page autonomously and run invented scenarios')
+    .option('--sitemap <source>', 'Explore every page listed in a sitemap: file path, URL, or - for stdin (a piped stdin is read automatically)')
+    .option('--url-filter <spec>', 'Pick pages to explore: keys filter|exclude|limit, plus sort:priority|lastmod for a sitemap, e.g. "filter:/admin/*;exclude:/admin/logs/*;limit:20"')
     .option('--max-tests <count>', 'Maximum number of tests to run')
     .option('--max-duration <minutes>', 'Wall-clock budget in minutes for the whole run; wraps up before the limit is hit')
     .option('--focus <feature>', 'Focus area for exploration')
@@ -162,11 +166,15 @@ addCommonOptions(
     .option('--dry-run', 'Mark picked tests as skipped without executing or generating new ones')
 ).action(async (explorePath, options) => {
   try {
-    const explorBot = new ExplorBot(buildExplorBotOptions(explorePath, options));
+    const urlFilter = new UrlFilter(options.urlFilter);
+    const sitemapUrls = await readCliSitemap(explorePath, options.sitemap, urlFilter);
+    const explorBot = new ExplorBot(buildExplorBotOptions(explorePath || sitemapUrls?.[0], options));
     await explorBot.start();
-    await explorBot.visit(explorePath);
+    if (explorePath) await explorBot.visit(explorePath);
     const { ExploreCommand } = await import('../src/commands/explore-command.js');
     const cmd = new ExploreCommand(explorBot);
+    cmd.sitemapUrls = sitemapUrls;
+    cmd.urlFilter = urlFilter;
     if (options.maxTests) cmd.maxTests = Number.parseInt(options.maxTests, 10);
     if (options.maxDuration) cmd.maxDurationMinutes = Number.parseInt(options.maxDuration, 10);
     else if (process.env.EXPLORBOT_MAX_DURATION) cmd.maxDurationMinutes = Number.parseInt(process.env.EXPLORBOT_MAX_DURATION, 10);
@@ -454,10 +462,13 @@ addCommonOptions(
     .option('--scope <prefix>', 'Restrict navigation to URL prefix')
     .option('--max-tests <count>', 'Maximum number of tests to run')
     .option('--max-duration <minutes>', 'Wall-clock budget in minutes for the whole run')
+    .option('--url-filter <spec>', 'Pick pages to explore: keys filter|exclude|limit, e.g. "filter:/admin/*;exclude:/admin/logs/*;limit:20"')
 ).action(async (startUrl, options) => {
   const explorBot = new ExplorBot(buildExplorBotOptions(startUrl || '/', options));
   await explorBot.start();
-  const args = [options.deep && '--deep', options.shallow && '--shallow', options.scope && `--scope ${options.scope}`, options.maxTests && `--max-tests ${options.maxTests}`, options.maxDuration && `--max-duration ${options.maxDuration}`].filter(Boolean).join(' ');
+  const args = [options.deep && '--deep', options.shallow && '--shallow', options.scope && `--scope ${options.scope}`, options.maxTests && `--max-tests ${options.maxTests}`, options.maxDuration && `--max-duration ${options.maxDuration}`, options.urlFilter && `--url-filter "${options.urlFilter}"`]
+    .filter(Boolean)
+    .join(' ');
   const { FreesailCommand } = await import('../src/commands/freesail-command.js');
   const cmd = new FreesailCommand(explorBot);
   await cmd.execute(args);

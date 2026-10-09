@@ -4,6 +4,7 @@ import { normalizeUrl } from '../state-manager.js';
 import { Stats } from '../stats.js';
 import { tag } from '../utils/logger.js';
 import { loop } from '../utils/loop.js';
+import { UrlFilter } from '../utils/url-filter.ts';
 import { BaseCommand } from './base-command.js';
 import { DEADLINE_RESERVE_MS, DEADLINE_TEST_ALLOWANCE_MS, ExploreCommand } from './explore-command.js';
 
@@ -18,6 +19,7 @@ export class FreesailCommand extends BaseCommand {
     { flags: '--scope <url>', description: 'Limit navigation to URLs starting with this prefix' },
     { flags: '--max-tests <number>', description: 'Maximum number of tests to run' },
     { flags: '--max-duration <number>', description: 'Wall-clock budget in minutes for the whole run' },
+    { flags: '--url-filter <spec>', description: 'Pick pages to explore: keys filter|exclude|limit, e.g. "filter:/admin/*;exclude:/admin/logs/*;limit:20"' },
   ];
 
   async execute(args: string): Promise<void> {
@@ -27,6 +29,7 @@ export class FreesailCommand extends BaseCommand {
     if (opts.deep) strategy = 'deep';
     if (opts.shallow) strategy = 'shallow';
     const scope = opts.scope as string | undefined;
+    const urlFilter = new UrlFilter(opts.urlFilter as string | undefined);
     const maxTests = opts.maxTests ? Number.parseInt(opts.maxTests as string, 10) : undefined;
     const maxDuration = opts.maxDuration ? Number.parseInt(opts.maxDuration as string, 10) : undefined;
     let hardDeadlineAt: number | undefined;
@@ -55,6 +58,7 @@ export class FreesailCommand extends BaseCommand {
           const exploreCmd = new ExploreCommand(this.explorBot);
           if (maxTests != null) exploreCmd.maxTests = maxTests - testsRun;
           if (hardDeadlineAt != null) exploreCmd.hardDeadlineAt = hardDeadlineAt;
+          exploreCmd.urlFilter = urlFilter;
           await exploreCmd.execute('');
 
           const plan = this.explorBot.getCurrentPlan();
@@ -65,7 +69,7 @@ export class FreesailCommand extends BaseCommand {
 
         const navigator = this.explorBot.agentNavigator();
         const visitedUrls = stateManager.getAllVisitedUrls();
-        const suggestion = await navigator.freeSail({ strategy, scope, visitedUrls });
+        const suggestion = await navigator.freeSail({ strategy, scope, visitedUrls, urlFilter });
         if (!suggestion) {
           tag('info').log('No navigation suggestion available');
           ctx.stop();
@@ -73,6 +77,11 @@ export class FreesailCommand extends BaseCommand {
 
         if (scope && !suggestion.target.startsWith(scope)) {
           tag('warning').log(`Suggestion ${suggestion.target} is outside scope ${scope}, skipping`);
+          ctx.stop();
+        }
+
+        if (!urlFilter.admit(suggestion.target)) {
+          tag('info').log(`URL filter allows no more pages (${suggestion.target} not admitted); stopping exploration`);
           ctx.stop();
         }
 
