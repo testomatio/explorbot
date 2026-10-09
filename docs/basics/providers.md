@@ -4,6 +4,8 @@ Explorbot connects to AI providers through the [Vercel AI SDK](https://sdk.verce
 
 Every provider below is set up the classical way: install its package, import it, build the client. Explorbot bundles some of these packages — for those you can skip the install and name the model as `'provider/model-id'` instead. See [Getting Started](./getting-started.md#2-configure) for that list and the two styles side by side.
 
+A third, shortest style names just the provider: `ai: { recommendedModels: 'openrouter' }` fills every unset role from that provider's bundled recommendations. An explicit role set alongside it wins, so `recommendedModels` with a pinned `agenticModel` mixes both styles.
+
 > The `export default` config block inside each `<!-- START/END provider -->` marker is generated from [`models.json`](../../models.json). After editing that file, run `bunosh docs:sync`. Everything else — including the import blocks — is hand-written.
 
 ## Requirements

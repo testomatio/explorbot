@@ -15,14 +15,16 @@ interface InitWizardProps {
   onLocal: () => void;
   onComplete: () => void;
   onCancel: () => void;
-  onLocalProvider?: (provider: string) => void;
+  onLocalSetup?: (setup: { provider: string; apiKey: string; url: string }) => void;
 }
 
-const InitWizard: React.FC<InitWizardProps> = ({ mode, globalConfigExists, onLocal, onComplete, onCancel, onLocalProvider }) => {
-  const [step, setStep] = useState<'target' | 'provider' | 'key' | 'validate'>(mode === 'choose' ? 'target' : 'provider');
+const InitWizard: React.FC<InitWizardProps> = ({ mode, globalConfigExists, onLocal, onComplete, onCancel, onLocalSetup }) => {
+  const [step, setStep] = useState<'target' | 'provider' | 'key' | 'validate' | 'url'>(mode === 'choose' ? 'target' : 'provider');
   const [targetIndex, setTargetIndex] = useState(0);
   const [providerIndex, setProviderIndex] = useState(0);
   const [apiKey, setApiKey] = useState('');
+  const [url, setUrl] = useState('');
+  const [urlError, setUrlError] = useState('');
   const [status, setStatus] = useState('');
   const [error, setError] = useState('');
 
@@ -30,6 +32,11 @@ const InitWizard: React.FC<InitWizardProps> = ({ mode, globalConfigExists, onLoc
   const envKey = PROVIDERS[provider].envKey;
 
   const save = () => {
+    if (mode === 'local') {
+      setStatus('');
+      setStep('url');
+      return;
+    }
     writeGlobalConfig(provider, apiKey.trim());
     onComplete();
   };
@@ -61,7 +68,7 @@ const InitWizard: React.FC<InitWizardProps> = ({ mode, globalConfigExists, onLoc
       return;
     }
 
-    if (step === 'key') return;
+    if (step === 'key' || step === 'url') return;
 
     if (key.escape) {
       onCancel();
@@ -79,10 +86,7 @@ const InitWizard: React.FC<InitWizardProps> = ({ mode, globalConfigExists, onLoc
     if (step === 'provider') {
       if (key.upArrow) setProviderIndex((index) => Math.max(0, index - 1));
       if (key.downArrow) setProviderIndex((index) => Math.min(PROVIDER_NAMES.length - 1, index + 1));
-      if (key.return) {
-        if (mode === 'local') onLocalProvider?.(provider);
-        else setStep('key');
-      }
+      if (key.return) setStep('key');
       return;
     }
 
@@ -147,15 +151,40 @@ const InitWizard: React.FC<InitWizardProps> = ({ mode, globalConfigExists, onLoc
           {error && (
             <Box flexDirection="column">
               <Text color="red">{error}</Text>
-              <Text dimColor>r: re-enter the key | n: save anyway</Text>
+              <Text dimColor>r: re-enter the key | n: continue anyway</Text>
             </Box>
           )}
         </Box>
       )}
 
+      {step === 'url' && (
+        <Box flexDirection="column">
+          <Text>
+            What is the URL of the web application to test? <Text dimColor>(written to web.url in the config)</Text>
+          </Text>
+          <Box borderStyle="single" borderColor="blue" paddingX={1}>
+            <InputReadline
+              value={url}
+              onChange={setUrl}
+              onSubmit={() => {
+                if (!URL.canParse(url.trim())) {
+                  setUrlError('Enter a full URL, e.g. http://localhost:3000');
+                  return;
+                }
+                onLocalSetup?.({ provider, apiKey: apiKey.trim(), url: url.trim() });
+              }}
+              placeholder="http://localhost:3000"
+              isActive
+              showPrompt={false}
+            />
+          </Box>
+          {urlError && <Text color="red">{urlError}</Text>}
+        </Box>
+      )}
+
       <Box marginTop={1}>
         <Text dimColor>
-          Config goes to {mode === 'local' ? 'the current directory' : globalDir()} | {step === 'key' ? 'Enter: continue' : '↑↓: select | Enter: confirm'} | Ctrl+C: exit
+          Config goes to {mode === 'local' ? 'the current directory' : globalDir()} | {step === 'key' || step === 'url' ? 'Enter: continue' : '↑↓: select | Enter: confirm'} | Ctrl+C: exit
         </Text>
       </Box>
     </Box>

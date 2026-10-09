@@ -553,6 +553,56 @@ describe('explorbot init', () => {
     }
   });
 
+  it('prints the demo command, extension and docs links without a config to read', () => {
+    const consoleSpy = spyOn(console, 'log').mockImplementation(() => {});
+    process.env.OPENROUTER_API_KEY = '';
+
+    try {
+      runInitCommand({ path: workDir });
+
+      const output = consoleSpy.mock.calls.flat().join('\n');
+      expect(output).toContain('explore https://todomvc.com/examples/react/dist/');
+      expect(output).toContain('https://testomat.ai/explorbot');
+      expect(output).toContain('https://testomat.ai/docs/explorbot');
+      expect(output).toContain('Add your API key to OPENROUTER_API_KEY= in .env');
+      expect(output).toContain('Set your application URL in web.url:');
+    } finally {
+      consoleSpy.mockRestore();
+    }
+  });
+
+  it('writes the app url into the config and the api key into .env', () => {
+    const consoleSpy = spyOn(console, 'log').mockImplementation(() => {});
+
+    try {
+      runInitCommand({ path: workDir, provider: 'groq', apiKey: 'test-key', url: 'http://localhost:3000' });
+
+      const config = readFileSync(join(workDir, 'explorbot.config.js'), 'utf8');
+      const env = readFileSync(join(workDir, '.env'), 'utf8');
+      expect(config).toContain("url: 'http://localhost:3000'");
+      expect(config).toContain("recommendedModels: 'groq'");
+      expect(env).toContain('GROQ_API_KEY=test-key');
+      expect(env).toContain('# OPENROUTER_API_KEY=');
+    } finally {
+      consoleSpy.mockRestore();
+    }
+  });
+
+  it('merges the api key into an existing .env without clobbering other lines', () => {
+    const consoleSpy = spyOn(console, 'log').mockImplementation(() => {});
+    writeFileSync(join(workDir, '.env'), '# AI provider API keys\nOPENAI_API_KEY=keep-me\n', 'utf8');
+
+    try {
+      runInitCommand({ path: workDir, provider: 'groq', apiKey: 'test-key' });
+
+      const env = readFileSync(join(workDir, '.env'), 'utf8');
+      expect(env).toContain('OPENAI_API_KEY=keep-me');
+      expect(env).toContain('GROQ_API_KEY=test-key');
+    } finally {
+      consoleSpy.mockRestore();
+    }
+  });
+
   it('writes the global config and env file without the wizard', async () => {
     await runInit({ global: true, provider: 'groq', apiKey: 'test-key' });
 
@@ -568,7 +618,7 @@ describe('explorbot init', () => {
 
     const config = readFileSync(join(workDir, 'explorbot.config.js'), 'utf8');
     const env = readFileSync(join(workDir, '.env'), 'utf8');
-    expect(config).toContain(`model: 'anthropic/${ConfigParser.recommendedModels().anthropic.model}'`);
+    expect(config).toContain("recommendedModels: 'anthropic'");
     expect(env).toContain('ANTHROPIC_API_KEY=');
     expect(env).toContain('# OPENROUTER_API_KEY=');
     expect(existsSync(join(home, '.explorbot', 'config.js'))).toBe(false);
@@ -614,9 +664,9 @@ describe('explorbot init', () => {
     expect(wizard.lastFrame()).toContain('•');
   });
 
-  it('ends the local flow with the picked provider and no key entry', async () => {
+  it('collects the provider, api key and app url in the local flow', async () => {
     const noop = () => {};
-    let picked: string | null = null;
+    let setup: { provider: string; apiKey: string; url: string } | null = null;
     const wizard = render(
       React.createElement(InitWizard, {
         mode: 'local',
@@ -624,8 +674,8 @@ describe('explorbot init', () => {
         onLocal: noop,
         onComplete: noop,
         onCancel: noop,
-        onLocalProvider: (provider: string) => {
-          picked = provider;
+        onLocalSetup: (value) => {
+          setup = value;
         },
       })
     );
@@ -634,14 +684,70 @@ describe('explorbot init', () => {
     expect(wizard.lastFrame()).toContain('the current directory');
 
     wizard.stdin.write('\r');
+    await waitForFrame(wizard, 'Enter the API key');
+    await Bun.sleep(50);
 
-    expect(picked).toBe(Object.keys(PROVIDERS)[0]);
+    wizard.stdin.write('sk-local-key');
+    await Bun.sleep(50);
+    wizard.stdin.write('\r');
+    await waitForFrame(wizard, 'Check the key');
+    await Bun.sleep(50);
+
+    wizard.stdin.write('n');
+    await waitForFrame(wizard, 'What is the URL');
+    await Bun.sleep(50);
+
+    wizard.stdin.write('http://localhost:3000');
+    await Bun.sleep(50);
+    wizard.stdin.write('\r');
+    await Bun.sleep(50);
+
+    expect(setup).toEqual({ provider: Object.keys(PROVIDERS)[0], apiKey: 'sk-local-key', url: 'http://localhost:3000' });
+  });
+
+  it('rejects an invalid url and stays on the url step', async () => {
+    const noop = () => {};
+    let setup: { provider: string; apiKey: string; url: string } | null = null;
+    const wizard = render(
+      React.createElement(InitWizard, {
+        mode: 'local',
+        globalConfigExists: false,
+        onLocal: noop,
+        onComplete: noop,
+        onCancel: noop,
+        onLocalSetup: (value) => {
+          setup = value;
+        },
+      })
+    );
+
+    wizard.stdin.write('\r');
+    await waitForFrame(wizard, 'Enter the API key');
+    await Bun.sleep(50);
+
+    wizard.stdin.write('sk-key');
+    await Bun.sleep(50);
+    wizard.stdin.write('\r');
+    await waitForFrame(wizard, 'Check the key');
+    await Bun.sleep(50);
+
+    wizard.stdin.write('n');
+    await waitForFrame(wizard, 'What is the URL');
+    await Bun.sleep(50);
+
+    wizard.stdin.write('not-a-url');
+    await Bun.sleep(50);
+    wizard.stdin.write('\r');
+    await waitForFrame(wizard, 'Enter a full URL');
+
+    expect(setup).toBeNull();
+    expect(wizard.lastFrame()).toContain('What is the URL');
   });
 
   it('cancels the local provider flow without picking a provider', () => {
     const noop = () => {};
     let cancelled = false;
-    let picked: string | null = null;
+    let setup: { provider: string; apiKey: string; url: string } | null = null;
     const wizard = render(
       React.createElement(InitWizard, {
         mode: 'local',
@@ -651,8 +757,8 @@ describe('explorbot init', () => {
         onCancel: () => {
           cancelled = true;
         },
-        onLocalProvider: (provider: string) => {
-          picked = provider;
+        onLocalSetup: (value) => {
+          setup = value;
         },
       })
     );
@@ -660,7 +766,7 @@ describe('explorbot init', () => {
     wizard.stdin.write('\u001b');
 
     expect(cancelled).toBe(true);
-    expect(picked).toBeNull();
+    expect(setup).toBeNull();
   });
 
   it('offers both installations and marks global as installed', () => {

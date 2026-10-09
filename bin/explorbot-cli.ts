@@ -491,6 +491,7 @@ program
   .option('-g, --global', 'Configure explorbot in ~/.explorbot to run from anywhere')
   .option('--provider <name>', `AI provider for the global config: ${Object.keys(PROVIDERS).join(', ')}`)
   .option('--api-key <key>', 'API key stored in ~/.explorbot/.env')
+  .option('--url <url>', 'Web application URL written to web.url in the local config')
   .action(async (options) => {
     try {
       const { runInit } = await import('../src/commands/init-command.js');
@@ -501,6 +502,7 @@ program
         global: options.global,
         provider: options.provider,
         apiKey: options.apiKey,
+        url: options.url,
       });
     } catch (error) {
       console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');

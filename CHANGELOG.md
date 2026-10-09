@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-10-09
+
+### Configuration
+- **`ai.recommendedModels`** — Name a provider and every model role takes its bundled recommendations: `ai: { recommendedModels: 'openrouter' }` fills `model`, `visionModel`, `agenticModel` and `decisionModel`. An explicit role set alongside it wins, so one pinned model mixes freely with the recommendations. `explorbot init` now writes this instead of listing model ids. Default: unset — roles behave as before.
+
+### Changes
+- `explorbot init` in a terminal is now a full setup wizard: it asks for the AI provider, the API key (optionally checked with one test AI call), and the app's URL, then writes everything itself — the key into `.env`, the URL into `web.url`. No manual file editing is left.
+- Outside a terminal, init prints the exact paths of the files that still need attention — the API key in `.env` and the app URL in the config — instead of a generic checklist. The non-interactive path accepts `--url` and `--api-key`, so CI and agents get a complete config in one command:
+  ```bash
+  explorbot init --provider openrouter --api-key sk-... --url https://app.example.com
+  ```
+- Init now ends with a "What's next" block: a demo command to watch Explorbot work on a sample app (`npx explorbot explore https://todomvc.com/examples/react/dist/`), commands to explore your own app, the knowledge hint for logins, and links to the VS Code extension and the docs at testomat.ai.
+- An `explore` run ends with an "Explore more" section suggesting `explorbot explore /` to cover the whole site, plus a link to the docs.
+
 ## 2026-10-06
 
 ### Configuration
