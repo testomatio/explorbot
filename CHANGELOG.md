@@ -1,5 +1,40 @@
 # Changelog
 
+## 2026-10-10
+
+### New CLI Options
+- **`--sitemap <source>`** on `explore` — Explores every page listed in a sitemap, one after another, instead of discovering sub-pages on its own. The source is a file, a URL, or `-` for stdin; a sitemap piped to stdin is read automatically when no page path is given, so the path argument is now optional. XML sitemaps, sitemap indexes and plain-text lists of URLs are supported. Pages on other sites are skipped with a warning.
+  ```bash
+  explorbot explore --sitemap sitemap.xml
+  explorbot explore --sitemap https://app.example.com/sitemap.xml
+  explorbot explore < sitemap.xml
+  ```
+- **`--sitemap <source>`** on `docs collect` — Documents only the pages listed in a sitemap; links found on those pages are not followed. `--max-pages` and the `includePaths`/`excludePaths`/`deniedPathSegments` settings still apply.
+  ```bash
+  explorbot docs collect --sitemap sitemap.xml --max-pages 50
+  cat sitemap.xml | explorbot docs collect
+  ```
+- **`--url-filter <spec>`** on `explore`, `freesail` and `docs collect` — Picks which pages get explored, written as `key:value` pairs separated by `;`, like `--configure`. `filter:<pattern>` keeps only matching pages, `exclude:<pattern>` drops matching pages (both repeatable, same patterns as knowledge `url:`), and `limit:<n>` caps how many pages are explored beyond the start page. With `--sitemap`, `sort:priority` or `sort:lastmod` orders the pages by the sitemap's priority or last-modified date. The start page is always explored. In `freesail`, the limit covers the whole run.
+  ```bash
+  explorbot explore / --url-filter "filter:/admin/*;exclude:/admin/logs/*;limit:10"
+  explorbot freesail / --url-filter "exclude:/billing/*;limit:20"
+  explorbot explore --sitemap sitemap.xml --url-filter "filter:/admin/*;sort:priority;limit:20"
+  ```
+
+### New TUI Commands
+- **`/explore --sitemap <source> --url-filter <spec>`** — Same as the CLI options above, from the TUI.
+  ```
+  /explore --sitemap sitemap.xml
+  /explore --url-filter "filter:/settings/*;limit:5"
+  ```
+- **`/freesail --url-filter <spec>`** — Keeps free sailing on pages that pass the filter and stops once its limit is used.
+  ```
+  /freesail --url-filter "exclude:/billing/*;limit:20"
+  ```
+
+### Changes
+- [Navigator] While free sailing, the Navigator is told which URL patterns to stay within and is asked for another page when it suggests one the URL filter rejects.
+
 ## 2026-10-06
 
 ### Configuration
