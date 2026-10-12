@@ -107,6 +107,38 @@ describe('Pilot settling outcomes against the final page', () => {
   });
 });
 
+describe('Pilot settling outcomes from the run log', () => {
+  it('settles each outcome by its own note, not by whether a sibling passed', async () => {
+    const pilot = buildPilot({ hasVision: () => false });
+    const task = new Test('add a row', 'normal', ['the row is saved', 'the row is listed'], '/rows');
+    task.addNote('the row is saved', TestResult.PASSED);
+    task.addNote('the row is listed', TestResult.FAILED);
+
+    const settled = await pilot.settleExpectations(task);
+
+    expect(settled).toEqual([
+      { text: 'the row is saved', status: 'passed' },
+      { text: 'the row is listed', status: 'failed' },
+    ]);
+  });
+
+  it('shows the scenario to the model so an outcome can be tied to what the scenario chose', async () => {
+    const asked: string[] = [];
+    const pilot = buildPilot({
+      hasVision: () => false,
+      getAgenticModel: () => 'text-model',
+      generateObject: async (messages: any[]) => {
+        asked.push(messages[0].content);
+        return { object: { outcomes: [{ expectation: 'that item is listed', status: 'failed' }] } };
+      },
+    });
+
+    await pilot.settleExpectations(new Test('pick the first item and add it', 'normal', ['that item is listed'], '/items'));
+
+    expect(asked[0]).toContain('pick the first item and add it');
+  });
+});
+
 describe('Pilot settling outcomes via the judge', () => {
   const judgeHappened = (settles: string) => ({
     decide: async (question: string, options: string[]) => {

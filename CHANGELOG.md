@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-10-13
+
+### Changes
+- [Pilot] Expected outcomes are now judged against the scenario they belong to. An outcome that names something the scenario chooses ("the user I picked") no longer passes when the run took a different route or never managed to choose it — `prima check` reports it FAILED instead of PASSED.
+- [Pilot] An expected outcome the run recorded as failed is no longer reported as passed just because another outcome of the same test passed.
+
 ## 2026-10-10
 
 ### New CLI Options
