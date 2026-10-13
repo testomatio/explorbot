@@ -11,13 +11,13 @@ import { deepMerge } from './utils/merge.js';
 import { log, tag } from './utils/logger.js';
 
 export const PROVIDERS: Record<string, ProviderInfo> = {
-  openai: { envKey: 'OPENAI_API_KEY', load: async () => (await import('@ai-sdk/openai')).createOpenAI() },
-  anthropic: { envKey: 'ANTHROPIC_API_KEY', load: async () => (await import('@ai-sdk/anthropic')).createAnthropic() },
-  google: { envKey: 'GOOGLE_GENERATIVE_AI_API_KEY', load: async () => (await import('@ai-sdk/google')).createGoogleGenerativeAI() },
-  groq: { envKey: 'GROQ_API_KEY', load: async () => (await import('@ai-sdk/groq')).createGroq() },
-  mistral: { envKey: 'MISTRAL_API_KEY', load: async () => (await import('@ai-sdk/mistral')).createMistral() },
-  openrouter: { envKey: 'OPENROUTER_API_KEY', load: async () => (await import('@openrouter/ai-sdk-provider')).createOpenRouter() },
-  sambanova: { envKey: 'SAMBANOVA_API_KEY', load: async () => (await import('sambanova-ai-provider')).createSambaNova() },
+  openai: { envKey: 'OPENAI_API_KEY', keyUrl: 'https://platform.openai.com/api-keys', load: async () => (await import('@ai-sdk/openai')).createOpenAI() },
+  anthropic: { envKey: 'ANTHROPIC_API_KEY', keyUrl: 'https://console.anthropic.com/settings/keys', load: async () => (await import('@ai-sdk/anthropic')).createAnthropic() },
+  google: { envKey: 'GOOGLE_GENERATIVE_AI_API_KEY', keyUrl: 'https://aistudio.google.com/apikey', load: async () => (await import('@ai-sdk/google')).createGoogleGenerativeAI() },
+  groq: { envKey: 'GROQ_API_KEY', keyUrl: 'https://console.groq.com/keys', load: async () => (await import('@ai-sdk/groq')).createGroq() },
+  mistral: { envKey: 'MISTRAL_API_KEY', keyUrl: 'https://console.mistral.ai/api-keys', load: async () => (await import('@ai-sdk/mistral')).createMistral() },
+  openrouter: { envKey: 'OPENROUTER_API_KEY', keyUrl: 'https://openrouter.ai/keys', load: async () => (await import('@openrouter/ai-sdk-provider')).createOpenRouter() },
+  sambanova: { envKey: 'SAMBANOVA_API_KEY', keyUrl: 'https://cloud.sambanova.ai/apis', load: async () => (await import('sambanova-ai-provider')).createSambaNova() },
 };
 
 export const MODEL_ROLES: ModelRole[] = ['model', 'visionModel', 'agenticModel'];
@@ -1018,6 +1018,7 @@ interface ConfiguredModel {
 
 interface ProviderInfo {
   envKey: string;
+  keyUrl: string;
   load: () => Promise<(modelId: string) => any>;
 }
 

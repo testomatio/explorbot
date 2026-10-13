@@ -42,8 +42,9 @@ export default config;
 }
 
 export function envTemplate(provider: string): string {
+  const { keyUrl } = PROVIDERS[provider];
   const keyLines = Object.entries(PROVIDERS).map(([name, { envKey }]) => {
-    if (name === provider) return `${envKey}=`;
+    if (name === provider) return `# Create a key at ${keyUrl} and paste it after '='\n${envKey}=`;
     return `# ${envKey}=`;
   });
 
@@ -98,7 +99,7 @@ export function writeGlobalConfig(provider: string, apiKey?: string): void {
     tag('warning').log(`No recommended ${missing.join(' and ')} for ${provider} — set the model ids in ${globalConfigPath()}`);
   }
   if (!apiKey && !process.env[envKey]) {
-    tag('warning').log(`Add your API key to ${globalEnvPath()}`);
+    printApiKeySteps(provider, globalEnvPath());
   }
 
   log('');
@@ -167,7 +168,7 @@ export function runInitCommand(options: InitCommandOptions): void {
       tag('success').log(`${figureSet.tick} Stored ${envKey} in ${relativeToCwd(envPath)}`);
     }
     if (!options.apiKey && !process.env[envKey]) {
-      tag('warning').log(`Add your API key to ${envKey}= in ${relativeToCwd(envPath)}`);
+      printApiKeySteps(provider, relativeToCwd(envPath));
     }
     if (!options.url) {
       tag('warning').log(`Set your application URL in web.url: ${relativeToCwd(outPath)}`);
@@ -356,6 +357,13 @@ function writeEnvKey(key: string, value: string, envPath = globalEnvPath()): voi
   if (index >= 0 && value) lines[index] = `${key}=${value}`;
 
   writeFileSync(envPath, `${lines.join('\n').trimEnd()}\n`, 'utf8');
+}
+
+function printApiKeySteps(provider: string, envPath: string): void {
+  const { envKey, keyUrl } = PROVIDERS[provider];
+  tag('warning').log(`No API key yet — explorbot needs one to connect to ${provider}`);
+  tag('substep').log(`1. Create a key at ${keyUrl}`);
+  tag('substep').log(`2. Paste it into ${envPath}: ${envKey}=<your-key>`);
 }
 
 type LocalSetup = {

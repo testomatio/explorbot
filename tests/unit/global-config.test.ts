@@ -564,7 +564,9 @@ describe('explorbot init', () => {
       expect(output).toContain('explore https://todomvc.com/examples/react/dist/');
       expect(output).toContain('https://testomat.ai/explorbot');
       expect(output).toContain('https://testomat.ai/docs/explorbot');
-      expect(output).toContain('Add your API key to OPENROUTER_API_KEY= in .env');
+      expect(output).toContain('No API key yet — explorbot needs one to connect to openrouter');
+      expect(output).toContain('https://openrouter.ai/keys');
+      expect(output).toContain('OPENROUTER_API_KEY=<your-key>');
       expect(output).toContain('Set your application URL in web.url:');
     } finally {
       consoleSpy.mockRestore();

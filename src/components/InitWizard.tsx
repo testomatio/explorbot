@@ -136,7 +136,10 @@ const InitWizard: React.FC<InitWizardProps> = ({ mode, globalConfigExists, onLoc
       {step === 'key' && (
         <Box flexDirection="column">
           <Text>
-            Enter the API key for {provider} <Text dimColor>(stored as {envKey})</Text>
+            Enter the API key for {provider}{' '}
+            <Text dimColor>
+              (stored as {envKey}, create one at {PROVIDERS[provider].keyUrl})
+            </Text>
           </Text>
           <Box borderStyle="single" borderColor="blue" paddingX={1}>
             <InputReadline value={apiKey} onChange={setApiKey} onSubmit={() => setStep('validate')} placeholder={process.env[envKey] ? 'leave empty to keep the key from your environment' : 'paste the key'} isActive showPrompt={false} mask />
