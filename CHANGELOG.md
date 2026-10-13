@@ -1,5 +1,46 @@
 # Changelog
 
+## 2026-10-13
+
+### Changes
+- [Pilot] Expected outcomes are now judged against the scenario they belong to. An outcome that names something the scenario chooses ("the user I picked") no longer passes when the run took a different route or never managed to choose it — `prima check` reports it FAILED instead of PASSED.
+- [Pilot] An expected outcome the run recorded as failed is no longer reported as passed just because another outcome of the same test passed.
+
+## 2026-10-10
+
+### New CLI Options
+- **`--sitemap <source>`** on `explore` — Explores every page listed in a sitemap, one after another, instead of discovering sub-pages on its own. The source is a file, a URL, or `-` for stdin; a sitemap piped to stdin is read automatically when no page path is given, so the path argument is now optional. XML sitemaps, sitemap indexes and plain-text lists of URLs are supported. Pages on other sites are skipped with a warning.
+  ```bash
+  explorbot explore --sitemap sitemap.xml
+  explorbot explore --sitemap https://app.example.com/sitemap.xml
+  explorbot explore < sitemap.xml
+  ```
+- **`--sitemap <source>`** on `docs collect` — Documents only the pages listed in a sitemap; links found on those pages are not followed. `--max-pages` and the `includePaths`/`excludePaths`/`deniedPathSegments` settings still apply.
+  ```bash
+  explorbot docs collect --sitemap sitemap.xml --max-pages 50
+  cat sitemap.xml | explorbot docs collect
+  ```
+- **`--url-filter <spec>`** on `explore`, `freesail` and `docs collect` — Picks which pages get explored, written as `key:value` pairs separated by `;`, like `--configure`. `filter:<pattern>` keeps only matching pages, `exclude:<pattern>` drops matching pages (both repeatable, same patterns as knowledge `url:`), and `limit:<n>` caps how many pages are explored beyond the start page. With `--sitemap`, `sort:priority` or `sort:lastmod` orders the pages by the sitemap's priority or last-modified date. The start page is always explored. In `freesail`, the limit covers the whole run.
+  ```bash
+  explorbot explore / --url-filter "filter:/admin/*;exclude:/admin/logs/*;limit:10"
+  explorbot freesail / --url-filter "exclude:/billing/*;limit:20"
+  explorbot explore --sitemap sitemap.xml --url-filter "filter:/admin/*;sort:priority;limit:20"
+  ```
+
+### New TUI Commands
+- **`/explore --sitemap <source> --url-filter <spec>`** — Same as the CLI options above, from the TUI.
+  ```
+  /explore --sitemap sitemap.xml
+  /explore --url-filter "filter:/settings/*;limit:5"
+  ```
+- **`/freesail --url-filter <spec>`** — Keeps free sailing on pages that pass the filter and stops once its limit is used.
+  ```
+  /freesail --url-filter "exclude:/billing/*;limit:20"
+  ```
+
+### Changes
+- [Navigator] While free sailing, the Navigator is told which URL patterns to stay within and is asked for another page when it suggests one the URL filter rejects.
+
 ## 2026-10-09
 
 ### Configuration
@@ -13,6 +54,7 @@
   ```
 - Init now ends with a "What's next" block: a demo command to watch Explorbot work on a sample app (`npx explorbot explore https://todomvc.com/examples/react/dist/`), commands to explore your own app, the knowledge hint for logins, and links to the VS Code extension and the docs at testomat.ai.
 - An `explore` run ends with an "Explore more" section suggesting `explorbot explore /` to cover the whole site, plus a link to the docs.
+- Init makes it explicit how to connect the AI: the `.env` template and the missing-key warning point to the provider's key page (e.g. `https://openrouter.ai/keys`) and show the exact line to paste — `OPENROUTER_API_KEY=<your-key>`; the setup wizard shows where to create the key too.
 
 ## 2026-10-06
 

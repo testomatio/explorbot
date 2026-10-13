@@ -9,7 +9,10 @@ import { getCliName } from '../utils/cli-name.ts';
 import { ErrorPageError, getStateErrorPageError } from '../utils/error-page.ts';
 import { tag } from '../utils/logger.js';
 import { type NextStepSection, printNextSteps, relativeToCwd } from '../utils/next-steps.ts';
+import { keepSiteUrls, readSitemap } from '../utils/sitemap.ts';
+import { parseSpecPairs } from '../utils/spec.ts';
 import { safeFilename } from '../utils/strings.ts';
+import { UrlFilter } from '../utils/url-filter.ts';
 import { type ArgumentCompletion, BaseCommand, type Suggestion } from './base-command.js';
 
 const MAX_SUB_PAGE_ATTEMPTS = 30;
@@ -26,6 +29,8 @@ export class ExploreCommand extends BaseCommand {
     { flags: '--focus <feature>', description: 'Focus area for exploration' },
     { flags: '--configure <spec>', description: 'Reuse spec: keys new|from|style|subpages|pick_by|priority, e.g. "new:25%;pick_by=random;priority=critical,high"' },
     { flags: '--dry-run', description: 'Mark picked tests as skipped without executing or generating new ones' },
+    { flags: '--sitemap <source>', description: 'Explore every page listed in a sitemap (file path, URL, or - for stdin) instead of discovering sub-pages' },
+    { flags: '--url-filter <spec>', description: 'Pick pages to explore: keys filter|exclude|limit, plus sort:priority|lastmod for a sitemap, e.g. "filter:/admin/*;exclude:/admin/logs/*;limit:20"' },
   ];
   suggestions: Suggestion[] = [
     { command: 'navigate <page>', hint: 'go to another page' },
@@ -37,6 +42,8 @@ export class ExploreCommand extends BaseCommand {
   maxDurationMinutes?: number;
   hardDeadlineAt?: number;
   dryRun = false;
+  sitemapUrls?: string[];
+  urlFilter = new UrlFilter();
   private testsRun = 0;
   private deadlineLogged = false;
   private completedPlans: Plan[] = [];
@@ -57,6 +64,8 @@ export class ExploreCommand extends BaseCommand {
     if (opts.maxDuration) {
       this.maxDurationMinutes = Number.parseInt(opts.maxDuration as string, 10);
     }
+    if (opts.urlFilter) this.urlFilter = new UrlFilter(opts.urlFilter as string);
+    if (opts.sitemap) this.sitemapUrls = await readSitemap(opts.sitemap as string, this.urlFilter);
     if (this.hardDeadlineAt == null && this.maxDurationMinutes != null) {
       this.hardDeadlineAt = Date.now() + this.maxDurationMinutes * 60_000 - DEADLINE_RESERVE_MS;
     }
@@ -76,13 +85,15 @@ export class ExploreCommand extends BaseCommand {
     Stats.focus ??= feature;
     const mainUrl = this.getCurrentPageUrl();
     const error = getStateErrorPageError(this.explorBot.stateManager().getCurrentState());
-    if (error) {
+    if (error && !this.sitemapUrls) {
       tag('warning').log(error.message);
       return;
     }
 
     try {
-      if (cfg.enabled) {
+      if (this.sitemapUrls) {
+        await this.runSitemapMode(this.sitemapUrls, feature, cfg.styles);
+      } else if (cfg.enabled) {
         await this.runReuseMode(mainUrl, feature, cfg);
       } else {
         await this.runFreshMode(mainUrl, feature, cfg.styles);
@@ -133,6 +144,20 @@ export class ExploreCommand extends BaseCommand {
     if (feature || this.isLimitReached()) return;
 
     await this.discoverNewSubPages(mainPlan, mainUrl, styles, new Set());
+  }
+
+  private async runSitemapMode(sitemapUrls: string[], feature: string | undefined, styles?: string[]): Promise<void> {
+    const urls = keepSiteUrls(sitemapUrls, this.explorBot.getConfig().playwright.url);
+    tag('info').log(`Sitemap: ${urls.length} page(s) to explore`);
+    for (const url of urls) {
+      if (this.isLimitReached()) break;
+      tag('info').log(`Exploring sitemap page: ${url}`);
+      try {
+        await this.explorePage(url, feature, undefined, styles);
+      } catch (err) {
+        tag('warning').log(`Sitemap page exploration failed: ${err instanceof Error ? err.message : err}`);
+      }
+    }
   }
 
   private async runReuseMode(mainUrl: string | undefined, feature: string | undefined, cfg: ConfigureSpec): Promise<void> {
@@ -234,6 +259,7 @@ export class ExploreCommand extends BaseCommand {
       for (const subPlan of subPlans) {
         if (this.isLimitReached()) break;
         if (!subPlan.url) continue;
+        if (!this.urlFilter.admit(subPlan.url)) continue;
         try {
           if (!this.dryRun) await this.explorBot.visit(subPlan.url);
           await this.replanAndRun(subPlan.url, undefined, subPlan, cfg.styles);
@@ -264,26 +290,20 @@ export class ExploreCommand extends BaseCommand {
 
       const candidates = planner.collectSubPageCandidates(mainPlan, mainUrl || '/').filter((c) => {
         const norm = normalizeUrl(c.url);
-        return !this.failedSubPages.has(norm) && !knownUrls.has(norm);
+        return !this.failedSubPages.has(norm) && !knownUrls.has(norm) && this.urlFilter.allows(c.url);
       });
       if (candidates.length === 0) break;
 
       const pick = await planner.pickNextSubPage(candidates);
       if (!pick) break;
+      if (!this.urlFilter.admit(pick.url)) break;
 
       tag('info').log(`Exploring sub-page: ${pick.url} (${pick.reason})`);
       try {
-        await this.explorBot.visit(pick.url);
-        const errorPage = getStateErrorPageError(this.explorBot.stateManager().getCurrentState());
-        if (errorPage) {
-          tag('warning').log(`Skipping sub-page: ${errorPage.message}`);
+        const explored = await this.explorePage(pick.url, undefined, mainPlan, styles);
+        if (!explored) {
           this.failedSubPages.add(normalizeUrl(pick.url));
           continue;
-        }
-        await this.runAllStyles(pick.url, undefined, mainPlan, this.completedPlans, styles);
-        const subPlan = this.explorBot.getCurrentPlan();
-        if (subPlan?.tests.length && !this.completedPlans.includes(subPlan)) {
-          this.completedPlans.push(subPlan);
         }
         knownUrls.add(normalizeUrl(pick.url));
       } catch (err) {
@@ -291,6 +311,21 @@ export class ExploreCommand extends BaseCommand {
         tag('warning').log(`Sub-page exploration failed: ${err instanceof Error ? err.message : err}`);
       }
     }
+  }
+
+  private async explorePage(url: string, feature: string | undefined, parentPlan: Plan | undefined, styles?: string[]): Promise<boolean> {
+    await this.explorBot.visit(url);
+    const errorPage = getStateErrorPageError(this.explorBot.stateManager().getCurrentState());
+    if (errorPage) {
+      tag('warning').log(`Skipping page: ${errorPage.message}`);
+      return false;
+    }
+    await this.runAllStyles(url, feature, parentPlan, this.completedPlans, styles);
+    const plan = this.explorBot.getCurrentPlan();
+    if (plan?.tests.length && !this.completedPlans.includes(plan)) {
+      this.completedPlans.push(plan);
+    }
+    return true;
   }
 
   private async replanAndRun(pageUrl: string | undefined, feature: string | undefined, existingPlan: Plan, styles?: string[]): Promise<void> {
@@ -369,17 +404,7 @@ export class ExploreCommand extends BaseCommand {
     const validSubpages = new Set(['none', 'same', 'new', 'both']);
     let hasReuseSignal = false;
 
-    for (const pair of raw.split(';')) {
-      const trimmed = pair.trim();
-      if (!trimmed) continue;
-      const sepMatch = trimmed.match(/^([^:=]+)\s*[:=]\s*(.*)$/);
-      if (!sepMatch) {
-        tag('warning').log(`Ignoring malformed configure pair: ${trimmed}`);
-        continue;
-      }
-      const key = sepMatch[1].trim().toLowerCase();
-      const value = sepMatch[2].trim();
-
+    for (const { key, value } of parseSpecPairs(raw)) {
       if (key === 'new') {
         const ratio = parseRatio(value);
         if (ratio == null) {
