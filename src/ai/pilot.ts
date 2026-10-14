@@ -615,7 +615,7 @@ export class Pilot implements Agent {
     if (finalState?.screenshot && this.provider.hasVision()) image = finalState.screenshot;
 
     const decided = (text: string): 'passed' | 'failed' => {
-      if (task.hasAchievedAny() && !task.getRemainingExpectations().includes(text)) return 'passed';
+      if (task.hasAchieved(text)) return 'passed';
       return 'failed';
     };
 
@@ -631,7 +631,7 @@ export class Pilot implements Agent {
       outcomes: z.array(
         z.object({
           expectation: z.string().describe('The expected outcome, repeated exactly as it was given'),
-          status: z.enum(['passed', 'failed', 'unverified', 'contradiction']).describe('passed = the evidence shows it happened, failed = the evidence shows it did not, unverified = the run never established either way, contradiction = the picture and the run disagree'),
+          status: z.enum(['passed', 'failed', 'unverified', 'contradiction']).describe('passed = the evidence shows it happened to the thing it names, failed = the evidence shows it did not, unverified = the run never established either way, contradiction = the picture and the run disagree'),
           evidence: z.string().nullable().describe('What settled it. For a contradiction, what each side shows. Null when there is nothing to add'),
         })
       ),
@@ -657,6 +657,10 @@ export class Pilot implements Agent {
     const userContent = dedent`
       A test run has finished. Decide, for each expected outcome, what the run established about it.
 
+      <scenario>
+      ${task.scenario}
+      </scenario>
+
       <expected_outcomes>
       ${undecided.map((text) => `- ${text}`).join('\n')}
       </expected_outcomes>
@@ -669,6 +673,9 @@ export class Pilot implements Agent {
 
       The log is written in the tester's own words, so an outcome can be satisfied by a step that describes it
       differently. Judge by what the steps show happened, not by whether the wording matches.
+      Wording may differ, the subject may not. An outcome refers to what the scenario names or chooses; it holds
+      only when that same thing appears. A different route or a different thing reaching a similar state is "failed",
+      and so is an outcome about something the run never managed to choose or create.
       Choose "unverified" only when the evidence neither shows the outcome happening nor shows it failing —
       that is a statement about the run, not about the application.
     `;
