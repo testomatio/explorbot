@@ -37,6 +37,7 @@ const ITERATIONS_PER_INSTRUCTION = 2;
 const MAX_INSTRUCTION_ITERATIONS = 24;
 const CONTEXT_HTML_CAP = 6000;
 const MAX_TOOL_ROUNDTRIPS = 5;
+const UX_SESSION_COMMANDS = 8;
 const AI_AGENT_NAME = 'prima';
 const CONNECT_TIMEOUT = 3000;
 const requireLib = createRequire(import.meta.url);
@@ -464,6 +465,19 @@ export class Prima {
     const result = await this.capturedResult(previousState);
     const uiMap = await researcher.research(result, { screenshot: true, data: opts.data, deep: opts.deep, force: opts.fresh });
     return this.reportEnvelope(command, result, previousState, { research: dropVolatileColumns(uiMap) });
+  }
+
+  async ux(focus?: string): Promise<EnvelopeData> {
+    const command = ['ux', focus].filter(Boolean).join(' ');
+    const guard = await this.aiGuard(command);
+    if (guard) return guard;
+
+    const previousState = this.bot.stateManager().getCurrentState();
+    const result = await this.capturedResult(previousState);
+    const answer = await this.bot.agentQuartermaster().auditUx(result, { focus, commands: this.sessionCommandsOn(result.url) });
+    const envelope = await this.reportEnvelope(command, result, previousState, { answer });
+    if (!this.visionEnabled()) envelope.warning = 'No screenshot backed this review, so visual checks were skipped. Set ai.visionModel to include them.';
+    return envelope;
   }
 
   async go(target: string): Promise<EnvelopeData> {
@@ -941,6 +955,15 @@ export class Prima {
     let code = run;
     if (named) code = `I.click(${JSON.stringify(named)})`;
     return this.successEnvelope(`go ${target}`, [code], await this.capturedResult(newState), previousState);
+  }
+
+  private sessionCommandsOn(url: string): string[] {
+    if (!this.session) return [];
+    const { tests } = readSession(sessionFile(this.session.key));
+    return tests
+      .filter((test) => test.description?.split('\n')[0] === `page: ${url}` && !test.title.startsWith('ux'))
+      .map((test) => test.title)
+      .slice(-UX_SESSION_COMMANDS);
   }
 
   private executedCodes(code: unknown): string[] {

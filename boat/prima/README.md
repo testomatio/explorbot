@@ -41,6 +41,7 @@ playwright-cli close
 | `verify <assertion>` | Assert a statement about the current page |
 | `ask <question>` | Answer a question about the current page |
 | `research` | Map the current page and return verified locators |
+| `ux [focus]` | Review the area being worked on for UX issues at the current width, 768px and 375px |
 | `go <target>` | Navigate to a url, a path, or a page described in plain words |
 | `pw <fn>` | Run a Playwright function expression against the open page |
 | `status <hash>` | Show the artifacts and page detail recorded for an earlier command |
@@ -51,6 +52,8 @@ playwright-cli close
 `check` takes an outcome rather than a click path. It runs on the page you are already on and never reloads it, so an open dialog survives the check. Each `--expected` outcome comes back as PASSED, FAILED, CONTRADICTION or not verified — settled against a screenshot of the whole page, because what a user can see is the proof.
 
 `do` accounts for every instruction you gave: each is reported as ok, FAIL or ??. Nothing runs past the last instruction.
+
+`ux` reviews one area, not the whole page: the focus you name, else an open dialog, else the area your session's commands on this page acted in, else the main content. It measures target sizes, spacing, overflow, text size, zoom and motion at each width, runs axe on the area, and asks the model to judge copy, forms and navigation against the rules in `rules/quartermaster/ux/`. Findings are ranked Critical to Low. It reports problems only: no replacement wording and no colors or styles, since the project owns those. Override a rule by placing a file of the same name in `./rules/quartermaster/ux/`, or add your own with `ai.agents.quartermaster.rules`.
 
 ## AI model
 

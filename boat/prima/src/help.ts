@@ -56,6 +56,14 @@ export const researchHelp = dedent`
   The map is saved per page state and joins later commands there, so one research run pays for all that follow it.
 `;
 
+export const uxHelp = dedent`
+  Reviews one area, not the page: the focus you name, else the open dialog or region,
+  else the area the session's commands on this page acted in, else the main content.
+  Measures it at the current width, 768px and 375px, then restores the viewport.
+  Findings come under ### Answer by priority; the review reports problems and never
+  proposes wording or visual style. ok stays true whatever it finds.
+`;
+
 export const statusHelp = dedent`
   Reads recorded files, so it needs no browser and outlives the session.
   The hash is matched across all recorded sites. ### Artifacts lists every kept

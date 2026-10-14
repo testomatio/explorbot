@@ -110,7 +110,7 @@ Shared invariant: matching in the data tier is **structural, never semantic**. I
 
 One verb each; a responsibility that can't be phrased as the verb doesn't belong there:
 
-- Researcher **describes**, Navigator **moves**, Planner **proposes**, Pilot **guides**, Tester **executes**, Driller **drills**, Historian **records sessions**, Analyst **reports**, ExperienceCompactor **compacts**, Quartermaster **audits a11y**, Scout **scouts** (retrieves documentation for planning), Captain **commands**
+- Researcher **describes**, Navigator **moves**, Planner **proposes**, Pilot **guides**, Tester **executes**, Driller **drills**, Historian **records sessions**, Analyst **reports**, ExperienceCompactor **compacts**, Quartermaster **audits** (a11y during tests, UX of one page area for `prima ux`), Scout **scouts** (retrieves documentation for planning), Captain **commands**
 
 Negative contract (all agents):
 
@@ -387,7 +387,7 @@ All agents implement the `Agent` interface. Task-executing agents (Tester, Capta
 - Historian — save test sessions, generate code, report to Testomatio
 - Analyst — end-of-session markdown report; clusters defects/UX/execution issues, writes `output/reports/<mode>-<sessionName>.md`, sets the Testomatio run description
 - ExperienceCompactor — compress experience files
-- Quartermaster — a11y testing (optional)
+- Quartermaster — a11y testing (optional), UX audit of one focus area across breakpoints (`prima ux`; rules in `rules/quartermaster/ux/`)
 
 \* injected via setter
 
