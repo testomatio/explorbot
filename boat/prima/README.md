@@ -53,7 +53,7 @@ playwright-cli close
 
 `do` accounts for every instruction you gave: each is reported as ok, FAIL or ??. Nothing runs past the last instruction.
 
-`ux` reviews one area, not the whole page: the focus you name, else an open dialog, else the area your session's commands on this page acted in, else the main content. It measures target sizes, spacing, overflow, text size, zoom and motion at each width, runs axe on the area, and asks the model to judge copy, forms and navigation against the rules in `rules/quartermaster/ux/`. Findings are ranked Critical to Low. It reports problems only: no replacement wording and no colors or styles, since the project owns those. Override a rule by placing a file of the same name in `./rules/quartermaster/ux/`, or add your own with `ai.agents.quartermaster.rules`.
+`ux` reviews one area, not the whole page. A named focus is shown first with at most one click, which may open a dialog, tab or section or go to another page; nothing is submitted, and when no click leads to it the command fails without reviewing. The area reviewed is the dialog or region open on the page, else the focus you named, else the area your session's commands on this page acted in, else the main content. It measures target sizes, spacing, overflow, text size, zoom and motion at each width, runs axe on the area, and asks the model to judge copy, forms and navigation against the rules in `rules/quartermaster/ux/`. Findings are ranked Critical to Low. It reports problems only: no replacement wording and no colors or styles, since the project owns those. Override a rule by placing a file of the same name in `./rules/quartermaster/ux/`, or add your own with `ai.agents.quartermaster.rules`.
 
 ## AI model
 

@@ -472,10 +472,20 @@ export class Prima {
     const guard = await this.aiGuard(command);
     if (guard) return guard;
 
-    const previousState = this.bot.stateManager().getCurrentState();
-    const result = await this.capturedResult(previousState);
-    const answer = await this.bot.agentQuartermaster().auditUx(result, { focus, commands: this.sessionCommandsOn(result.url) });
+    const previousState = await this.baselineState();
+    let clicked: string[] = [];
+    if (focus) {
+      const shown = await this.showFocus(focus, previousState);
+      if (!shown) return this.failureEnvelope(command, `Could not show "${focus}": it is not on this page and no single click from here leads to it, so no review was made.`, previousState);
+      clicked = shown;
+    }
+
+    const result = await this.capturedResult(this.bot.stateManager().getCurrentState());
+    let auditFocus = focus;
+    if (result.overlay.isOpen && result.overlay.describe() !== previousState?.overlay?.describe()) auditFocus = undefined;
+    const answer = await this.bot.agentQuartermaster().auditUx(result, { focus: auditFocus, commands: this.sessionCommandsOn(result.url) });
     const envelope = await this.reportEnvelope(command, result, previousState, { answer });
+    if (clicked.length) envelope.steps = clicked.map((code) => ({ label: code, ok: true, proof: '' }));
     if (!this.visionEnabled()) envelope.warning = 'No screenshot backed this review, so visual checks were skipped. Set ai.visionModel to include them.';
     return envelope;
   }
@@ -936,13 +946,8 @@ export class Prima {
     const pick = await judge.decide(`Which listed control leads to: ${target}`, [...labels, UNDECIDED], { target });
     if (!pick.value) return null;
 
-    const ref = refs[labels.indexOf(pick.value)].ref;
-    const explorer = this.bot.getExplorer();
-    if (await refIsGone(explorer, ref)) return null;
-
-    const named = await describeRef(explorer, ref);
-    const run = `I.usePlaywrightTo(${JSON.stringify(`go to ${target}`)}, async ({ page }) => page.locator(${JSON.stringify(ariaRefSelector(ref))}).click())`;
-    if (!(await explorer.action().attempt(run, `go ${target}`))) return null;
+    const code = await this.clickRef(refs[labels.indexOf(pick.value)].ref, `go to ${target}`);
+    if (!code) return null;
 
     const newState = this.bot.stateManager().getCurrentState();
     if (!newState) return null;
@@ -952,9 +957,48 @@ export class Prima {
     const arrived = await judge.decide(`The page now shows: ${target}`, null, { target, page });
     if (arrived.rejected) return null;
 
-    let code = run;
-    if (named) code = `I.click(${JSON.stringify(named)})`;
     return this.successEnvelope(`go ${target}`, [code], await this.capturedResult(newState), previousState);
+  }
+
+  private async showFocus(focus: string, state: WebPageState | null): Promise<string[] | null> {
+    if (!state) return null;
+    const snapshot = (await this.refAriaSnapshot(ActionResult.fromState(state))) || '';
+    const refs = parseAriaRefs(snapshot).filter((entry) => entry.name);
+    const schema = z.object({
+      shown: z.boolean().describe('whether the page already shows the area'),
+      ref: z.enum(['none', ...refs.map((entry) => entry.ref)]).describe('when it is not shown, the one control whose click leads to it, or none'),
+    });
+    const prompt = dedent`
+      A UX review needs this area on screen: ${focus}
+      Say whether the page already shows it. If not, pick the one control whose single click opens, reveals or navigates to it.
+      Its label may differ from how the area was named: judge by what the control leads to.
+      Answer none when no control plausibly leads there.
+
+      <page_aria>
+      ${snapshot.slice(0, JUDGE_PAGE_CAP)}
+      </page_aria>
+    `;
+    const response = await this.bot
+      .getProvider()
+      .generateObject([{ role: 'user', content: prompt }], schema, undefined, { agentName: AI_AGENT_NAME })
+      .catch(() => null);
+    if (response?.object?.shown) return [];
+    const ref = response?.object?.ref;
+    if (!ref || ref === 'none') return null;
+    const code = await this.clickRef(ref, `show ${focus}`);
+    if (!code) return null;
+    return [code];
+  }
+
+  private async clickRef(ref: string, purpose: string): Promise<string | null> {
+    const explorer = this.bot.getExplorer();
+    if (await refIsGone(explorer, ref)) return null;
+
+    const named = await describeRef(explorer, ref);
+    const run = `I.usePlaywrightTo(${JSON.stringify(purpose)}, async ({ page }) => page.locator(${JSON.stringify(ariaRefSelector(ref))}).click())`;
+    if (!(await explorer.action().attempt(run, purpose))) return null;
+    if (named) return `I.click(${JSON.stringify(named)})`;
+    return run;
   }
 
   private sessionCommandsOn(url: string): string[] {

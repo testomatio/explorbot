@@ -25,7 +25,7 @@ const UX_FOCUS_SELECTOR = `[${UX_FOCUS_ATTR}]`;
 const UX_SETTLE_MS = 400;
 const UX_ARIA_CAP = 8000;
 const UX_SCREENSHOT_TIMEOUT = 5000;
-const UX_MAX_FINDINGS = 15;
+const UX_MAX_FINDINGS = 6;
 const AGENT_NAME = 'quartermaster';
 const FOCUS_CONTAINER_ROLES = ['main', 'region', 'form', 'dialog', 'alertdialog', 'navigation', 'complementary', 'article', 'table', 'grid', 'tabpanel', 'list', 'group', 'banner', 'contentinfo', 'search'];
 
@@ -297,29 +297,30 @@ Focus on what would confuse a real user or caused the agent to make mistakes.`;
         .then(() => true)
         .catch(() => false);
 
-    const overlay = result.overlay;
-    if (!context.focus && overlay.isOpen) {
-      const locate = (page: Page) => {
-        if (overlay.root) return page.locator(overlay.root);
-        const name = overlay.name || undefined;
-        return page.getByRole('dialog', { name }).or(page.getByRole('alertdialog', { name }));
-      };
-      if (await this.explorer.withPage((page) => mark(locate(page)))) {
-        return { area: overlay.name || 'open region', reason: 'it is the region open on the page' };
-      }
-    }
+    const region = result.overlay;
+    const locateRegion = (page: Page) => {
+      if (region.root) return page.locator(region.root);
+      if (region.xpath) return page.locator(`xpath=${region.xpath}`);
+      const name = region.name || undefined;
+      return page.getByRole('dialog', { name }).or(page.getByRole('alertdialog', { name }));
+    };
+    const regionFocus = { area: region.name || `open ${region.type}`, reason: `it is the ${region.type} open on the page` };
+
+    if (!context.focus && region.isOpen && (await this.explorer.withPage((page) => mark(locateRegion(page))))) return regionFocus;
 
     if (context.focus || context.commands.length) {
       const picked = await this.pickUxFocus(context, mark);
       if (picked) return picked;
     }
 
+    if (region.isOpen && (await this.explorer.withPage((page) => mark(locateRegion(page))))) return regionFocus;
+
+    let reason = 'nothing narrower is open or was touched by the session on this page';
+    if (context.focus) reason = `"${context.focus}" matched no single container`;
     return this.explorer.withPage(async (page) => {
-      if (await mark(page.locator('main, [role="main"]'))) {
-        return { area: 'main content', reason: 'nothing narrower was given, open or touched by the session on this page' };
-      }
+      if (await mark(page.locator('main, [role="main"]'))) return { area: 'main content', reason };
       await mark(page.locator('body'));
-      return { area: 'whole page', reason: 'nothing narrower was given and the page has no main landmark' };
+      return { area: 'whole page', reason: `${reason} and the page has no main landmark` };
     });
   }
 
@@ -462,15 +463,15 @@ Focus on what would confuse a real user or caused the agent to make mistakes.`;
       Markdown, no preamble.
 
       ## Focus
-      One line: the area reviewed, why, and the widths covered. Name any width or check that was skipped.
+      One line: the area reviewed and the widths covered.
 
       Then one section per priority that has findings, in this order: ## Critical, ## High, ## Medium, ## Low. Omit empty sections.
-      Each finding is one bullet:
-      - **<element as the user sees it>** (<rule set>, <width or "all widths">)
-        <evidence: the measurement, axe result or quoted text>. <what it costs the user>.
+      Each finding is one bullet of one sentence, at most 30 words:
+      - **<element as the user sees it>** (<rule set>, <width or "all widths">): <evidence>, <what it costs the user>.
 
-      Merge findings that share one cause into one bullet. At most ${UX_MAX_FINDINGS} findings, most severe first.
-      No fix wording, no summary, no tables.
+      One bullet per cause: elements failing the same check share a bullet naming at most three of them.
+      Write at most ${UX_MAX_FINDINGS} bullets in total across all sections, most severe first; drop the rest.
+      No fix wording, no rule ids, no list of skipped checks, no summary, no tables.
       When nothing fails, write the Focus section and the line: No UX issues found in this area.
       </output>
     `;

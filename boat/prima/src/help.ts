@@ -57,8 +57,9 @@ export const researchHelp = dedent`
 `;
 
 export const uxHelp = dedent`
-  Reviews one area, not the page: the focus you name, else the open dialog or region,
-  else the area the session's commands on this page acted in, else the main content.
+  Reviews one area, not the page. A named focus is shown first with at most one click,
+  which may open a dialog, tab or section or go to another page; nothing is submitted. The area reviewed is the dialog or region open on the page,
+  else the named focus, else where the session's commands on this page acted, else main.
   Measures it at the current width, 768px and 375px, then restores the viewport.
   Findings come under ### Answer by priority; the review reports problems and never
   proposes wording or visual style. ok stays true whatever it finds.

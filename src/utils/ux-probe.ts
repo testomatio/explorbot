@@ -64,15 +64,17 @@ export function measureUx({ scope, controlsSelector, limits }: UxProbeArgs): UxM
     return style.visibility !== 'hidden' && style.display !== 'none' && Number(style.opacity) > limits.minOpacity;
   };
 
-  const docWidth = document.documentElement.scrollWidth;
-  if (root === document.body && docWidth > width + 1) add('horizontal overflow', `page is ${docWidth}px wide in a ${width}px viewport`);
+  if (root === document.body || root.matches('main, [role="main"]')) {
+    const docWidth = document.documentElement.scrollWidth;
+    if (docWidth > width + 1) add('horizontal overflow', `page is ${docWidth}px wide in a ${width}px viewport`);
 
-  const meta = document.querySelector('meta[name="viewport"]')?.getAttribute('content');
-  if (!meta) add('zoom and viewport meta', 'no viewport meta tag');
-  const metaRules = (meta || '').toLowerCase().replace(/\s/g, '');
-  if (metaRules.includes('user-scalable=no') || metaRules.includes('user-scalable=0')) add('zoom and viewport meta', 'zoom disabled by user-scalable');
-  const maxScale = metaRules.split(',').find((part) => part.startsWith('maximum-scale='));
-  if (maxScale && Number(maxScale.split('=')[1]) <= 1) add('zoom and viewport meta', `zoom capped by ${maxScale}`);
+    const meta = document.querySelector('meta[name="viewport"]')?.getAttribute('content');
+    if (!meta) add('zoom and viewport meta', 'no viewport meta tag');
+    const metaRules = (meta || '').toLowerCase().replace(/\s/g, '');
+    if (metaRules.includes('user-scalable=no') || metaRules.includes('user-scalable=0')) add('zoom and viewport meta', 'zoom disabled by user-scalable');
+    const maxScale = metaRules.split(',').find((part) => part.startsWith('maximum-scale='));
+    if (maxScale && Number(maxScale.split('=')[1]) <= 1) add('zoom and viewport meta', `zoom capped by ${maxScale}`);
+  }
 
   const minTarget = touch ? limits.touchTarget : limits.pointerTarget;
   const controls = Array.from(root.querySelectorAll(controlsSelector)).filter(visible);
