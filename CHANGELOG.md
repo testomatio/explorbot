@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-10-14
+
+### New CLI Options
+- **`prima ux [focus]`** — Reviews one area of the current page for UX problems. A named area is shown first with at most one click, which may open a dialog, tab or section or go to another page; nothing is submitted. The area reviewed is the dialog or region open on the page, else the area you named, else the area your session's commands on this page acted in, else the main content. The area is measured at the current width, 768px and 375px (target size and spacing, overflow, zoom, small or cramped text, truncated text, motion), checked with axe, and judged against accessibility, interaction, responsive, navigation, copy, forms, readability, motion and chart rules. Up to 6 short findings, ranked Critical to Low. It reports problems only, never replacement wording or colors and styles. The viewport is restored afterwards. Screenshots are reviewed when `ai.visionModel` is set.
+  ```bash
+  prima ux
+  prima ux "the top navigation"
+  prima ux "checkout form"
+  ```
+
+### Configuration
+- **`rules/quartermaster/ux/*.md`** — The rules `prima ux` judges against. Put a file with the same name in your project's `./rules/quartermaster/ux/` to replace one, or add your own rules with `ai.agents.quartermaster.rules`.
+
 ## 2026-10-13
 
 ### Changes
