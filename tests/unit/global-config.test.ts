@@ -89,7 +89,13 @@ describe('site folder names', () => {
 
   it('lowercases the host and replaces characters invalid in directory names', () => {
     expect(siteFolderName('https://APP.Example.COM')).toBe('app.example.com');
-    expect(siteFolderName('http://127.0.0.1:8080')).toBe('127.0.0.1_8080');
+    expect(siteFolderName('http://192.168.0.5:8080')).toBe('192.168.0.5_8080');
+  });
+
+  it('treats every loopback address as localhost', () => {
+    expect(siteFolderName('http://127.0.0.1:3000')).toBe('localhost_3000');
+    expect(siteFolderName('http://[::1]:3000')).toBe('localhost_3000');
+    expect(siteFolderName('http://127.0.0.1')).toBe('localhost');
   });
 });
 

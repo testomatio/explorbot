@@ -631,8 +631,8 @@ export class Pilot implements Agent {
       outcomes: z.array(
         z.object({
           expectation: z.string().describe('The expected outcome, repeated exactly as it was given'),
-          status: z.enum(['passed', 'failed', 'unverified', 'contradiction']).describe('passed = the evidence shows it happened, failed = the evidence shows it did not, unverified = the run never established either way, contradiction = the picture and the run disagree'),
-          evidence: z.string().nullable().describe('What settled it. For a contradiction, what each side shows. Null when there is nothing to add'),
+          status: z.enum(['passed', 'failed', 'unverified', 'contradiction']).describe('passed = the evidence shows it happened, failed = the evidence shows the application did not do it, unverified = the run never established either way, contradiction = the picture and the run disagree'),
+          evidence: z.string().nullable().describe('What settled it. For unverified, what stopped the run from checking it. For a contradiction, what each side shows. Null when there is nothing to add'),
         })
       ),
     });
@@ -671,6 +671,9 @@ export class Pilot implements Agent {
       differently. Judge by what the steps show happened, not by whether the wording matches.
       Choose "unverified" only when the evidence neither shows the outcome happening nor shows it failing —
       that is a statement about the run, not about the application.
+      "failed" is a statement about the application. When the run's own trouble — an earlier step it could not
+      get past, a control it could not reach or operate — left the outcome untested, it is "unverified", and
+      the evidence names that blocker.
     `;
 
     const settle = (content: any, model: any) =>

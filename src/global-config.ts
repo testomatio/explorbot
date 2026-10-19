@@ -6,6 +6,7 @@ import dedent from 'dedent';
 
 const GLOBAL_CONFIG_NAMES = ['config.js', 'config.mjs', 'config.ts'];
 const SITE_DIRS = ['knowledge', 'experience', 'output'];
+const LOOPBACK_HOSTS = ['localhost', '127.0.0.1', '[::1]'];
 
 export const EXPLORBOT_CONFIG_PATHS = ['explorbot.config.js', 'explorbot.config.mjs', 'explorbot.config.ts'];
 
@@ -34,7 +35,9 @@ export function sitesDir(): string {
 }
 
 export function siteFolderName(url: string): string {
-  return new URL(url).host.toLowerCase().replace(/[^a-z0-9._-]/g, '_');
+  const parsed = new URL(url);
+  if (LOOPBACK_HOSTS.includes(parsed.hostname)) parsed.hostname = 'localhost';
+  return parsed.host.toLowerCase().replace(/[^a-z0-9._-]/g, '_');
 }
 
 export function listSites(): SiteRecord[] {
@@ -81,7 +84,7 @@ function validateSiteConfig(config: any, configPath: string, baseUrl: string): v
   }
 
   const declared = URL.parse(url)?.origin;
-  if (declared === baseUrl) return;
+  if (declared && siteFolderName(declared) === siteFolderName(baseUrl)) return;
 
   throw new Error(dedent`
     Site config declares a different site.

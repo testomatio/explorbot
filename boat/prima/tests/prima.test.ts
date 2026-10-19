@@ -892,7 +892,7 @@ describe('Prima.check', () => {
     ]);
   });
 
-  test('steps report the failures and count the rest, leaving verdicts to the outcomes section', async () => {
+  test('steps report only the failures, leaving verdicts to the outcomes section', async () => {
     const { prima } = fakePrima();
     (prima as any).bot.agentTester = () => ({
       test: async (test: any) => {
@@ -910,9 +910,8 @@ describe('Prima.check', () => {
 
     expect(labels).toContain('Failed to open the editor (click)');
     expect(labels).not.toContain('the editor opens');
-    expect(labels).not.toContain('opened the panel');
-    expect(labels.at(-1)).toContain('2 further steps ran without failing');
-    expect(labels.at(-1)).toContain('prima status');
+    expect(labels).toEqual(['Failed to open the editor (click)']);
+    expect(envelope.steps?.every((step) => !step.ok)).toBe(true);
   });
 
   test('the scenario stands in as the only outcome when none was given', async () => {
@@ -966,6 +965,45 @@ describe('Prima.check', () => {
 
     expect(envelope.ok).toBe(true);
     expect(envelope.failure).toBeUndefined();
+  });
+
+  test('a run that verified no outcome is not ok, and says what blocked it', async () => {
+    const { prima } = fakePrima();
+    (prima as any).bot.agentTester = () => ({
+      test: async (test: any) => {
+        test.addNote('Failed to sign in (form)', TestResult.FAILED);
+        test.finish(TestResult.FAILED);
+        return { success: false };
+      },
+    });
+    (prima as any).bot.agentPilot = () => ({ settleExpectations: async () => [new SettledExpectation('the list is sorted', 'unverified', 'the run never got past sign in')] });
+
+    const envelope = await prima.check('sort the list', ['the list is sorted']);
+
+    expect(envelope.ok).toBe(false);
+    expect(envelope.failure?.error).toContain('not verified: the list is sorted — the run never got past sign in');
+    expect(renderEnvelope(envelope)).toContain('the run never got past sign in');
+  });
+
+  test('page problems noticed on the way get their own section, not the answer', async () => {
+    const { prima } = fakePrima();
+    (prima as any).bot.agentTester = () => ({
+      test: async (test: any) => {
+        test.addNote('the editor opens', TestResult.PASSED);
+        test.addObservation('Console error: request failed');
+        test.finish(TestResult.PASSED);
+        return { success: true };
+      },
+    });
+    (prima as any).bot.agentPilot = () => ({ settleExpectations: async () => [new SettledExpectation('the editor opens', 'passed')] });
+
+    const envelope = await prima.check('edit a skill', ['the editor opens']);
+    const output = renderEnvelope(envelope);
+
+    expect(envelope.answer).toBeUndefined();
+    expect(output).toContain('### Page issues');
+    expect(output).toContain('- Console error: request failed');
+    expect(output).not.toContain('### Answer');
   });
 
   test('an outcome the run showed failing names itself in the failure', async () => {

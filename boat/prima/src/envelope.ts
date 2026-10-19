@@ -35,6 +35,7 @@ export interface EnvelopeData {
   stepFiles?: string;
   value?: string;
   answer?: string;
+  pageIssues?: string[];
   research?: string;
   assertions?: Array<{ code: string; passed: boolean; proof: string[]; error?: string }>;
   failure?: { error: string; compactAria?: string };
@@ -44,7 +45,7 @@ export interface EnvelopeData {
 }
 
 export function renderEnvelope(data: EnvelopeData): string {
-  const sections = [renderResult(data), renderPage(data), renderValue(data), renderChanges(data), renderSteps(data), renderExpectations(data), renderWarning(data), renderOutcome(data), ...renderFailure(data), renderInstance(data), renderArtifacts(data)];
+  const sections = [renderResult(data), renderPage(data), renderValue(data), renderChanges(data), renderSteps(data), renderExpectations(data), renderWarning(data), renderOutcome(data), renderPageIssues(data), ...renderFailure(data), renderInstance(data), renderArtifacts(data)];
   return sections.filter((section) => section).join('\n\n');
 }
 
@@ -132,7 +133,7 @@ function renderExpectations(data: EnvelopeData): string | null {
   data.expectations.forEach((expectation, index) => {
     lines.push(`${index + 1}. ${EXPECTATION_LABELS[expectation.status]} ${expectation.text}`);
     if (expectation.resolution) lines.push(`      resolved: ${expectation.resolution}`);
-    if (!expectation.contradicted && !expectation.failed && !expectation.resolution) return;
+    if (expectation.status === 'passed' && !expectation.resolution) return;
     for (const line of (expectation.evidence || '').split('\n').filter(Boolean)) lines.push(`      ${line}`);
   });
   return section('Expected outcomes', lines.join('\n'));
@@ -166,6 +167,11 @@ function renderOutcome(data: EnvelopeData): string | null {
   if (proof.length) lines.push('', 'playwright:', ...proof);
 
   return section('Assertions', lines.join('\n'));
+}
+
+function renderPageIssues(data: EnvelopeData): string | null {
+  if (!data.pageIssues?.length) return null;
+  return section('Page issues', ['Noticed on the page while running, unrelated to the steps or the outcome:', ...data.pageIssues.map((issue) => `- ${issue}`)].join('\n'));
 }
 
 function renderFailure(data: EnvelopeData): Array<string | null> {

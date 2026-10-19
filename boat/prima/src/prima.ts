@@ -396,9 +396,6 @@ export class Prima {
     const failed = recorded.filter((note) => note.status === TestResult.FAILED);
     envelope.steps = failed.map((note) => ({ label: note.message, ok: false, proof: note.log || '' }));
 
-    const routine = recorded.length - failed.length;
-    if (routine) envelope.steps.push({ label: `${routine} further ${pluralize(routine, 'step')} ran without failing — prima status ${envelope.status} for the full log`, ok: true, proof: '' });
-
     envelope.expectations = await this.bot.agentPilot().settleExpectations(test, result);
 
     if (!result.screenshot || !this.visionEnabled()) {
@@ -407,9 +404,18 @@ export class Prima {
 
     const unreached = envelope.expectations.filter((expectation) => expectation.failed);
     const contradicted = envelope.expectations.filter((expectation) => expectation.contradicted);
-    envelope.ok = !unreached.length && !contradicted.length;
+    const unverified = envelope.expectations.filter((expectation) => expectation.status === 'unverified');
+    const nothingVerified = unverified.length === envelope.expectations.length;
+    envelope.ok = !unreached.length && !contradicted.length && !nothingVerified;
 
     const problems = [...unreached.map((expectation) => `not reached: ${expectation.text}`), ...contradicted.map((expectation) => `the picture and the run disagree about: ${expectation.text}`)];
+    if (nothingVerified) {
+      for (const expectation of unverified) {
+        let problem = `not verified: ${expectation.text}`;
+        if (expectation.evidence) problem += ` — ${expectation.evidence}`;
+        problems.push(problem);
+      }
+    }
     if (problems.length) envelope.failure = { error: problems.join('\n') };
 
     if (!test.hasFinished || test.isSkipped) {
@@ -418,7 +424,7 @@ export class Prima {
     }
 
     const observations = notes.filter((note) => note.observation).map((note) => note.message);
-    if (observations.length) envelope.answer = ['Page problems noticed while running, not step failures:', ...observations.map((line) => `- ${line}`)].join('\n');
+    if (observations.length) envelope.pageIssues = observations;
     return envelope;
   }
 
