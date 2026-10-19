@@ -394,7 +394,13 @@ export class Prima {
     const envelope = await this.reportEnvelope(command, result, previousState, {});
     const recorded = notes.filter((note) => !note.observation && !outcomes.includes(note.message));
     const failed = recorded.filter((note) => note.status === TestResult.FAILED);
-    envelope.steps = failed.map((note) => ({ label: note.message, ok: false, proof: note.log || '' }));
+    const repeats = new Map<string, { count: number; proof: string }>();
+    for (const note of failed) repeats.set(note.message, { count: (repeats.get(note.message)?.count || 0) + 1, proof: note.log || '' });
+    envelope.steps = [...repeats].map(([message, { count, proof }]) => {
+      let label = message;
+      if (count > 1) label += ` (×${count})`;
+      return { label, ok: false, proof };
+    });
 
     envelope.expectations = await this.bot.agentPilot().settleExpectations(test, result);
 
@@ -409,13 +415,7 @@ export class Prima {
     envelope.ok = !unreached.length && !contradicted.length && !nothingVerified;
 
     const problems = [...unreached.map((expectation) => `not reached: ${expectation.text}`), ...contradicted.map((expectation) => `the picture and the run disagree about: ${expectation.text}`)];
-    if (nothingVerified) {
-      for (const expectation of unverified) {
-        let problem = `not verified: ${expectation.text}`;
-        if (expectation.evidence) problem += ` — ${expectation.evidence}`;
-        problems.push(problem);
-      }
-    }
+    if (nothingVerified) problems.push(...unverified.map((expectation) => `not verified: ${expectation.text}`));
     if (problems.length) envelope.failure = { error: problems.join('\n') };
 
     if (!test.hasFinished || test.isSkipped) {

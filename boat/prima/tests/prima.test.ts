@@ -981,8 +981,26 @@ describe('Prima.check', () => {
     const envelope = await prima.check('sort the list', ['the list is sorted']);
 
     expect(envelope.ok).toBe(false);
-    expect(envelope.failure?.error).toContain('not verified: the list is sorted — the run never got past sign in');
-    expect(renderEnvelope(envelope)).toContain('the run never got past sign in');
+    expect(envelope.failure?.error).toBe('not verified: the list is sorted');
+    expect(renderEnvelope(envelope).split('the run never got past sign in').length).toBe(2);
+  });
+
+  test('a step that failed several times is listed once with its count', async () => {
+    const { prima } = fakePrima();
+    (prima as any).bot.agentTester = () => ({
+      test: async (test: any) => {
+        test.addNote('Click the email field', TestResult.FAILED, undefined, 'first');
+        test.addNote('Click the email field', TestResult.FAILED, undefined, 'second');
+        test.addNote('Fill the password', TestResult.FAILED);
+        test.finish(TestResult.FAILED);
+        return { success: false };
+      },
+    });
+    (prima as any).bot.agentPilot = () => ({ settleExpectations: async () => [new SettledExpectation('signed in', 'failed')] });
+
+    const envelope = await prima.check('sign in', ['signed in']);
+
+    expect(envelope.steps?.map((step) => step.label)).toEqual(['Click the email field (×2)', 'Fill the password']);
   });
 
   test('page problems noticed on the way get their own section, not the answer', async () => {

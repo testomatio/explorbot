@@ -5,9 +5,10 @@
 ### Changes
 - Sites: `localhost`, `127.0.0.1` and `[::1]` on the same port are now one site, so knowledge and experience saved for `http://localhost:3000` also apply when exploring `http://127.0.0.1:3000`.
 - [Pilot] An expected outcome the run never got to test — because it could not get past an earlier step or could not reach a control — is reported as "not verified" with the reason, instead of as a failure of the application.
-- prima `check`: `### Steps` lists only failed steps; the "further steps ran without failing" line is gone.
+- prima `check`: `### Steps` lists only failed steps, each once — a step that failed several times shows its count; the "further steps ran without failing" line is gone.
+- [Tester] A failed action is no longer logged twice (once as the action, once as "Failed to … (tool)") when the action already recorded its own failure.
 - prima `check`: console errors and other problems noticed on the page go under their own `### Page issues` section instead of `### Answer`.
-- prima `check`: every "not verified" outcome shows what kept the run from checking it, and a check that verified none of its outcomes returns `ok: false`.
+- prima `check`: every "not verified" outcome shows what kept the run from checking it, and a check that verified none of its outcomes returns `ok: false`, naming the outcome under `### Failure` without repeating the reason.
 
 ## 2026-10-13
 

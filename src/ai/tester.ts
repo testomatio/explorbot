@@ -366,8 +366,9 @@ export class Tester extends TaskAgent implements Agent {
           }
 
           if (actionPerformed && !wasSuccessful) {
+            const noted = new Set(Object.values(task.notes).map((note) => note.message));
             result?.toolExecutions
-              ?.filter((execution: any) => !execution.wasSuccessful && execution.input?.explanation)
+              ?.filter((execution: any) => !execution.wasSuccessful && execution.input?.explanation && !noted.has(execution.input.explanation))
               .forEach((execution: any) => {
                 task.addNote(`Failed to ${execution.input.explanation} (${execution.toolName})`, TestResult.FAILED);
               });
