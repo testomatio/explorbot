@@ -9,6 +9,12 @@
 - prima `check`: console errors and other problems noticed on the page go under their own `### Page issues` section instead of `### Answer`.
 - prima `check`: every "not verified" outcome shows what kept the run from checking it, and a check that verified none of its outcomes returns `ok: false`.
 
+## 2026-10-13
+
+### Changes
+- [Pilot] Expected outcomes are now judged against the scenario they belong to. An outcome that names something the scenario chooses ("the user I picked") no longer passes when the run took a different route or never managed to choose it — `prima check` reports it FAILED instead of PASSED.
+- [Pilot] An expected outcome the run recorded as failed is no longer reported as passed just because another outcome of the same test passed.
+
 ## 2026-10-10
 
 ### New CLI Options
@@ -43,6 +49,21 @@
 
 ### Changes
 - [Navigator] While free sailing, the Navigator is told which URL patterns to stay within and is asked for another page when it suggests one the URL filter rejects.
+
+## 2026-10-09
+
+### Configuration
+- **`ai.recommendedModels`** — Name a provider and every model role takes its bundled recommendations: `ai: { recommendedModels: 'openrouter' }` fills `model`, `visionModel`, `agenticModel` and `decisionModel`. An explicit role set alongside it wins, so one pinned model mixes freely with the recommendations. `explorbot init` now writes this instead of listing model ids. Default: unset — roles behave as before.
+
+### Changes
+- `explorbot init` in a terminal is now a full setup wizard: it asks for the AI provider, the API key (optionally checked with one test AI call), and the app's URL, then writes everything itself — the key into `.env`, the URL into `web.url`. No manual file editing is left.
+- Outside a terminal, init prints the exact paths of the files that still need attention — the API key in `.env` and the app URL in the config — instead of a generic checklist. The non-interactive path accepts `--url` and `--api-key`, so CI and agents get a complete config in one command:
+  ```bash
+  explorbot init --provider openrouter --api-key sk-... --url https://app.example.com
+  ```
+- Init now ends with a "What's next" block: a demo command to watch Explorbot work on a sample app (`npx explorbot explore https://todomvc.com/examples/react/dist/`), commands to explore your own app, the knowledge hint for logins, and links to the VS Code extension and the docs at testomat.ai.
+- An `explore` run ends with an "Explore more" section suggesting `explorbot explore /` to cover the whole site, plus a link to the docs.
+- Init makes it explicit how to connect the AI: the `.env` template and the missing-key warning point to the provider's key page (e.g. `https://openrouter.ai/keys`) and show the exact line to paste — `OPENROUTER_API_KEY=<your-key>`; the setup wizard shows where to create the key too.
 
 ## 2026-10-06
 
