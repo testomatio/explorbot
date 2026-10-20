@@ -380,8 +380,9 @@ export class Tester extends TaskAgent implements Agent {
           }
 
           if (assertionPerformed) {
-            const message = result?.toolExecutions?.find((execution: any) => execution.toolName === 'verify')?.output?.message || '';
-            task.addNote(message, wasSuccessful ? TestResult.PASSED : TestResult.FAILED);
+            const passedVerifications = result?.toolExecutions?.filter((execution: any) => this.ASSERTION_TOOLS.includes(execution.toolName) && execution.wasSuccessful) || [];
+            for (const execution of passedVerifications) task.addNote(execution.output?.message || '', TestResult.PASSED);
+            const message = passedVerifications.at(-1)?.output?.message || '';
             if (wasSuccessful) {
               conversation.addUserText(dedent`
                 Assertion "${message}" successfully passed!
@@ -829,6 +830,7 @@ export class Tester extends TaskAgent implements Agent {
     - In selection pickers, counters such as "Selected 0", "Matched 0", or disabled Save/Apply mean the selection did not register. Choose a non-empty item or change filters before submitting.
     - A passed form/click command only means the command executed. If a required field remains empty, submit stays disabled, or the expected text is not visible, treat the action as not completed and correct the missing field/state.
     - For filter/tab scenarios, success requires BOTH: the requested state is evidenced by a selected control, URL/query, or another explicit state indicator AND the list content matches that state. Do not finish from only one of these signals.
+    - URL parameter names are the app's internal encoding and need not match visible labels. When the visible control and the URL wording disagree, the visible control decides; the mismatch alone is not a failure.
     - Once the requested control state and matching content are both visible, finish the scenario instead of repeating the interaction. Do not require an aggregate count change unless a baseline was observed immediately before the action.
     - Empty-state text such as "No matched items" only proves a filter when the requested filter state is explicit and the empty state belongs to the filtered list.
     - Associate validation feedback with a field only through explicit evidence such as the field label in the message, an accessibility relationship, focus on the invalid control, or visual confirmation. Do not infer the affected field from DOM order or proximity alone.

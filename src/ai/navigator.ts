@@ -30,6 +30,8 @@ import { actionRule, credentialsRule, locatorRule, unexpectedPopupRule } from '.
 import { isInteractive } from './task-agent.js';
 import { createLearnExperienceTool } from './tools.ts';
 
+const CLAIM_VERDICTS: Record<string, boolean> = { 'the claim holds': true, 'the claim does not hold': false };
+
 const debugLog = createDebug('explorbot:navigator');
 
 class Navigator implements Agent {
@@ -857,8 +859,8 @@ class Navigator implements Agent {
     }
 
     const totalAttempted = Math.min(codeBlocks.length, this.verifyAttempts);
-    const majorityNeeded = Math.floor(totalAttempted / 2) + 1;
-    let verified = successfulCodes.length >= majorityNeeded;
+    let verified = successfulCodes.length > 0 && !failures;
+    if (successfulCodes.length && failures) verified = await this.weighMixedAssertions(message, results);
     if (alreadyVerified) verified = true;
 
     const inexpressible = !alreadyVerified && totalAttempted === 0;
@@ -872,6 +874,32 @@ class Navigator implements Agent {
     this.stateManager.updateState(actionResult);
 
     return { verified, inexpressible, results, successfulCodes, assertionSteps, totalAttempted };
+  }
+
+  private async weighMixedAssertions(claim: string, results: AssertionResult[]): Promise<boolean> {
+    const question = dedent`
+      Some assertions written to prove a claim passed and some failed. Does the claim hold?
+      An assertion can fail because it was written badly — markup copied as text, a stale or over-specific locator —
+      and then says nothing about the claim. Decide from what each assertion actually checked.
+    `;
+    const assertions = results.map(({ code, passed, error }) => ({ code, passed, error }));
+
+    const decision = await this.judge?.decide(question, [...Object.keys(CLAIM_VERDICTS), UNDECIDED], { claim, assertions });
+    const judged = CLAIM_VERDICTS[decision?.value ?? ''];
+    if (judged !== undefined) return judged;
+
+    const schema = z.object({
+      holds: z.boolean().describe('true when the passing assertions prove the claim and the failing ones do not refute it'),
+      reason: z.string().describe('Which assertions decided it, in one sentence'),
+    });
+    const response = await this.provider
+      .generateObject([{ role: 'user' as const, content: `${question}\n\n${JSON.stringify({ claim, assertions }, null, 2)}` }], schema, this.provider.getAgenticModel('navigator'), {
+        agentName: 'navigator',
+        telemetry: { functionId: 'navigator.weighMixedAssertions' },
+      })
+      .catch(() => null);
+    if (response?.object?.reason) tag('step').log(`Mixed assertion results: ${response.object.reason}`);
+    return response?.object?.holds === true;
   }
 
   private checkAlreadyVerified(aiResponse: string, actionResult: ActionResult): boolean {

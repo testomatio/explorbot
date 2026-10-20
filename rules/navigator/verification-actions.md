@@ -55,9 +55,11 @@ Checks that page title contains expected text.
 I.seeInSource(<text>)
 
 Checks that page source contains expected text (including hidden elements).
+Pass plain text only — never markup, tags, attributes or class names. The HTML you are shown is rewritten
+and will not match the live source character for character. Use it only for text that no visible element carries.
 
 <example>
-  I.seeInSource('<div class="hidden">');
+  I.seeInSource('Draft saved');
 </example>
 
 ### I.dontSee
@@ -99,10 +101,10 @@ Checks that an input field does NOT contain the specified value.
 
 I.dontSeeInSource(<text>)
 
-Checks that page source does NOT contain expected text.
+Checks that page source does NOT contain expected text. Plain text only, same as I.seeInSource.
 
 <example>
-  I.dontSeeInSource('error-class');
+  I.dontSeeInSource('Session expired');
 </example>
 
 ### Asserting the state of a control

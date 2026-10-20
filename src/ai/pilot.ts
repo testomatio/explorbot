@@ -336,7 +336,8 @@ export class Pilot implements Agent {
       EVIDENCE SOURCES disagree often: verify(), see(), visual_analysis, session_log. No single source
       overrides the others — weigh them together. Tester's record() notes are the LEAST reliable; always
       cross-check against actual actions and state. Visual screenshot analysis is strong for UI state
-      (active tabs, visible counts, colors).
+      (active tabs, visible counts, colors). The URL is weak for it: parameter names are internal encoding,
+      so a URL whose wording differs from the visible control is not evidence against that control.
       Judge every check by WHAT IT ESTABLISHES, never by the fact that it ran. A check that executed
       successfully is failure evidence when its content negates the scenario goal — the goal's object
       absent, the action not performed, the interaction impossible. "The check passed" and "the goal was
@@ -1223,7 +1224,8 @@ export class Pilot implements Agent {
       page is usually richer than the page summary lists — prefer exploring it before navigating away.
 
       Already-achieved detection: if the scenario goal is met in the current state (page_summary, ariaDiff,
-      state), instruct Tester to verify() and finish(). If goal was already true at the start, propose
+      state), instruct Tester to verify() and finish(). Read the state from what the page shows: URL parameter
+      names are internal encoding and need not match visible labels. If goal was already true at the start, propose
       different input data so the test is meaningful. If Tester repeats the same successful action, STOP.
 
       If needed you should pick the exact item the scenario should act on (from the page, or precondition() one) and pass it to tester
