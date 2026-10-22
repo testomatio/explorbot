@@ -24,6 +24,7 @@ import type { Provider } from './provider.js';
 import { POSSIBLE_SECTIONS, type Researcher } from './researcher.ts';
 import { findSimilarStateHash } from './researcher/cache.ts';
 import { hasFocusedSection } from './researcher/focus.ts';
+import { RulesLoader } from '../utils/rules-loader.ts';
 import { capabilityGroundingRule, dataProtectionRules, fileUploadRule } from './rules.ts';
 import type { Scout } from './scout.ts';
 
@@ -350,14 +351,14 @@ export class Planner extends PlannerBase implements Agent {
 
     conversation.addUserText(this.getSystemMessage(feature));
 
-    let authGateDirective = '';
-    if (!feature) authGateDirective = '\nSign-in, sign-up and password-recovery pages are entry gates, not the subject of exploration: return an empty scenarios list for them.';
+    let ignoredPagesRule = '';
+    if (!feature) ignoredPagesRule = `\n${RulesLoader.loadRules('planner', ['ignored-pages'], state.url)}`;
 
     const planningPrompt = dedent`
       <task>
       Based on the page research, create ${this.MIN_TASKS}-${this.MAX_TASKS} exploratory testing scenarios.
       For each scenario provide specific steps and expected outcomes.
-      Exception: if the page reports the requested resource is missing, shows a failure state, or holds no content and no controls, return an empty scenarios list. Never invent tests for a page with nothing to exercise.${authGateDirective}
+      Exception: if the page reports the requested resource is missing, shows a failure state, or holds no content and no controls, return an empty scenarios list. Never invent tests for a page with nothing to exercise.${ignoredPagesRule}
       </task>
 
       <rules>

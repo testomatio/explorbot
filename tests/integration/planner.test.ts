@@ -323,10 +323,10 @@ describe('Planner with aimock', () => {
 
   it('treats authentication pages as not plannable only without a feature focus', async () => {
     await planner.plan();
-    expect(extractPromptText(mock.getLastRequest())).toContain('password-recovery pages are entry gates');
+    expect(extractPromptText(mock.getLastRequest())).toContain('<ignored_pages>');
 
     await planner.plan('login');
-    expect(extractPromptText(mock.getLastRequest())).not.toContain('password-recovery pages are entry gates');
+    expect(extractPromptText(mock.getLastRequest())).not.toContain('<ignored_pages>');
   });
 
   it('returns an empty plan when AI returns no scenarios', async () => {

@@ -3,7 +3,7 @@
 ## 2026-10-22
 
 ### Changes
-- [Planner] Sign-in, sign-up and password-recovery pages are no longer planned during exploration; the run prints `Page is not plannable: <reason>` and moves on. With `--focus` (e.g. `--focus login`) these pages are still planned.
+- [Planner] Sign-in, sign-up and password-recovery pages are now ignored during exploration; the run prints `Page is not plannable: <reason>` and moves on. With `--focus` (e.g. `--focus login`) these pages are still planned. To change the list, put your own `rules/planner/ignored-pages.md` in the project.
 - [Planner] When a page gets no tests, the reason is printed.
 - `explore` and `freesail` print the current page on a failed exit: URL, headings, ARIA summary and research, plus the saved screenshot, HTML and ARIA file paths.
 - `/context` also prints the paths of the saved HTML and ARIA files.
