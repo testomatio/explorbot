@@ -9,6 +9,7 @@
 - prima `do`: when the model writes its actions as text instead of performing them, it is told nothing has run yet, and the failure says the model replied with text, instead of looking like a completed step.
 - Explorer: hidden duplicate elements (such as a second copy of a sign-in form) no longer make clicks and fills fail with "multiple elements found"; only visible elements are matched.
 - prima `config`: shows the site config file path.
+- AI: structured answers no longer print the AI SDK's "generateObject is deprecated" warning and stack trace on every call.
 
 ## 2026-10-19
 

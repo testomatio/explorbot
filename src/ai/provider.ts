@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { OpenTelemetry } from '@ai-sdk/otel';
 import { LangfuseSpanProcessor } from '@langfuse/otel';
 import { NodeSDK } from '@opentelemetry/sdk-node';
-import { APICallError, NoObjectGeneratedError, asSchema, extractJsonMiddleware, generateObject, generateText, isStepCount, parsePartialJson, registerTelemetry, tool, wrapLanguageModel } from 'ai';
+import { APICallError, NoObjectGeneratedError, NoOutputGeneratedError, Output, asSchema, extractJsonMiddleware, generateText, isStepCount, parsePartialJson, registerTelemetry, tool, wrapLanguageModel } from 'ai';
 import type { ModelMessage } from 'ai';
 import dedent from 'dedent';
 import { z } from 'zod';
@@ -99,6 +99,7 @@ export class Provider {
           error.message.includes('AI request timeout') ||
           error.message.includes('schema') ||
           error.message.includes('No object generated') ||
+          error.message.includes('No output generated') ||
           error.message.includes('No response text') ||
           error.message.includes('validate JSON')) &&
         !error.message.includes('output truncated at maxTokens')
@@ -530,13 +531,13 @@ export class Provider {
     setActivity(`🤖 Asking ${modelName} for structured output`, 'ai');
     promptLog(`Using model: ${modelName}`);
 
-    const config = this.buildGenerateConfig({ schema }, { model: modelToUse }, options);
-
     try {
+      const { timeout, ...config } = this.buildGenerateConfig({ output: Output.object({ schema }) }, { model: modelToUse }, options);
       promptLog(messages[messages.length - 1].content);
       const response = await this.withModelRequestSlot(() =>
         withRetry(async () => {
-          return (await this.raceWithIdleTimeout((signal) => generateObject({ messages, ...config, abortSignal: signal }), config.timeout || 30000)) as any;
+          const result = (await this.raceWithIdleTimeout((signal) => generateText({ messages, ...config, abortSignal: signal }), timeout || 30000)) as any;
+          return { object: result.output, usage: result.usage };
         }, this.getRetryOptions(options))
       );
 
@@ -553,7 +554,7 @@ export class Provider {
       if (Provider.isContextLengthError(error)) {
         return this.recoverFromContextLength(error, messages, options, (m, o) => this.generateObject(m, schema, model, o));
       }
-      if (NoObjectGeneratedError.isInstance(error)) return this.recoverWithPlainJson(messages, schema, modelToUse, options);
+      if (NoObjectGeneratedError.isInstance(error) || NoOutputGeneratedError.isInstance(error)) return this.recoverWithPlainJson(messages, schema, modelToUse, options);
       throw new AiError(error.message || error.toString());
     }
   }
