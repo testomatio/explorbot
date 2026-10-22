@@ -32,6 +32,7 @@ export function measureUx({ scope, controlsSelector, limits }: UxProbeArgs): UxM
   const root = document.querySelector(scope) || document.body;
   const width = window.innerWidth;
   const touch = width <= limits.touchWidth;
+  const visibleWidth = document.documentElement.clientWidth;
   const checks: Record<string, string[]> = {
     'horizontal overflow': [],
     'zoom and viewport meta': [],
@@ -66,7 +67,7 @@ export function measureUx({ scope, controlsSelector, limits }: UxProbeArgs): UxM
 
   if (root === document.body || root.matches('main, [role="main"]')) {
     const docWidth = document.documentElement.scrollWidth;
-    if (docWidth > width + 1) add('horizontal overflow', `page is ${docWidth}px wide in a ${width}px viewport`);
+    if (docWidth > visibleWidth + 1) add('horizontal overflow', `page is ${docWidth}px wide in a ${visibleWidth}px visible area`);
 
     const meta = document.querySelector('meta[name="viewport"]')?.getAttribute('content');
     if (!meta) add('zoom and viewport meta', 'no viewport meta tag');
@@ -113,8 +114,8 @@ export function measureUx({ scope, controlsSelector, limits }: UxProbeArgs): UxM
     const rect = el.getBoundingClientRect();
     const style = window.getComputedStyle(el);
 
-    const overflows = rect.right > width + 1 && rect.left < width;
-    if (overflows && !(el.parentElement && el.parentElement.getBoundingClientRect().right > width + 1)) add('horizontal overflow', `${describe(el)} ends at ${Math.round(rect.right)}px`);
+    const overflows = rect.right > visibleWidth + 1 && rect.left < visibleWidth;
+    if (overflows && !(el.parentElement && el.parentElement.getBoundingClientRect().right > visibleWidth + 1)) add('horizontal overflow', `${describe(el)} ends at ${Math.round(rect.right)}px`);
 
     const animated = style.transitionProperty.split(',').map((property) => property.trim());
     const layout = animated.filter((property) => ['width', 'height', 'top', 'left', 'right', 'bottom', 'margin', 'padding'].includes(property));
