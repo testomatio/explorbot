@@ -13,7 +13,7 @@ import { RecommendedModelsCommand } from '../src/commands/recommended-models-com
 import { App } from '../src/components/App.js';
 import { StatusPane } from '../src/components/StatusPane.js';
 import { decisionModelOption, knowledgeOption, wsOption } from '../src/commands/options/index.js';
-import { ConfigParser, EXPLORBOT_ENV_VARS, PROVIDERS } from '../src/config.js';
+import { ConfigParser, EXPLORBOT_ENV_VARS, PROVIDERS, outputPath } from '../src/config.js';
 import { ExplorBot, type ExplorBotOptions } from '../src/explorbot.js';
 import { remote } from '../src/remote.js';
 import { Stats } from '../src/stats.js';
@@ -123,10 +123,16 @@ async function startTUI(explorBot: ExplorBot): Promise<void> {
   });
 }
 
-async function printPageContext(explorBot?: ExplorBot): Promise<void> {
-  if (!explorBot?.getExplorer()) return;
-  const { ContextCommand } = await import('../src/commands/context-command.js');
-  await new ContextCommand(explorBot).execute('--screenshot').catch((err) => console.error('Could not capture page context:', err instanceof Error ? err.message : err));
+function printPageContext(explorBot?: ExplorBot): void {
+  const state = explorBot?.stateManager().getCurrentState();
+  if (!state) return;
+  const lines = [`Last page: ${state.fullUrl || state.url}`];
+  if (state.title) lines.push(`Title: ${state.title}`);
+  if (state.screenshotFile) lines.push(`Screenshot: file://${outputPath('states', state.screenshotFile)}`);
+  if (state.htmlFile) lines.push(`HTML: file://${outputPath('states', state.htmlFile)}`);
+  if (state.ariaSnapshotFile) lines.push(`ARIA: file://${outputPath('states', state.ariaSnapshotFile)}`);
+  if (state.ariaSnapshot) lines.push('', state.ariaSnapshot);
+  console.error(lines.join('\n'));
 }
 
 async function showStatsAndExit(code: number): Promise<never> {
@@ -195,7 +201,7 @@ addCommonOptions(
     await showStatsAndExit(0);
   } catch (error) {
     console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
-    await printPageContext(explorBot);
+    printPageContext(explorBot);
     await showStatsAndExit(1);
   }
 });
@@ -483,7 +489,7 @@ addCommonOptions(
     await cmd.execute(args);
   } catch (error) {
     console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
-    await printPageContext(explorBot);
+    printPageContext(explorBot);
     await showStatsAndExit(1);
   }
 });

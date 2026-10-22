@@ -5,8 +5,7 @@
 ### Changes
 - [Planner] Sign-in, sign-up and password-recovery pages are now ignored during exploration; the run prints `Page is not plannable: <reason>` and moves on. With `--focus` (e.g. `--focus login`) these pages are still planned. To change the list, put your own `rules/planner/ignored-pages.md` in the project.
 - [Planner] When a page gets no tests, the reason is printed.
-- `explore` and `freesail` print the current page on a failed exit: URL, headings, ARIA summary and research, plus the saved screenshot, HTML and ARIA file paths.
-- `/context` also prints the paths of the saved HTML and ARIA files.
+- `explore` and `freesail` print the last page on a failed exit: URL, title, ARIA snapshot, and the paths of its saved screenshot, HTML and ARIA files.
 - AI connection errors name the missing environment variable (e.g. `ANTHROPIC_API_KEY is not set`). A rejected key is shown masked, e.g. `ANTHROPIC_API_KEY=sk-an**123 was rejected, check the key`.
 
 ## 2026-10-13
