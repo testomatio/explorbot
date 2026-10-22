@@ -72,6 +72,7 @@ function fakePrima(options: Record<string, unknown> = {}) {
   const prima = new Prima({ instance: 'default', ...options });
   const executed: string[] = [];
   const executeOptions: unknown[] = [];
+  const stateListeners: Array<(transition: any) => void> = [];
   const after = fakeState({
     url: 'https://app.example.com/dashboard',
     title: 'Dashboard',
@@ -94,6 +95,10 @@ function fakePrima(options: Record<string, unknown> = {}) {
     stateManager: () => ({
       getCurrentState: () => fakeState(),
       getVisitCount: () => 1,
+      onStateChange: (listener: (transition: any) => void) => {
+        stateListeners.push(listener);
+        return () => stateListeners.splice(stateListeners.indexOf(listener), 1);
+      },
     }),
     getCurrentState: () => fakeState(),
     getConfig: () => ({}),
@@ -102,7 +107,7 @@ function fakePrima(options: Record<string, unknown> = {}) {
     agentResearcher: () => ({ enable: () => {}, disable: () => {} }),
   };
   (prima as any).artifactsDir = artifactsRoot;
-  return { prima, executed, executeOptions };
+  return { prima, executed, executeOptions, stateListeners };
 }
 
 describe('Prima.pw', () => {
@@ -909,10 +914,30 @@ describe('Prima.check', () => {
     const envelope = await prima.check('edit a skill', ['the editor opens']);
 
     expect(envelope.steps).toEqual([
-      { label: "I.click('Panel')", ok: true, proof: '' },
-      { label: "I.click('Row 1')", ok: true, proof: '' },
-      { label: "I.click('Edit')", ok: false, proof: 'element not found' },
+      { label: "I.click('Panel')", ok: true, proof: '', state: 1 },
+      { label: "I.click('Row 1')", ok: true, proof: '', state: 1 },
+      { label: "I.click('Edit')", ok: false, proof: 'element not found', state: 1 },
     ]);
+  });
+
+  test('each step names the state it ran in, and every state visited is listed with its aria file', async () => {
+    const { prima, stateListeners } = fakePrima();
+    (prima as any).bot.agentTester = () => ({
+      test: async (test: any) => {
+        test.addStep("I.click('Settings')", 10, 'passed');
+        for (const listener of stateListeners) listener({ toState: fakeState({ url: '/settings', hash: 'settings', ariaSnapshot: '- heading "Settings"' }) });
+        test.addStep("I.see('Settings')", 10, 'passed');
+        return { success: true };
+      },
+    });
+    (prima as any).bot.agentPilot = () => ({ settleExpectations: async () => [new SettledExpectation('settings open', 'passed')] });
+
+    const envelope = await prima.check('open settings', ['settings open']);
+
+    expect(envelope.steps?.map((step) => step.state)).toEqual([1, 2]);
+    expect(envelope.states?.map((state) => state.url)).toEqual(['https://app.example.com/login', '/settings']);
+    expect(readFileSync(envelope.states?.[1].aria || '', 'utf-8')).toBe('- heading "Settings"');
+    expect(stateListeners).toHaveLength(0);
   });
 
   test('a page that needs no preparation goes straight to the tester', async () => {

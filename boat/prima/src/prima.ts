@@ -400,29 +400,50 @@ export class Prima {
     const test = new Test(scenario, 'normal', outcomes, previousState?.url || this.options.url || '');
     const tester = this.bot.agentTester();
 
-    await tester.test(test, { startOnCurrentPage: true });
+    const states: Array<{ url: string; aria: string }> = [];
+    const visited = new Map<string, number>();
+    const timeline: Array<{ time: number; state: number }> = [];
+    const trackState = (state?: WebPageState | null) => {
+      if (!state?.hash) return;
+      let number = visited.get(state.hash);
+      if (!number) {
+        number = visited.size + 1;
+        visited.set(state.hash, number);
+        const aria = path.join(this.statusDir(), `state-${number}.aria.yml`);
+        mkdirSync(this.statusDir(), { recursive: true });
+        writeFileSync(aria, state.ariaSnapshot || '', 'utf-8');
+        states.push({ url: state.url, aria });
+      }
+      timeline.push({ time: performance.now(), state: number });
+    };
+    trackState(previousState);
+    const stopTracking = this.bot.stateManager().onStateChange((transition) => trackState(transition.toState));
+
+    await tester.test(test, { startOnCurrentPage: true }).finally(stopTracking);
 
     const notes = Object.values(test.notes || {}) as Array<{ message: string; status?: string; log?: string; observation?: boolean }>;
     const result = await this.capturedResult(this.bot.stateManager().getCurrentState(), { screenshot: this.visionEnabled() });
     const envelope = await this.reportEnvelope(command, result, previousState, {});
-    const repeats = new Map<string, { message: string; ok: boolean; count: number; proof: string }>();
-    for (const step of Object.values(test.steps || {})) {
+    const repeats = new Map<string, { message: string; ok: boolean; count: number; proof: string; state?: number }>();
+    for (const [startedAt, step] of Object.entries(test.steps || {})) {
       const ok = step.status !== 'failed';
-      const key = `${ok} ${step.text}`;
+      const state = timeline.findLast((entry) => entry.time <= Number.parseFloat(startedAt))?.state;
+      const key = `${ok} ${state} ${step.text}`;
       let proof = '';
       if (!ok) proof = step.error || '';
-      repeats.set(key, { message: step.text, ok, count: (repeats.get(key)?.count || 0) + 1, proof });
+      repeats.set(key, { message: step.text, ok, count: (repeats.get(key)?.count || 0) + 1, proof, state });
     }
     const preparedSteps = (prepared?.steps || []).map((step) => ({ ...step, label: `prepare: ${step.label}` }));
     envelope.steps = [
       ...preparedSteps,
-      ...[...repeats.values()].map(({ message, ok, count, proof }) => {
+      ...[...repeats.values()].map(({ message, ok, count, proof, state }) => {
         let label = message;
         if (count > 1) label += ` (×${count})`;
-        return { label, ok, proof };
+        return { label, ok, proof, state };
       }),
     ];
     if (prepared?.stepFiles) envelope.stepFiles = prepared.stepFiles;
+    if (states.length) envelope.states = states;
 
     envelope.expectations = await this.bot.agentPilot().settleExpectations(test, result);
 
