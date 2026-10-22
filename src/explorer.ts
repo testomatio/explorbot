@@ -104,6 +104,7 @@ class Explorer {
       throw new Error('Playwright helper not available');
     }
     this.applyBasePathToHelper();
+    codeceptjs.store.visibleLocator = this.playwrightHelper.options?.visibleLocator;
     await this.connectOrLaunchBrowser();
     const hasSession = !this.options?.attachedBrowser && this.options?.session && existsSync(this.options.session);
     await this.openContextPage();

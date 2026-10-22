@@ -197,11 +197,13 @@ export class Prima {
         const unreported = this.openInstructions(ledger);
         if (!unreported || nudged) break;
         nudged = true;
+        let reminder = 'Do not act again on anything you have already carried out.';
+        if (!trace.length) reminder = 'Nothing has been carried out yet: text in a reply is never executed, only tool calls are. Act with tools.';
         conversation.addUserText(dedent`
           These instructions are still unreported:
           ${unreported}
 
-          Report each one with completed() or blocked(). Do not act again on anything you have already carried out.
+          Report each one with completed() or blocked(). ${reminder}
         `);
         continue;
       }
@@ -257,7 +259,8 @@ export class Prima {
     }
 
     if (!trace.length && unfinished.length === ledger.length) {
-      const reason = ['No action was performed for these instructions on the current page.', narration].filter(Boolean).join(' ');
+      let reason = 'No action was performed for these instructions on the current page.';
+      if (narration) reason += `\nThe model replied with text instead of calling a tool:\n${narration}`;
       return this.failureEnvelope(command, reason, previousState);
     }
 
@@ -382,8 +385,18 @@ export class Prima {
     const guard = await this.aiGuard(command);
     if (guard) return guard;
 
-    const previousState = await this.baselineState();
     const outcomes = expected.length ? expected : [scenario];
+    const preparation = await this.preparationSteps(scenario, outcomes);
+    let prepared: EnvelopeData | null = null;
+    if (preparation.length) {
+      prepared = await this.do(preparation, command);
+      if (!prepared.ok) {
+        prepared.failure = { error: `the check never ran, because preparing the page for it failed:\n${prepared.failure?.error || ''}` };
+        return prepared;
+      }
+    }
+
+    const previousState = await this.baselineState();
     const test = new Test(scenario, 'normal', outcomes, previousState?.url || this.options.url || '');
     const tester = this.bot.agentTester();
 
@@ -393,14 +406,25 @@ export class Prima {
     const result = await this.capturedResult(this.bot.stateManager().getCurrentState(), { screenshot: this.visionEnabled() });
     const envelope = await this.reportEnvelope(command, result, previousState, {});
     const recorded = notes.filter((note) => !note.observation && !outcomes.includes(note.message));
-    const failed = recorded.filter((note) => note.status === TestResult.FAILED);
-    const repeats = new Map<string, { count: number; proof: string }>();
-    for (const note of failed) repeats.set(note.message, { count: (repeats.get(note.message)?.count || 0) + 1, proof: note.log || '' });
-    envelope.steps = [...repeats].map(([message, { count, proof }]) => {
-      let label = message;
-      if (count > 1) label += ` (×${count})`;
-      return { label, ok: false, proof };
-    });
+    const repeats = new Map<string, { message: string; ok: boolean; count: number; proof: string }>();
+    for (const note of recorded) {
+      if (!note.status) continue;
+      const ok = note.status !== TestResult.FAILED;
+      const key = `${ok} ${note.message}`;
+      let proof = '';
+      if (!ok) proof = note.log || '';
+      repeats.set(key, { message: note.message, ok, count: (repeats.get(key)?.count || 0) + 1, proof });
+    }
+    const preparedSteps = (prepared?.steps || []).map((step) => ({ ...step, label: `prepare: ${step.label}` }));
+    envelope.steps = [
+      ...preparedSteps,
+      ...[...repeats.values()].map(({ message, ok, count, proof }) => {
+        let label = message;
+        if (count > 1) label += ` (×${count})`;
+        return { label, ok, proof };
+      }),
+    ];
+    if (prepared?.stepFiles) envelope.stepFiles = prepared.stepFiles;
 
     envelope.expectations = await this.bot.agentPilot().settleExpectations(test, result);
 
@@ -493,7 +517,7 @@ export class Prima {
     let arrived = true;
 
     try {
-      arrived = await this.bot.agentNavigator().visit(target, { recover: !isUrl });
+      arrived = await this.bot.agentNavigator().visit(target, { recover: !this.aiUnavailable() });
     } catch (error) {
       navigationError = error;
     }
@@ -504,7 +528,11 @@ export class Prima {
     if (isUrl) used.push(code);
     const result = await this.capturedResult(this.bot.stateManager().getCurrentState());
     const envelope = await this.successEnvelope(command, used, result, previousState);
-    if (!arrived) envelope.page.redirectedFrom = target;
+    if (arrived) return envelope;
+
+    envelope.page.redirectedFrom = target;
+    envelope.ok = false;
+    envelope.failure = { error: `${target} was not reached: the page redirected to ${result.url} and no AI model is available to recover (log in, follow knowledge)` };
     return envelope;
   }
 
@@ -522,7 +550,7 @@ export class Prima {
     const config = await this.loadConfig();
     const parser = ConfigParser.getInstance();
 
-    return ConfigCommand.render(config, { configPath: parser.getConfigPath(), root: parser.getProjectRoot(), json });
+    return ConfigCommand.render(config, { configPath: parser.getConfigPath(), siteConfigPath: parser.getSiteConfigPath(), root: parser.getProjectRoot(), json });
   }
 
   record(envelope: EnvelopeData, durationMs: number): void {
@@ -874,6 +902,42 @@ export class Prima {
         return { success: true, context: cap(await result.simplifiedHtml(), CONTEXT_HTML_CAP) };
       },
     });
+  }
+
+  private async preparationSteps(scenario: string, outcomes: string[]): Promise<string[]> {
+    const result = await this.capturedResult(await this.baselineState());
+    const page = compactAriaSnapshot(result.ariaSnapshot, true).slice(0, JUDGE_PAGE_CAP);
+
+    const judge = this.bot.judge?.();
+    if (judge) {
+      const question = 'Before this scenario can start, the current page needs actions the scenario does not perform itself: reaching the page where it starts, or setting up a precondition it relies on.';
+      const needed = await judge.decide(question, null, { scenario, outcomes, url: result.url, page });
+      if (needed.rejected) return [];
+    }
+
+    const prompt = dedent`
+      <scenario>
+      ${scenario}
+      </scenario>
+
+      <expected_outcomes>
+      ${outcomes.map((outcome) => `- ${outcome}`).join('\n')}
+      </expected_outcomes>
+
+      <page>
+      url: ${result.url}
+      ${page}
+      </page>
+
+      A check of this scenario runs next, starting from the current page. Decide whether the page must be prepared first.
+      Preparation is only what the scenario assumes but does not do: reaching the page where it starts when this is a different one,
+      or setting up a precondition it relies on. Never include the actions the scenario describes — the check performs and judges those.
+      List the preparation as short imperative instructions, in order. Return an empty list when the scenario can start here.
+    `;
+    const schema = z.object({ steps: z.array(z.string()).describe('preparation instructions, in order; empty when none are needed') });
+    const provider = this.bot.getProvider();
+    const response = await provider.generateObject([{ role: 'user', content: prompt }], schema, provider.getAgenticModel?.(AI_AGENT_NAME), { agentName: AI_AGENT_NAME }).catch(() => null);
+    return response?.object?.steps || [];
   }
 
   private async pageContext(result: ActionResult): Promise<string> {
