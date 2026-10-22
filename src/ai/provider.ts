@@ -150,7 +150,7 @@ export class Provider {
   }
 
   async oracle(statement: string, state: unknown, options: any = {}): Promise<boolean> {
-    const judged = await this.judge?.holds(statement, state);
+    const judged = await this.judge?.assert(statement, state);
     if (typeof judged === 'boolean') return judged;
 
     const schema = z.object({ holds: z.boolean().describe('whether the statement is true') });

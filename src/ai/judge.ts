@@ -51,7 +51,7 @@ export class Judge {
     return this.consult(question, options, state);
   }
 
-  async holds(statement: string, state: unknown): Promise<boolean | null> {
+  async assert(statement: string, state: unknown): Promise<boolean | null> {
     const decision = await this.decide(statement, null, state);
     if (decision.approved) return true;
     if (decision.answered && decision.confidence < 1 - this.threshold) return false;

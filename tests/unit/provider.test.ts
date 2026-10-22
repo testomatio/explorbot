@@ -521,7 +521,7 @@ describe('Provider', () => {
 
   describe('oracle', () => {
     it('takes the judge answer when the judge is sure', async () => {
-      provider.setJudge({ holds: async () => false } as any);
+      provider.setJudge({ assert: async () => false } as any);
       provider.generateObject = async () => {
         throw new Error('should not be asked');
       };
@@ -530,7 +530,7 @@ describe('Provider', () => {
     });
 
     it('asks the agentic model when the judge is unsure or absent', async () => {
-      provider.setJudge({ holds: async () => null } as any);
+      provider.setJudge({ assert: async () => null } as any);
       let asked = '';
       provider.generateObject = async (messages: any) => {
         asked = messages[0].content;
