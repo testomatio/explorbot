@@ -4,7 +4,7 @@ import { browserErrorMessage } from '../../../src/utils/browser-errors.ts';
 import { isVerboseMode, setQuietMode } from '../../../src/utils/logger.ts';
 import { clearActivityLine, trackActivityLine } from './activity-line.ts';
 import { type EnvelopeData, renderEnvelope } from './envelope.ts';
-import { askHelp, checkHelp, doHelp, helpContract, reportHelp, researchHelp, sessionHelp, statusHelp, verifyHelp } from './help.ts';
+import { askHelp, checkHelp, doHelp, helpContract, reportHelp, researchHelp, sessionHelp, statusHelp, uxHelp, verifyHelp } from './help.ts';
 import { Prima, type PrimaOptions } from './prima.ts';
 
 let rootOptions: () => any = () => ({});
@@ -127,6 +127,12 @@ export function createPrimaCommands(name = 'prima'): Command {
     .addHelpText('after', `\n${researchHelp}`)
     .action(async (options) => {
       await runPrima(options, 'research', (prima) => prima.research({ data: options.data, deep: options.deep, fresh: options.fresh }));
+    });
+
+  addBrowserOptions(cmd.command('ux [focus]').description('Review the area being worked on for UX issues, across breakpoints'))
+    .addHelpText('after', `\n${uxHelp}`)
+    .action(async (focus, options) => {
+      await runPrima(options, ['ux', focus].filter(Boolean).join(' '), (prima) => prima.ux(focus));
     });
 
   addBrowserOptions(cmd.command('go <target>').description('Navigate to a url, a path, or a page described in plain words')).action(async (target, options) => {
