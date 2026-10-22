@@ -20,7 +20,7 @@ import { findSiteWith, listSites } from '../../../src/global-config.ts';
 import { Reporter } from '../../../src/reporter.ts';
 import type { WebPageState } from '../../../src/state-manager.ts';
 import { Stats } from '../../../src/stats.ts';
-import { Task, Test, TestResult } from '../../../src/test-plan.ts';
+import { Task, Test } from '../../../src/test-plan.ts';
 import { ariaRefSelector, ariaRefSnapshot, describeRef, parseAriaRefs, refIsGone } from '../../../src/utils/aria-ref.ts';
 import { compactAriaSnapshot } from '../../../src/utils/aria.ts';
 import { browserErrorMessage } from '../../../src/utils/browser-errors.ts';
@@ -197,11 +197,13 @@ export class Prima {
         const unreported = this.openInstructions(ledger);
         if (!unreported || nudged) break;
         nudged = true;
+        let reminder = 'Do not act again on anything you have already carried out.';
+        if (!trace.length) reminder = 'Nothing has been carried out yet: text in a reply is never executed, only tool calls are. Act with tools.';
         conversation.addUserText(dedent`
           These instructions are still unreported:
           ${unreported}
 
-          Report each one with completed() or blocked(). Do not act again on anything you have already carried out.
+          Report each one with completed() or blocked(). ${reminder}
         `);
         continue;
       }
@@ -257,7 +259,8 @@ export class Prima {
     }
 
     if (!trace.length && unfinished.length === ledger.length) {
-      const reason = ['No action was performed for these instructions on the current page.', narration].filter(Boolean).join(' ');
+      let reason = 'No action was performed for these instructions on the current page.';
+      if (narration) reason += `\nThe model replied with text instead of calling a tool:\n${narration}`;
       return this.failureEnvelope(command, reason, previousState);
     }
 
@@ -382,22 +385,65 @@ export class Prima {
     const guard = await this.aiGuard(command);
     if (guard) return guard;
 
-    const previousState = await this.baselineState();
     const outcomes = expected.length ? expected : [scenario];
+    const preparation = await this.preparationSteps(scenario, outcomes);
+    let prepared: EnvelopeData | null = null;
+    if (preparation.length) {
+      prepared = await this.do(preparation, command);
+      if (!prepared.ok) {
+        prepared.failure = { error: `the check never ran, because preparing the page for it failed:\n${prepared.failure?.error || ''}` };
+        return prepared;
+      }
+    }
+
+    const previousState = await this.baselineState();
     const test = new Test(scenario, 'normal', outcomes, previousState?.url || this.options.url || '');
     const tester = this.bot.agentTester();
 
-    await tester.test(test, { startOnCurrentPage: true });
+    const states: Array<{ url: string; aria: string }> = [];
+    const visited = new Map<string, number>();
+    const timeline: Array<{ time: number; state: number }> = [];
+    const trackState = (state?: WebPageState | null) => {
+      if (!state?.hash) return;
+      let number = visited.get(state.hash);
+      if (!number) {
+        number = visited.size + 1;
+        visited.set(state.hash, number);
+        const aria = path.join(this.statusDir(), `state-${number}.aria.yml`);
+        mkdirSync(this.statusDir(), { recursive: true });
+        writeFileSync(aria, state.ariaSnapshot || '', 'utf-8');
+        states.push({ url: state.url, aria });
+      }
+      timeline.push({ time: performance.now(), state: number });
+    };
+    trackState(previousState);
+    const stopTracking = this.bot.stateManager().onStateChange((transition) => trackState(transition.toState));
+
+    await tester.test(test, { startOnCurrentPage: true }).finally(stopTracking);
 
     const notes = Object.values(test.notes || {}) as Array<{ message: string; status?: string; log?: string; observation?: boolean }>;
     const result = await this.capturedResult(this.bot.stateManager().getCurrentState(), { screenshot: this.visionEnabled() });
     const envelope = await this.reportEnvelope(command, result, previousState, {});
-    const recorded = notes.filter((note) => !note.observation && !outcomes.includes(note.message));
-    const failed = recorded.filter((note) => note.status === TestResult.FAILED);
-    envelope.steps = failed.map((note) => ({ label: note.message, ok: false, proof: note.log || '' }));
-
-    const routine = recorded.length - failed.length;
-    if (routine) envelope.steps.push({ label: `${routine} further ${pluralize(routine, 'step')} ran without failing — prima status ${envelope.status} for the full log`, ok: true, proof: '' });
+    const repeats = new Map<string, { message: string; ok: boolean; count: number; proof: string; state?: number }>();
+    for (const [startedAt, step] of Object.entries(test.steps || {})) {
+      const ok = step.status !== 'failed';
+      const state = timeline.findLast((entry) => entry.time <= Number.parseFloat(startedAt))?.state;
+      const key = `${ok} ${state} ${step.text}`;
+      let proof = '';
+      if (!ok) proof = step.error || '';
+      repeats.set(key, { message: step.text, ok, count: (repeats.get(key)?.count || 0) + 1, proof, state });
+    }
+    const preparedSteps = (prepared?.steps || []).map((step) => ({ ...step, label: `prepare: ${step.label}` }));
+    envelope.steps = [
+      ...preparedSteps,
+      ...[...repeats.values()].map(({ message, ok, count, proof, state }) => {
+        let label = message;
+        if (count > 1) label += ` (×${count})`;
+        return { label, ok, proof, state };
+      }),
+    ];
+    if (prepared?.stepFiles) envelope.stepFiles = prepared.stepFiles;
+    if (states.length) envelope.states = states;
 
     envelope.expectations = await this.bot.agentPilot().settleExpectations(test, result);
 
@@ -407,9 +453,12 @@ export class Prima {
 
     const unreached = envelope.expectations.filter((expectation) => expectation.failed);
     const contradicted = envelope.expectations.filter((expectation) => expectation.contradicted);
-    envelope.ok = !unreached.length && !contradicted.length;
+    const unverified = envelope.expectations.filter((expectation) => expectation.status === 'unverified');
+    const nothingVerified = unverified.length === envelope.expectations.length;
+    envelope.ok = !unreached.length && !contradicted.length && !nothingVerified;
 
     const problems = [...unreached.map((expectation) => `not reached: ${expectation.text}`), ...contradicted.map((expectation) => `the picture and the run disagree about: ${expectation.text}`)];
+    if (nothingVerified) problems.push(...unverified.map((expectation) => `not verified: ${expectation.text}`));
     if (problems.length) envelope.failure = { error: problems.join('\n') };
 
     if (!test.hasFinished || test.isSkipped) {
@@ -418,7 +467,7 @@ export class Prima {
     }
 
     const observations = notes.filter((note) => note.observation).map((note) => note.message);
-    if (observations.length) envelope.answer = ['Page problems noticed while running, not step failures:', ...observations.map((line) => `- ${line}`)].join('\n');
+    if (observations.length) envelope.pageIssues = observations;
     return envelope;
   }
 
@@ -487,7 +536,7 @@ export class Prima {
     let arrived = true;
 
     try {
-      arrived = await this.bot.agentNavigator().visit(target, { recover: !isUrl });
+      arrived = await this.bot.agentNavigator().visit(target, { recover: !this.aiUnavailable() });
     } catch (error) {
       navigationError = error;
     }
@@ -498,7 +547,11 @@ export class Prima {
     if (isUrl) used.push(code);
     const result = await this.capturedResult(this.bot.stateManager().getCurrentState());
     const envelope = await this.successEnvelope(command, used, result, previousState);
-    if (!arrived) envelope.page.redirectedFrom = target;
+    if (arrived) return envelope;
+
+    envelope.page.redirectedFrom = target;
+    envelope.ok = false;
+    envelope.failure = { error: `${target} was not reached: the page redirected to ${result.url} and no AI model is available to recover (log in, follow knowledge)` };
     return envelope;
   }
 
@@ -516,7 +569,7 @@ export class Prima {
     const config = await this.loadConfig();
     const parser = ConfigParser.getInstance();
 
-    return ConfigCommand.render(config, { configPath: parser.getConfigPath(), root: parser.getProjectRoot(), json });
+    return ConfigCommand.render(config, { configPath: parser.getConfigPath(), siteConfigPath: parser.getSiteConfigPath(), root: parser.getProjectRoot(), json });
   }
 
   record(envelope: EnvelopeData, durationMs: number): void {
@@ -868,6 +921,42 @@ export class Prima {
         return { success: true, context: cap(await result.simplifiedHtml(), CONTEXT_HTML_CAP) };
       },
     });
+  }
+
+  private async preparationSteps(scenario: string, outcomes: string[]): Promise<string[]> {
+    const result = await this.capturedResult(await this.baselineState());
+    const page = compactAriaSnapshot(result.ariaSnapshot, true).slice(0, JUDGE_PAGE_CAP);
+
+    const judge = this.bot.judge?.();
+    if (judge) {
+      const question = 'Before this scenario can start, the current page needs actions the scenario does not perform itself: reaching the page where it starts, or setting up a precondition it relies on.';
+      const needed = await judge.decide(question, null, { scenario, outcomes, url: result.url, page });
+      if (needed.rejected) return [];
+    }
+
+    const prompt = dedent`
+      <scenario>
+      ${scenario}
+      </scenario>
+
+      <expected_outcomes>
+      ${outcomes.map((outcome) => `- ${outcome}`).join('\n')}
+      </expected_outcomes>
+
+      <page>
+      url: ${result.url}
+      ${page}
+      </page>
+
+      A check of this scenario runs next, starting from the current page. Decide whether the page must be prepared first.
+      Preparation is only what the scenario assumes but does not do: reaching the page where it starts when this is a different one,
+      or setting up a precondition it relies on. Never include the actions the scenario describes — the check performs and judges those.
+      List the preparation as short imperative instructions, in order. Return an empty list when the scenario can start here.
+    `;
+    const schema = z.object({ steps: z.array(z.string()).describe('preparation instructions, in order; empty when none are needed') });
+    const provider = this.bot.getProvider();
+    const response = await provider.generateObject([{ role: 'user', content: prompt }], schema, provider.getAgenticModel?.(AI_AGENT_NAME), { agentName: AI_AGENT_NAME }).catch(() => null);
+    return response?.object?.steps || [];
   }
 
   private async pageContext(result: ActionResult): Promise<string> {

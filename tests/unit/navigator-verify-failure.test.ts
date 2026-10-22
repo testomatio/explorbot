@@ -65,4 +65,50 @@ describe('Navigator.verifyState', () => {
     expect(result.verified).toBe(false);
     expect(result.results[0].error).toBe('expected main to include "Widget"');
   });
+
+  describe('when some assertions pass and some fail', () => {
+    const twoBlocks = async () => ({ response: { text: "```js\nI.seeElement('.tab.active')\n```\n```js\nI.seeInSource('<a class=\"tab active\">')\n```" } });
+
+    function mixedNavigator() {
+      const navigator = createNavigator(twoBlocks) as any;
+      let attempts = 0;
+      const action: any = { assertionSteps: [], exitIframe: async () => {} };
+      action.attempt = async () => {
+        attempts++;
+        action.lastError = undefined;
+        if (attempts === 1) return true;
+        action.lastError = new Error('source does not contain it');
+        return false;
+      };
+      navigator.explorer.action = () => action;
+      return navigator;
+    }
+
+    it('asks the oracle whether the claim holds, given every assertion and its result', async () => {
+      const navigator = mixedNavigator();
+      let asked: any;
+      navigator.provider.oracle = async (statement: string, state: any) => {
+        asked = { statement, state };
+        return true;
+      };
+
+      const result = await navigator.verifyState('The tab is active', createActionResult());
+
+      expect(result.verified).toBe(true);
+      expect(asked.statement).toBe('The tab is active');
+      expect(asked.state.assertions.map((assertion: any) => assertion.passed)).toEqual([true, false]);
+      expect(asked.state.assertions[1].error).toBe('source does not contain it');
+    });
+  });
+
+  it('does not ask anyone when every assertion passed', async () => {
+    const navigator = createNavigator(async () => ({ response: { text: "```js\nI.see('Widget')\n```\n```js\nI.seeElement('.widget')\n```" } })) as any;
+    navigator.provider.oracle = async () => {
+      throw new Error('should not be asked');
+    };
+
+    const result = await navigator.verifyState('Widget is visible in the list', createActionResult());
+
+    expect(result.verified).toBe(true);
+  });
 });
