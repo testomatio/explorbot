@@ -24,6 +24,10 @@
 - [Tester] A failed action is no longer logged twice (once as the action, once as "Failed to … (tool)") when the action already recorded its own failure.
 - prima `check`: console errors and other problems noticed on the page go under their own `### Page issues` section instead of `### Answer`.
 - prima `check`: every "not verified" outcome shows what kept the run from checking it, and a check that verified none of its outcomes returns `ok: false`, naming the outcome under `### Failure` without repeating the reason.
+- [Planner] Sign-in, sign-up and password-recovery pages are now ignored during exploration; the run prints `Page is not plannable: <reason>` and moves on. With `--focus` (e.g. `--focus login`) these pages are still planned. To change the list, put your own `rules/planner/ignored-pages.md` in the project.
+- [Planner] When a page gets no tests, the reason is printed.
+- `explore` and `freesail` print the last page on a failed exit: URL, title, ARIA snapshot, and the paths of its saved screenshot, HTML and ARIA files.
+- AI connection errors name the missing environment variable (e.g. `ANTHROPIC_API_KEY is not set`). A rejected key is shown masked, e.g. `ANTHROPIC_API_KEY=sk-an**123 was rejected, check the key`.
 
 ## 2026-10-13
 

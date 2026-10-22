@@ -7,7 +7,7 @@ import type { ModelMessage } from 'ai';
 import dedent from 'dedent';
 import { z } from 'zod';
 import { clearActivity, setActivity } from '../activity.ts';
-import { type AIConfig, configuredModels, modelName as getModelName } from '../config.js';
+import { type AIConfig, PROVIDERS, configuredModels, modelName as getModelName, modelProvider } from '../config.js';
 import { executionController } from '../execution-controller.ts';
 import { Observability } from '../observability.ts';
 import { Stats } from '../stats.ts';
@@ -128,6 +128,12 @@ export class Provider {
         prompt: 'hi',
       });
     } catch (error: any) {
+      const envKey = PROVIDERS[modelProvider(this.config.model)]?.envKey;
+      const apiKey = envKey && process.env[envKey];
+      if (envKey && !apiKey) throw new AiError(`AI connection failed: ${envKey} is not set. ${error.message}`);
+      if (apiKey && [401, 403].includes(error.statusCode)) {
+        throw new AiError(`AI connection failed: ${error.message}. ${envKey}=${apiKey.slice(0, 5)}**${apiKey.slice(-3)} was rejected, check the key`);
+      }
       throw new AiError(`AI connection failed: ${error.message}`);
     }
   }
