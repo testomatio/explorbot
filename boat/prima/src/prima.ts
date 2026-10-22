@@ -20,7 +20,7 @@ import { findSiteWith, listSites } from '../../../src/global-config.ts';
 import { Reporter } from '../../../src/reporter.ts';
 import type { WebPageState } from '../../../src/state-manager.ts';
 import { Stats } from '../../../src/stats.ts';
-import { Task, Test, TestResult } from '../../../src/test-plan.ts';
+import { Task, Test } from '../../../src/test-plan.ts';
 import { ariaRefSelector, ariaRefSnapshot, describeRef, parseAriaRefs, refIsGone } from '../../../src/utils/aria-ref.ts';
 import { compactAriaSnapshot } from '../../../src/utils/aria.ts';
 import { browserErrorMessage } from '../../../src/utils/browser-errors.ts';
@@ -405,15 +405,13 @@ export class Prima {
     const notes = Object.values(test.notes || {}) as Array<{ message: string; status?: string; log?: string; observation?: boolean }>;
     const result = await this.capturedResult(this.bot.stateManager().getCurrentState(), { screenshot: this.visionEnabled() });
     const envelope = await this.reportEnvelope(command, result, previousState, {});
-    const recorded = notes.filter((note) => !note.observation && !outcomes.includes(note.message));
     const repeats = new Map<string, { message: string; ok: boolean; count: number; proof: string }>();
-    for (const note of recorded) {
-      if (!note.status) continue;
-      const ok = note.status !== TestResult.FAILED;
-      const key = `${ok} ${note.message}`;
+    for (const step of Object.values(test.steps || {})) {
+      const ok = step.status !== 'failed';
+      const key = `${ok} ${step.text}`;
       let proof = '';
-      if (!ok) proof = note.log || '';
-      repeats.set(key, { message: note.message, ok, count: (repeats.get(key)?.count || 0) + 1, proof });
+      if (!ok) proof = step.error || '';
+      repeats.set(key, { message: step.text, ok, count: (repeats.get(key)?.count || 0) + 1, proof });
     }
     const preparedSteps = (prepared?.steps || []).map((step) => ({ ...step, label: `prepare: ${step.label}` }));
     envelope.steps = [

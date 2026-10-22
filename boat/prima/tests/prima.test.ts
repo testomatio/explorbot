@@ -892,13 +892,14 @@ describe('Prima.check', () => {
     ]);
   });
 
-  test('steps log every performed action in order, leaving verdicts to the outcomes section', async () => {
+  test('steps list the executed CodeceptJS commands in order, not the tester notes', async () => {
     const { prima } = fakePrima();
     (prima as any).bot.agentTester = () => ({
       test: async (test: any) => {
-        test.addNote('opened the panel', TestResult.PASSED);
-        test.addNote('clicked the row', TestResult.PASSED);
-        test.addNote('Failed to open the editor (click)', TestResult.FAILED);
+        test.addNote('> ACT: opened the panel', TestResult.FAILED);
+        test.addStep("I.click('Panel')", 10, 'passed');
+        test.addStep("I.click('Row 1')", 10, 'passed');
+        test.addStep("I.click('Edit')", 10, 'failed', 'element not found');
         test.addNote('the editor opens', TestResult.PASSED);
         return { success: false };
       },
@@ -906,11 +907,12 @@ describe('Prima.check', () => {
     (prima as any).bot.agentPilot = () => ({ settleExpectations: async () => [new SettledExpectation('the editor opens', 'passed')] });
 
     const envelope = await prima.check('edit a skill', ['the editor opens']);
-    const labels = envelope.steps?.map((step) => step.label) || [];
 
-    expect(labels).not.toContain('the editor opens');
-    expect(labels).toEqual(['opened the panel', 'clicked the row', 'Failed to open the editor (click)']);
-    expect(envelope.steps?.map((step) => step.ok)).toEqual([true, true, false]);
+    expect(envelope.steps).toEqual([
+      { label: "I.click('Panel')", ok: true, proof: '' },
+      { label: "I.click('Row 1')", ok: true, proof: '' },
+      { label: "I.click('Edit')", ok: false, proof: 'element not found' },
+    ]);
   });
 
   test('a page that needs no preparation goes straight to the tester', async () => {
@@ -1054,9 +1056,9 @@ describe('Prima.check', () => {
     const { prima } = fakePrima();
     (prima as any).bot.agentTester = () => ({
       test: async (test: any) => {
-        test.addNote('Click the email field', TestResult.FAILED, undefined, 'first');
-        test.addNote('Click the email field', TestResult.FAILED, undefined, 'second');
-        test.addNote('Fill the password', TestResult.FAILED);
+        test.addStep("I.click('Email')", 10, 'failed', 'first');
+        test.addStep("I.click('Email')", 10, 'failed', 'second');
+        test.addStep("I.fillField('Password', '***')", 10, 'failed', 'hidden');
         test.finish(TestResult.FAILED);
         return { success: false };
       },
@@ -1065,7 +1067,7 @@ describe('Prima.check', () => {
 
     const envelope = await prima.check('sign in', ['signed in']);
 
-    expect(envelope.steps?.map((step) => step.label)).toEqual(['Click the email field (×2)', 'Fill the password']);
+    expect(envelope.steps?.map((step) => step.label)).toEqual(["I.click('Email') (×2)", "I.fillField('Password', '***')"]);
   });
 
   test('page problems noticed on the way get their own section, not the answer', async () => {

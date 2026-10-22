@@ -4,7 +4,7 @@
 
 ### Changes
 - prima `check`: before the scenario runs, the decision model (or the agentic model when none is configured) decides whether the page needs preparing first — reaching the page where the scenario starts, or setting up a precondition it relies on. Preparation runs through `do`, its steps appear under `### Steps` prefixed `prepare:`, and a failed preparation stops the check with the reason.
-- prima `check`: `### Steps` lists every action the run performed, in order, passed and failed, instead of only the failed ones.
+- prima `check`: `### Steps` lists the CodeceptJS commands the run executed, in order, passed and failed — a failed command shows its error — instead of the tester's notes.
 - prima `go`: a URL that redirects (for example to a sign-in page) is recovered using knowledge — logging in and returning to the requested page. When it cannot be reached, `go` returns `ok: false` instead of reporting success on the wrong page.
 - prima `do`: when the model writes its actions as text instead of performing them, it is told nothing has run yet, and the failure says the model replied with text, instead of looking like a completed step.
 - Explorer: hidden duplicate elements (such as a second copy of a sign-in form) no longer make clicks and fills fail with "multiple elements found"; only visible elements are matched.
