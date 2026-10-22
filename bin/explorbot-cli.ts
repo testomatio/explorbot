@@ -13,7 +13,7 @@ import { RecommendedModelsCommand } from '../src/commands/recommended-models-com
 import { App } from '../src/components/App.js';
 import { StatusPane } from '../src/components/StatusPane.js';
 import { decisionModelOption, knowledgeOption, wsOption } from '../src/commands/options/index.js';
-import { ConfigParser, EXPLORBOT_ENV_VARS, PROVIDERS } from '../src/config.js';
+import { ConfigParser, EXPLORBOT_ENV_VARS, PROVIDERS, outputPath } from '../src/config.js';
 import { ExplorBot, type ExplorBotOptions } from '../src/explorbot.js';
 import { remote } from '../src/remote.js';
 import { Stats } from '../src/stats.js';
@@ -123,6 +123,18 @@ async function startTUI(explorBot: ExplorBot): Promise<void> {
   });
 }
 
+function printPageContext(explorBot?: ExplorBot): void {
+  const state = explorBot?.stateManager().getCurrentState();
+  if (!state) return;
+  const lines = [`Last page: ${state.fullUrl || state.url}`];
+  if (state.title) lines.push(`Title: ${state.title}`);
+  if (state.screenshotFile) lines.push(`Screenshot: file://${outputPath('states', state.screenshotFile)}`);
+  if (state.htmlFile) lines.push(`HTML: file://${outputPath('states', state.htmlFile)}`);
+  if (state.ariaSnapshotFile) lines.push(`ARIA: file://${outputPath('states', state.ariaSnapshotFile)}`);
+  if (state.ariaSnapshot) lines.push('', state.ariaSnapshot);
+  console.error(lines.join('\n'));
+}
+
 async function showStatsAndExit(code: number): Promise<never> {
   if (remote.isAttached()) {
     await remote.close(code);
@@ -165,10 +177,11 @@ addCommonOptions(
     .option('--configure <spec>', 'Reuse spec: keys new|from|style|subpages|pick_by|priority, e.g. "new:25%;pick_by=random;priority=critical,high"')
     .option('--dry-run', 'Mark picked tests as skipped without executing or generating new ones')
 ).action(async (explorePath, options) => {
+  let explorBot: ExplorBot | undefined;
   try {
     const urlFilter = new UrlFilter(options.urlFilter);
     const sitemapUrls = await readCliSitemap(explorePath, options.sitemap, urlFilter);
-    const explorBot = new ExplorBot(buildExplorBotOptions(explorePath || sitemapUrls?.[0], options));
+    explorBot = new ExplorBot(buildExplorBotOptions(explorePath || sitemapUrls?.[0], options));
     await explorBot.start();
     if (explorePath) await explorBot.visit(explorePath);
     const { ExploreCommand } = await import('../src/commands/explore-command.js');
@@ -188,6 +201,7 @@ addCommonOptions(
     await showStatsAndExit(0);
   } catch (error) {
     console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
+    printPageContext(explorBot);
     await showStatsAndExit(1);
   }
 });
@@ -471,7 +485,13 @@ addCommonOptions(
     .join(' ');
   const { FreesailCommand } = await import('../src/commands/freesail-command.js');
   const cmd = new FreesailCommand(explorBot);
-  await cmd.execute(args);
+  try {
+    await cmd.execute(args);
+  } catch (error) {
+    console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
+    printPageContext(explorBot);
+    await showStatsAndExit(1);
+  }
 });
 
 program

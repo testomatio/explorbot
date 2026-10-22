@@ -1,6 +1,6 @@
 # Changelog
 
-## 2026-10-14
+## 2026-10-23
 
 ### New CLI Options
 - **`prima ux [focus]`** — Reviews one area of the current page for UX problems. A named area is shown first with at most one click, which may open a dialog, tab or section or go to another page; nothing is submitted. The area reviewed is the dialog or region open on the page, else the area you named, else the area your session's commands on this page acted in, else the main content. The area is measured at the current width, 768px and 375px (target size and spacing, overflow, zoom, small or cramped text, truncated text, motion), checked with axe, and judged against accessibility, interaction, responsive, navigation, copy, forms, readability, motion and chart rules. Up to 6 short findings, ranked Critical to Low. It reports problems only, never replacement wording or colors and styles. The viewport is restored afterwards. Screenshots are reviewed when `ai.visionModel` is set.
@@ -12,6 +12,35 @@
 
 ### Configuration
 - **`rules/quartermaster/ux/*.md`** — The rules `prima ux` judges against. Put a file with the same name in your project's `./rules/quartermaster/ux/` to replace one, or add your own rules with `ai.agents.quartermaster.rules`.
+
+## 2026-10-22
+
+### Changes
+- prima `check`: before the scenario runs, the decision model (or the agentic model when none is configured) decides whether the page needs preparing first — reaching the page where the scenario starts, or setting up a precondition it relies on. Preparation runs through `do`, its steps appear under `### Steps` prefixed `prepare:`, and a failed preparation stops the check with the reason.
+- prima `check`: `### Steps` lists the CodeceptJS commands the run executed, in order, passed and failed — a failed command shows its error — instead of the tester's notes.
+- prima `check`: each step is marked with the page state it ran in (`// state 2`), and a new `### States` section lists every state the run visited with the path to its saved ARIA snapshot.
+- prima `go`: a URL that redirects (for example to a sign-in page) is recovered using knowledge — logging in and returning to the requested page. When it cannot be reached, `go` returns `ok: false` instead of reporting success on the wrong page.
+- prima `do`: when the model writes its actions as text instead of performing them, it is told nothing has run yet, and the failure says the model replied with text, instead of looking like a completed step.
+- Explorer: hidden duplicate elements (such as a second copy of a sign-in form) no longer make clicks and fills fail with "multiple elements found"; only visible elements are matched.
+- prima `config`: shows the site config file path.
+- AI: structured answers no longer print the AI SDK's "generateObject is deprecated" warning and stack trace on every call.
+
+## 2026-10-19
+
+### Changes
+- Sites: `localhost`, `127.0.0.1` and `[::1]` on the same port are now one site, so knowledge and experience saved for `http://localhost:3000` also apply when exploring `http://127.0.0.1:3000`.
+- [Pilot] An expected outcome the run never got to test — because it could not get past an earlier step or could not reach a control — is reported as "not verified" with the reason, instead of as a failure of the application.
+- prima `check`: `### Steps` lists only failed steps, each once — a step that failed several times shows its count; the "further steps ran without failing" line is gone.
+- [Navigator] When some assertions behind a verification pass and others fail, the decision model (or the agentic model when none is configured) decides whether the claim holds, instead of a majority vote. One badly written assertion no longer fails a claim the others prove.
+- [Navigator] `I.seeInSource` / `I.dontSeeInSource` are used for plain text only, never for markup copied from the page.
+- [Tester] A verification that passed is recorded as passed. Before, a batch of checks was recorded under the first check's message with the whole batch's status, so a passing check could appear as "Verification failed".
+- [Tester] A failed action is no longer logged twice (once as the action, once as "Failed to … (tool)") when the action already recorded its own failure.
+- prima `check`: console errors and other problems noticed on the page go under their own `### Page issues` section instead of `### Answer`.
+- prima `check`: every "not verified" outcome shows what kept the run from checking it, and a check that verified none of its outcomes returns `ok: false`, naming the outcome under `### Failure` without repeating the reason.
+- [Planner] Sign-in, sign-up and password-recovery pages are now ignored during exploration; the run prints `Page is not plannable: <reason>` and moves on. With `--focus` (e.g. `--focus login`) these pages are still planned. To change the list, put your own `rules/planner/ignored-pages.md` in the project.
+- [Planner] When a page gets no tests, the reason is printed.
+- `explore` and `freesail` print the last page on a failed exit: URL, title, ARIA snapshot, and the paths of its saved screenshot, HTML and ARIA files.
+- AI connection errors name the missing environment variable (e.g. `ANTHROPIC_API_KEY is not set`). A rejected key is shown masked, e.g. `ANTHROPIC_API_KEY=sk-an**123 was rejected, check the key`.
 
 ## 2026-10-13
 

@@ -29,12 +29,14 @@ export interface EnvelopeData {
   used?: string[];
   page: { url: string; previousUrl?: string; redirectedFrom?: string; title: string; state: string; visits: number };
   changes?: string | null;
-  steps?: Array<{ label: string; ok: boolean; unconfirmed?: boolean; proof: string }>;
+  steps?: Array<{ label: string; ok: boolean; unconfirmed?: boolean; proof: string; state?: number }>;
+  states?: Array<{ url: string; aria: string }>;
   expectations?: SettledExpectation[];
   warning?: string;
   stepFiles?: string;
   value?: string;
   answer?: string;
+  pageIssues?: string[];
   research?: string;
   assertions?: Array<{ code: string; passed: boolean; proof: string[]; error?: string }>;
   failure?: { error: string; compactAria?: string };
@@ -44,7 +46,7 @@ export interface EnvelopeData {
 }
 
 export function renderEnvelope(data: EnvelopeData): string {
-  const sections = [renderResult(data), renderPage(data), renderValue(data), renderChanges(data), renderSteps(data), renderExpectations(data), renderWarning(data), renderOutcome(data), ...renderFailure(data), renderInstance(data), renderArtifacts(data)];
+  const sections = [renderResult(data), renderPage(data), renderValue(data), renderChanges(data), renderSteps(data), renderStates(data), renderExpectations(data), renderWarning(data), renderOutcome(data), renderPageIssues(data), ...renderFailure(data), renderInstance(data), renderArtifacts(data)];
   return sections.filter((section) => section).join('\n\n');
 }
 
@@ -118,11 +120,18 @@ function renderSteps(data: EnvelopeData): string | null {
     let mark = 'FAIL';
     if (step.ok) mark = 'ok  ';
     if (step.unconfirmed) mark = '??  ';
-    lines.push(`${index + 1}. ${mark} ${step.label}`);
+    let label = step.label;
+    if (step.state) label += `  // state ${step.state}`;
+    lines.push(`${index + 1}. ${mark} ${label}`);
     for (const line of (step.proof || '').split('\n').filter(Boolean)) lines.push(`      ${line}`);
   });
   if (data.stepFiles) lines.push('', `page after each step: ${data.stepFiles}/<n>-<step>.{${Object.values(STEP_FILES).join(',')}}`);
   return section('Steps', lines.join('\n'));
+}
+
+function renderStates(data: EnvelopeData): string | null {
+  if (!data.states?.length) return null;
+  return section('States', data.states.map((state, index) => `${index + 1}. ${state.url}\n   aria: ${state.aria}`).join('\n'));
 }
 
 function renderExpectations(data: EnvelopeData): string | null {
@@ -132,7 +141,7 @@ function renderExpectations(data: EnvelopeData): string | null {
   data.expectations.forEach((expectation, index) => {
     lines.push(`${index + 1}. ${EXPECTATION_LABELS[expectation.status]} ${expectation.text}`);
     if (expectation.resolution) lines.push(`      resolved: ${expectation.resolution}`);
-    if (!expectation.contradicted && !expectation.failed && !expectation.resolution) return;
+    if (expectation.status === 'passed' && !expectation.resolution) return;
     for (const line of (expectation.evidence || '').split('\n').filter(Boolean)) lines.push(`      ${line}`);
   });
   return section('Expected outcomes', lines.join('\n'));
@@ -166,6 +175,11 @@ function renderOutcome(data: EnvelopeData): string | null {
   if (proof.length) lines.push('', 'playwright:', ...proof);
 
   return section('Assertions', lines.join('\n'));
+}
+
+function renderPageIssues(data: EnvelopeData): string | null {
+  if (!data.pageIssues?.length) return null;
+  return section('Page issues', ['Noticed on the page while running, unrelated to the steps or the outcome:', ...data.pageIssues.map((issue) => `- ${issue}`)].join('\n'));
 }
 
 function renderFailure(data: EnvelopeData): Array<string | null> {

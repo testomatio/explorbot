@@ -2,12 +2,12 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { OpenTelemetry } from '@ai-sdk/otel';
 import { LangfuseSpanProcessor } from '@langfuse/otel';
 import { NodeSDK } from '@opentelemetry/sdk-node';
-import { APICallError, NoObjectGeneratedError, asSchema, extractJsonMiddleware, generateObject, generateText, isStepCount, parsePartialJson, registerTelemetry, tool, wrapLanguageModel } from 'ai';
+import { APICallError, NoObjectGeneratedError, NoOutputGeneratedError, Output, asSchema, extractJsonMiddleware, generateText, isStepCount, parsePartialJson, registerTelemetry, tool, wrapLanguageModel } from 'ai';
 import type { ModelMessage } from 'ai';
 import dedent from 'dedent';
 import { z } from 'zod';
 import { clearActivity, setActivity } from '../activity.ts';
-import { type AIConfig, configuredModels, modelName as getModelName } from '../config.js';
+import { type AIConfig, PROVIDERS, configuredModels, modelName as getModelName, modelProvider } from '../config.js';
 import { executionController } from '../execution-controller.ts';
 import { Observability } from '../observability.ts';
 import { Stats } from '../stats.ts';
@@ -16,6 +16,7 @@ import { createDebug, tag } from '../utils/logger.js';
 import { type RetryOptions, withRetry } from '../utils/retry.js';
 import { RulesLoader } from '../utils/rules-loader.ts';
 import { Conversation, NARRATION_TOOL, toToolExecution } from './conversation.js';
+import type { Judge } from './judge.ts';
 
 const debugLog = createDebug('explorbot:provider');
 const promptLog = createDebug('explorbot:provider:out');
@@ -84,6 +85,7 @@ function combinedAbortSignal(controller: AbortController): AbortSignal {
 
 export class Provider {
   private config: AIConfig;
+  private judge: Judge | null = null;
   private telemetryEnabled = false;
   private otelSdk: NodeSDK | null = null;
   private defaultRetryOptions: RetryOptions = {
@@ -99,6 +101,7 @@ export class Provider {
           error.message.includes('AI request timeout') ||
           error.message.includes('schema') ||
           error.message.includes('No object generated') ||
+          error.message.includes('No output generated') ||
           error.message.includes('No response text') ||
           error.message.includes('validate JSON')) &&
         !error.message.includes('output truncated at maxTokens')
@@ -125,6 +128,12 @@ export class Provider {
         prompt: 'hi',
       });
     } catch (error: any) {
+      const envKey = PROVIDERS[modelProvider(this.config.model)]?.envKey;
+      const apiKey = envKey && process.env[envKey];
+      if (envKey && !apiKey) throw new AiError(`AI connection failed: ${envKey} is not set. ${error.message}`);
+      if (apiKey && [401, 403].includes(error.statusCode)) {
+        throw new AiError(`AI connection failed: ${error.message}. ${envKey}=${apiKey.slice(0, 5)}**${apiKey.slice(-3)} was rejected, check the key`);
+      }
       throw new AiError(`AI connection failed: ${error.message}`);
     }
   }
@@ -140,6 +149,20 @@ export class Provider {
 
     const agentConfig = this.config.agents?.[agentName as keyof typeof this.config.agents];
     return agentConfig?.model || this.config.model;
+  }
+
+  setJudge(judge: Judge | null): void {
+    this.judge = judge;
+  }
+
+  async oracle(statement: string, state: unknown, options: any = {}): Promise<boolean> {
+    const judged = await this.judge?.assert(statement, state);
+    if (typeof judged === 'boolean') return judged;
+
+    const schema = z.object({ holds: z.boolean().describe('whether the statement is true') });
+    const content = `${statement}\n\n${JSON.stringify(state, null, 2)}`;
+    const response = await this.generateObject([{ role: 'user' as const, content }], schema, this.getAgenticModel(options.agentName), options).catch(() => null);
+    return response?.object?.holds === true;
   }
 
   getAgenticModel(agentName?: string): any {
@@ -530,13 +553,13 @@ export class Provider {
     setActivity(`🤖 Asking ${modelName} for structured output`, 'ai');
     promptLog(`Using model: ${modelName}`);
 
-    const config = this.buildGenerateConfig({ schema }, { model: modelToUse }, options);
-
     try {
+      const { timeout, ...config } = this.buildGenerateConfig({ output: Output.object({ schema }) }, { model: modelToUse }, options);
       promptLog(messages[messages.length - 1].content);
       const response = await this.withModelRequestSlot(() =>
         withRetry(async () => {
-          return (await this.raceWithIdleTimeout((signal) => generateObject({ messages, ...config, abortSignal: signal }), config.timeout || 30000)) as any;
+          const result = (await this.raceWithIdleTimeout((signal) => generateText({ messages, ...config, abortSignal: signal }), timeout || 30000)) as any;
+          return { object: result.output, usage: result.usage };
         }, this.getRetryOptions(options))
       );
 
@@ -553,7 +576,7 @@ export class Provider {
       if (Provider.isContextLengthError(error)) {
         return this.recoverFromContextLength(error, messages, options, (m, o) => this.generateObject(m, schema, model, o));
       }
-      if (NoObjectGeneratedError.isInstance(error)) return this.recoverWithPlainJson(messages, schema, modelToUse, options);
+      if (NoObjectGeneratedError.isInstance(error) || NoOutputGeneratedError.isInstance(error)) return this.recoverWithPlainJson(messages, schema, modelToUse, options);
       throw new AiError(error.message || error.toString());
     }
   }

@@ -137,6 +137,7 @@ export class ExplorBot {
     if (typeof this.options.session === 'string') this.options.session = path.resolve(this.options.path || '.', this.options.session);
     if (this.options.optionalAi) return this.bootstrapOptionalProvider();
     this.provider = new AIProvider(this.config.ai);
+    this.provider.setJudge(this.judge());
     await this.provider.validateConnection();
   }
 
@@ -565,6 +566,7 @@ export class ExplorBot {
   private async bootstrapOptionalProvider(): Promise<void> {
     try {
       const provider = new AIProvider(this.config.ai);
+      provider.setJudge(this.judge());
       await provider.validateConnection();
       this.provider = provider;
     } catch (error) {

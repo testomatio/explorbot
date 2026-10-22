@@ -366,8 +366,9 @@ export class Tester extends TaskAgent implements Agent {
           }
 
           if (actionPerformed && !wasSuccessful) {
+            const noted = new Set(Object.values(task.notes).map((note) => note.message));
             result?.toolExecutions
-              ?.filter((execution: any) => !execution.wasSuccessful && execution.input?.explanation)
+              ?.filter((execution: any) => !execution.wasSuccessful && execution.input?.explanation && !noted.has(execution.input.explanation))
               .forEach((execution: any) => {
                 task.addNote(`Failed to ${execution.input.explanation} (${execution.toolName})`, TestResult.FAILED);
               });
@@ -379,8 +380,9 @@ export class Tester extends TaskAgent implements Agent {
           }
 
           if (assertionPerformed) {
-            const message = result?.toolExecutions?.find((execution: any) => execution.toolName === 'verify')?.output?.message || '';
-            task.addNote(message, wasSuccessful ? TestResult.PASSED : TestResult.FAILED);
+            const passedVerifications = result?.toolExecutions?.filter((execution: any) => this.ASSERTION_TOOLS.includes(execution.toolName) && execution.wasSuccessful) || [];
+            for (const execution of passedVerifications) task.addNote(execution.output?.message || '', TestResult.PASSED);
+            const message = passedVerifications.at(-1)?.output?.message || '';
             if (wasSuccessful) {
               conversation.addUserText(dedent`
                 Assertion "${message}" successfully passed!

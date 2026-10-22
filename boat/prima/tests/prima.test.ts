@@ -72,6 +72,7 @@ function fakePrima(options: Record<string, unknown> = {}) {
   const prima = new Prima({ instance: 'default', ...options });
   const executed: string[] = [];
   const executeOptions: unknown[] = [];
+  const stateListeners: Array<(transition: any) => void> = [];
   const after = fakeState({
     url: 'https://app.example.com/dashboard',
     title: 'Dashboard',
@@ -94,15 +95,19 @@ function fakePrima(options: Record<string, unknown> = {}) {
     stateManager: () => ({
       getCurrentState: () => fakeState(),
       getVisitCount: () => 1,
+      onStateChange: (listener: (transition: any) => void) => {
+        stateListeners.push(listener);
+        return () => stateListeners.splice(stateListeners.indexOf(listener), 1);
+      },
     }),
     getCurrentState: () => fakeState(),
     getConfig: () => ({}),
     requestStore: () => ({ getCapturedRequests: () => [] }),
-    getProvider: () => ({ chat: async () => '' }),
+    getProvider: () => ({ chat: async () => '', generateObject: async () => ({ object: { steps: [] } }) }),
     agentResearcher: () => ({ enable: () => {}, disable: () => {} }),
   };
   (prima as any).artifactsDir = artifactsRoot;
-  return { prima, executed, executeOptions };
+  return { prima, executed, executeOptions, stateListeners };
 }
 
 describe('Prima.pw', () => {
@@ -892,13 +897,14 @@ describe('Prima.check', () => {
     ]);
   });
 
-  test('steps report the failures and count the rest, leaving verdicts to the outcomes section', async () => {
+  test('steps list the executed CodeceptJS commands in order, not the tester notes', async () => {
     const { prima } = fakePrima();
     (prima as any).bot.agentTester = () => ({
       test: async (test: any) => {
-        test.addNote('opened the panel', TestResult.PASSED);
-        test.addNote('clicked the row', TestResult.PASSED);
-        test.addNote('Failed to open the editor (click)', TestResult.FAILED);
+        test.addNote('> ACT: opened the panel', TestResult.FAILED);
+        test.addStep("I.click('Panel')", 10, 'passed');
+        test.addStep("I.click('Row 1')", 10, 'passed');
+        test.addStep("I.click('Edit')", 10, 'failed', 'element not found');
         test.addNote('the editor opens', TestResult.PASSED);
         return { success: false };
       },
@@ -906,13 +912,98 @@ describe('Prima.check', () => {
     (prima as any).bot.agentPilot = () => ({ settleExpectations: async () => [new SettledExpectation('the editor opens', 'passed')] });
 
     const envelope = await prima.check('edit a skill', ['the editor opens']);
-    const labels = envelope.steps?.map((step) => step.label) || [];
 
-    expect(labels).toContain('Failed to open the editor (click)');
-    expect(labels).not.toContain('the editor opens');
-    expect(labels).not.toContain('opened the panel');
-    expect(labels.at(-1)).toContain('2 further steps ran without failing');
-    expect(labels.at(-1)).toContain('prima status');
+    expect(envelope.steps).toEqual([
+      { label: "I.click('Panel')", ok: true, proof: '', state: 1 },
+      { label: "I.click('Row 1')", ok: true, proof: '', state: 1 },
+      { label: "I.click('Edit')", ok: false, proof: 'element not found', state: 1 },
+    ]);
+  });
+
+  test('each step names the state it ran in, and every state visited is listed with its aria file', async () => {
+    const { prima, stateListeners } = fakePrima();
+    (prima as any).bot.agentTester = () => ({
+      test: async (test: any) => {
+        test.addStep("I.click('Settings')", 10, 'passed');
+        for (const listener of stateListeners) listener({ toState: fakeState({ url: '/settings', hash: 'settings', ariaSnapshot: '- heading "Settings"' }) });
+        test.addStep("I.see('Settings')", 10, 'passed');
+        return { success: true };
+      },
+    });
+    (prima as any).bot.agentPilot = () => ({ settleExpectations: async () => [new SettledExpectation('settings open', 'passed')] });
+
+    const envelope = await prima.check('open settings', ['settings open']);
+
+    expect(envelope.steps?.map((step) => step.state)).toEqual([1, 2]);
+    expect(envelope.states?.map((state) => state.url)).toEqual(['https://app.example.com/login', '/settings']);
+    expect(readFileSync(envelope.states?.[1].aria || '', 'utf-8')).toBe('- heading "Settings"');
+    expect(stateListeners).toHaveLength(0);
+  });
+
+  test('a page that needs no preparation goes straight to the tester', async () => {
+    const { prima } = fakePrima();
+    const prepared: string[][] = [];
+    (prima as any).do = async (instructions: string[]) => {
+      prepared.push(instructions);
+      return { ok: true, steps: [] };
+    };
+    let tested = false;
+    (prima as any).bot.agentTester = () => ({
+      test: async (test: any) => {
+        tested = true;
+        test.addNote('the list is sorted', TestResult.PASSED);
+        return { success: true };
+      },
+    });
+    (prima as any).bot.agentPilot = () => ({ settleExpectations: async () => [new SettledExpectation('the list is sorted', 'passed')] });
+
+    await prima.check('sort the list', ['the list is sorted']);
+
+    expect(prepared).toEqual([]);
+    expect(tested).toBe(true);
+  });
+
+  test('preparation runs through do before the tester and is reported as prepare steps', async () => {
+    const { prima } = fakePrima();
+    (prima as any).bot.getProvider = () => ({ chat: async () => '', generateObject: async () => ({ object: { steps: ['open the projects page'] } }) });
+    const order: string[] = [];
+    (prima as any).do = async (instructions: string[]) => {
+      order.push(`do: ${instructions.join('; ')}`);
+      return { ok: true, steps: [{ label: 'done: open the projects page', ok: true, proof: '' }] };
+    };
+    (prima as any).bot.agentTester = () => ({
+      test: async (test: any) => {
+        order.push('test');
+        test.addNote('the list is sorted', TestResult.PASSED);
+        return { success: true };
+      },
+    });
+    (prima as any).bot.agentPilot = () => ({ settleExpectations: async () => [new SettledExpectation('the list is sorted', 'passed')] });
+
+    const envelope = await prima.check('sort the list', ['the list is sorted']);
+
+    expect(order).toEqual(['do: open the projects page', 'test']);
+    expect(envelope.steps?.[0].label).toBe('prepare: done: open the projects page');
+  });
+
+  test('failed preparation stops the check before the tester runs', async () => {
+    const { prima } = fakePrima();
+    (prima as any).bot.getProvider = () => ({ chat: async () => '', generateObject: async () => ({ object: { steps: ['sign in'] } }) });
+    (prima as any).do = async () => ({ ok: false, command: 'check sort the list', failure: { error: 'blocked: sign in' } });
+    let tested = false;
+    (prima as any).bot.agentTester = () => ({
+      test: async () => {
+        tested = true;
+        return { success: true };
+      },
+    });
+
+    const envelope = await prima.check('sort the list', ['the list is sorted']);
+
+    expect(tested).toBe(false);
+    expect(envelope.ok).toBe(false);
+    expect(envelope.failure?.error).toContain('the check never ran');
+    expect(envelope.failure?.error).toContain('blocked: sign in');
   });
 
   test('the scenario stands in as the only outcome when none was given', async () => {
@@ -968,6 +1059,63 @@ describe('Prima.check', () => {
     expect(envelope.failure).toBeUndefined();
   });
 
+  test('a run that verified no outcome is not ok, and says what blocked it', async () => {
+    const { prima } = fakePrima();
+    (prima as any).bot.agentTester = () => ({
+      test: async (test: any) => {
+        test.addNote('Failed to sign in (form)', TestResult.FAILED);
+        test.finish(TestResult.FAILED);
+        return { success: false };
+      },
+    });
+    (prima as any).bot.agentPilot = () => ({ settleExpectations: async () => [new SettledExpectation('the list is sorted', 'unverified', 'the run never got past sign in')] });
+
+    const envelope = await prima.check('sort the list', ['the list is sorted']);
+
+    expect(envelope.ok).toBe(false);
+    expect(envelope.failure?.error).toBe('not verified: the list is sorted');
+    expect(renderEnvelope(envelope).split('the run never got past sign in').length).toBe(2);
+  });
+
+  test('a step that failed several times is listed once with its count', async () => {
+    const { prima } = fakePrima();
+    (prima as any).bot.agentTester = () => ({
+      test: async (test: any) => {
+        test.addStep("I.click('Email')", 10, 'failed', 'first');
+        test.addStep("I.click('Email')", 10, 'failed', 'second');
+        test.addStep("I.fillField('Password', '***')", 10, 'failed', 'hidden');
+        test.finish(TestResult.FAILED);
+        return { success: false };
+      },
+    });
+    (prima as any).bot.agentPilot = () => ({ settleExpectations: async () => [new SettledExpectation('signed in', 'failed')] });
+
+    const envelope = await prima.check('sign in', ['signed in']);
+
+    expect(envelope.steps?.map((step) => step.label)).toEqual(["I.click('Email') (×2)", "I.fillField('Password', '***')"]);
+  });
+
+  test('page problems noticed on the way get their own section, not the answer', async () => {
+    const { prima } = fakePrima();
+    (prima as any).bot.agentTester = () => ({
+      test: async (test: any) => {
+        test.addNote('the editor opens', TestResult.PASSED);
+        test.addObservation('Console error: request failed');
+        test.finish(TestResult.PASSED);
+        return { success: true };
+      },
+    });
+    (prima as any).bot.agentPilot = () => ({ settleExpectations: async () => [new SettledExpectation('the editor opens', 'passed')] });
+
+    const envelope = await prima.check('edit a skill', ['the editor opens']);
+    const output = renderEnvelope(envelope);
+
+    expect(envelope.answer).toBeUndefined();
+    expect(output).toContain('### Page issues');
+    expect(output).toContain('- Console error: request failed');
+    expect(output).not.toContain('### Answer');
+  });
+
   test('an outcome the run showed failing names itself in the failure', async () => {
     const { prima } = fakePrima();
     (prima as any).bot.agentTester = () => ({
@@ -1005,7 +1153,7 @@ describe('Prima.check', () => {
   test('the final page reaches the judge as a screenshot when vision is available', async () => {
     const { prima } = fakePrima();
     let judged: any;
-    (prima as any).bot.getProvider = () => ({ hasVision: () => true });
+    (prima as any).bot.getProvider = () => ({ hasVision: () => true, generateObject: async () => ({ object: { steps: [] } }) });
     (prima as any).bot.getExplorer = () => ({ capture: async (opts: any) => fakeState({ screenshot: opts?.screenshot ? Buffer.from('png') : undefined }) });
     (prima as any).bot.agentTester = () => ({
       test: async (test: any) => {
@@ -1046,7 +1194,7 @@ describe('Prima.check', () => {
 
   test('an outcome the picture contradicts is reported as such, with the files to look at', async () => {
     const { prima } = fakePrima();
-    (prima as any).bot.getProvider = () => ({ hasVision: () => true });
+    (prima as any).bot.getProvider = () => ({ hasVision: () => true, generateObject: async () => ({ object: { steps: [] } }) });
     (prima as any).bot.getExplorer = () => ({ capture: async (opts: any) => fakeState({ screenshot: opts?.screenshot ? Buffer.from('png') : undefined }) });
     (prima as any).bot.agentTester = () => ({
       test: async (test: any) => {
@@ -1071,7 +1219,7 @@ describe('Prima.check', () => {
 
   test('ask defaults to vision via screenshot analysis', async () => {
     const { prima } = fakePrima();
-    (prima as any).bot.getProvider = () => ({ hasVision: () => true });
+    (prima as any).bot.getProvider = () => ({ hasVision: () => true, generateObject: async () => ({ object: { steps: [] } }) });
     (prima as any).bot.agentResearcher = () => ({ answerQuestionAboutScreenshot: async () => 'A login page with an email form' });
 
     const envelope = await prima.ask('what do I see?');
@@ -1263,7 +1411,7 @@ describe('Prima.go', () => {
     expect(envelope.used).toEqual([]);
   });
 
-  test('a url target reports a server redirect instead of recovering from it', async () => {
+  test('a url target recovers from a server redirect when ai is available', async () => {
     const { prima } = fakePrima();
     const visits: Array<{ destination: string; opts: any }> = [];
     (prima as any).bot.agentNavigator = () => ({
@@ -1274,8 +1422,8 @@ describe('Prima.go', () => {
     });
 
     const envelope = await prima.go('/projects/private');
-    expect(visits).toEqual([{ destination: '/projects/private', opts: { recover: false } }]);
-    expect(envelope.ok).toBe(true);
+    expect(visits).toEqual([{ destination: '/projects/private', opts: { recover: true } }]);
+    expect(envelope.ok).toBe(false);
     expect(envelope.page.redirectedFrom).toBe('/projects/private');
     expect(renderEnvelope(envelope)).toContain('(redirected: /projects/private → ');
   });
@@ -1476,7 +1624,7 @@ describe('Prima.go', () => {
 
   test('url target reports the executed navigation code as used', async () => {
     const { prima } = fakePrima();
-    (prima as any).bot.agentNavigator = () => ({ visit: async () => {} });
+    (prima as any).bot.agentNavigator = () => ({ visit: async () => true });
 
     const envelope = await prima.go('/dashboard');
     expect(envelope.ok).toBe(true);
@@ -1541,7 +1689,8 @@ describe('Prima.go', () => {
     (prima as any).bot.agentNavigator = () => navigator;
 
     const envelope = await prima.go('/billing');
-    expect(envelope.ok).toBe(true);
+    expect(envelope.ok).toBe(false);
+    expect(envelope.failure?.error).toContain('/billing was not reached');
     expect(envelope.page.redirectedFrom).toBe('/billing');
   });
 
