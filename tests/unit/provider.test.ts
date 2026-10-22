@@ -519,6 +519,32 @@ describe('Provider', () => {
     });
   });
 
+  describe('oracle', () => {
+    it('takes the judge answer when the judge is sure', async () => {
+      provider.setJudge({ holds: async () => false } as any);
+      provider.generateObject = async () => {
+        throw new Error('should not be asked');
+      };
+
+      expect(await provider.oracle('The tab is active', {})).toBe(false);
+    });
+
+    it('asks the agentic model when the judge is unsure or absent', async () => {
+      provider.setJudge({ holds: async () => null } as any);
+      let asked = '';
+      provider.generateObject = async (messages: any) => {
+        asked = messages[0].content;
+        return { object: { holds: true } };
+      };
+
+      expect(await provider.oracle('The tab is active', { assertions: [] })).toBe(true);
+      expect(asked).toContain('The tab is active');
+
+      provider.setJudge(null);
+      expect(await provider.oracle('The tab is active', {})).toBe(true);
+    });
+  });
+
   describe('generateObject', () => {
     it('should skip generateObject test due to schema complexity', () => {
       expect(true).toBe(true);

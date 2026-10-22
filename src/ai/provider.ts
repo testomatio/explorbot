@@ -16,6 +16,7 @@ import { createDebug, tag } from '../utils/logger.js';
 import { type RetryOptions, withRetry } from '../utils/retry.js';
 import { RulesLoader } from '../utils/rules-loader.ts';
 import { Conversation, NARRATION_TOOL, toToolExecution } from './conversation.js';
+import type { Judge } from './judge.ts';
 
 const debugLog = createDebug('explorbot:provider');
 const promptLog = createDebug('explorbot:provider:out');
@@ -84,6 +85,7 @@ function combinedAbortSignal(controller: AbortController): AbortSignal {
 
 export class Provider {
   private config: AIConfig;
+  private judge: Judge | null = null;
   private telemetryEnabled = false;
   private otelSdk: NodeSDK | null = null;
   private defaultRetryOptions: RetryOptions = {
@@ -141,6 +143,20 @@ export class Provider {
 
     const agentConfig = this.config.agents?.[agentName as keyof typeof this.config.agents];
     return agentConfig?.model || this.config.model;
+  }
+
+  setJudge(judge: Judge | null): void {
+    this.judge = judge;
+  }
+
+  async oracle(statement: string, state: unknown, options: any = {}): Promise<boolean> {
+    const judged = await this.judge?.holds(statement, state);
+    if (typeof judged === 'boolean') return judged;
+
+    const schema = z.object({ holds: z.boolean().describe('whether the statement is true') });
+    const content = `${statement}\n\n${JSON.stringify(state, null, 2)}`;
+    const response = await this.generateObject([{ role: 'user' as const, content }], schema, this.getAgenticModel(options.agentName), options).catch(() => null);
+    return response?.object?.holds === true;
   }
 
   getAgenticModel(agentName?: string): any {

@@ -20,7 +20,6 @@
 - prima `check`: `### Steps` lists only failed steps, each once — a step that failed several times shows its count; the "further steps ran without failing" line is gone.
 - [Navigator] When some assertions behind a verification pass and others fail, the decision model (or the agentic model when none is configured) decides whether the claim holds, instead of a majority vote. One badly written assertion no longer fails a claim the others prove.
 - [Navigator] `I.seeInSource` / `I.dontSeeInSource` are used for plain text only, never for markup copied from the page.
-- [Tester] [Pilot] Page state is read from what the page shows; a URL parameter whose name differs from the visible control is no longer treated as evidence that the control is wrong.
 - [Tester] A verification that passed is recorded as passed. Before, a batch of checks was recorded under the first check's message with the whole batch's status, so a passing check could appear as "Verification failed".
 - [Tester] A failed action is no longer logged twice (once as the action, once as "Failed to … (tool)") when the action already recorded its own failure.
 - prima `check`: console errors and other problems noticed on the page go under their own `### Page issues` section instead of `### Answer`.

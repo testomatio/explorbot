@@ -84,47 +84,27 @@ describe('Navigator.verifyState', () => {
       return navigator;
     }
 
-    it('lets the judge decide instead of counting votes', async () => {
+    it('asks the oracle whether the claim holds, given every assertion and its result', async () => {
       const navigator = mixedNavigator();
       let asked: any;
-      navigator.judge = {
-        decide: async (_question: string, options: string[], state: any) => {
-          if (!options.includes('the claim holds')) return { value: null };
-          asked = state;
-          return { value: 'the claim holds' };
-        },
+      navigator.provider.oracle = async (statement: string, state: any) => {
+        asked = { statement, state };
+        return true;
       };
 
       const result = await navigator.verifyState('The tab is active', createActionResult());
 
       expect(result.verified).toBe(true);
-      expect(asked.assertions.map((assertion: any) => assertion.passed)).toEqual([true, false]);
-      expect(asked.assertions[1].error).toBe('source does not contain it');
-    });
-
-    it('asks the agentic model when no judge is configured', async () => {
-      const navigator = mixedNavigator();
-      navigator.provider.getAgenticModel = () => 'agentic';
-      let model: any;
-      navigator.provider.generateObject = async (_messages: any, _schema: any, used: any) => {
-        model = used;
-        return { object: { holds: false, reason: 'the passing assertion matches any tab' } };
-      };
-
-      const result = await navigator.verifyState('The tab is active', createActionResult());
-
-      expect(model).toBe('agentic');
-      expect(result.verified).toBe(false);
+      expect(asked.statement).toBe('The tab is active');
+      expect(asked.state.assertions.map((assertion: any) => assertion.passed)).toEqual([true, false]);
+      expect(asked.state.assertions[1].error).toBe('source does not contain it');
     });
   });
 
   it('does not ask anyone when every assertion passed', async () => {
     const navigator = createNavigator(async () => ({ response: { text: "```js\nI.see('Widget')\n```\n```js\nI.seeElement('.widget')\n```" } })) as any;
-    navigator.judge = {
-      decide: async (_question: string, options: string[]) => {
-        if (options.includes('the claim holds')) throw new Error('should not be asked');
-        return { value: null };
-      },
+    navigator.provider.oracle = async () => {
+      throw new Error('should not be asked');
     };
 
     const result = await navigator.verifyState('Widget is visible in the list', createActionResult());

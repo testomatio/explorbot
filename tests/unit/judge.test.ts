@@ -107,6 +107,24 @@ describe('Judge.pick', () => {
   });
 });
 
+describe('Judge.holds', () => {
+  it('is true above the threshold, false below its mirror, and unsure in between', async () => {
+    expect(await answering('yes', 0.9).judge.holds('x', {})).toBe(true);
+    expect(await answering('yes', 0.1).judge.holds('x', {})).toBe(false);
+    expect(await answering('yes', 0.5).judge.holds('x', {})).toBeNull();
+  });
+
+  it('is unsure when the judge could not answer or is not used directly', async () => {
+    const failing: any = {
+      decide: async () => {
+        throw new Error('down');
+      },
+    };
+    expect(await new Judge(failing, { tool: true, direct: true }).holds('x', {})).toBeNull();
+    expect(await answering('yes', 0.05, { tool: true, direct: false }).judge.holds('x', {})).toBeNull();
+  });
+});
+
 describe('Judge.fromConfig', () => {
   let saved: string | undefined;
   beforeEach(() => {
