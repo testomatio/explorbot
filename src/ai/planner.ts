@@ -44,6 +44,7 @@ const TasksSchema = z.object({
       })
     )
     .describe('List of testing scenarios'),
+  notPlannableReason: z.string().nullish().describe('When scenarios is empty, one sentence saying why this page has nothing to test; otherwise null.'),
 });
 
 const PlannerBase = WithSessionDedup(WithSubPages(Object as unknown as new (...args: any[]) => object));
@@ -210,6 +211,10 @@ export class Planner extends PlannerBase implements Agent {
         throw new Error('No tasks were created successfully');
       }
 
+      if (!this.currentPlan && aiResult.object.scenarios.length === 0 && aiResult.object.notPlannableReason) {
+        tag('warning').log(`Page is not plannable: ${aiResult.object.notPlannableReason}`);
+      }
+
       const defaultStartUrl = this.getDefaultStartUrl(state);
       const fromPlanning = aiResult.object.scenarios.map((s: any) => new Test(s.scenario, s.priority, s.expectedOutcomes, s.startUrl || defaultStartUrl, s.steps || []));
 
@@ -345,11 +350,14 @@ export class Planner extends PlannerBase implements Agent {
 
     conversation.addUserText(this.getSystemMessage(feature));
 
+    let authGateDirective = '';
+    if (!feature) authGateDirective = '\nSign-in, sign-up and password-recovery pages are entry gates, not the subject of exploration: return an empty scenarios list for them.';
+
     const planningPrompt = dedent`
       <task>
       Based on the page research, create ${this.MIN_TASKS}-${this.MAX_TASKS} exploratory testing scenarios.
       For each scenario provide specific steps and expected outcomes.
-      Exception: if the page reports the requested resource is missing, shows a failure state, or holds no content and no controls, return an empty scenarios list. Never invent tests for a page with nothing to exercise.
+      Exception: if the page reports the requested resource is missing, shows a failure state, or holds no content and no controls, return an empty scenarios list. Never invent tests for a page with nothing to exercise.${authGateDirective}
       </task>
 
       <rules>

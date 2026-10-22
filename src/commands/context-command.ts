@@ -78,5 +78,7 @@ export class ContextCommand extends BaseCommand {
       const fullPath = outputPath('states', actionResult.screenshotFile);
       tag('info').log(`Screenshot saved: file://${fullPath}`);
     }
+    if (actionResult.htmlFile) tag('info').log(`HTML saved: file://${outputPath('states', actionResult.htmlFile)}`);
+    if (actionResult.ariaSnapshotFile) tag('info').log(`ARIA saved: file://${outputPath('states', actionResult.ariaSnapshotFile)}`);
   }
 }

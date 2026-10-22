@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ActionResult } from '../../src/action-result.ts';
-import { detectPageCondition, isErrorPage, isLoginPage } from '../../src/utils/error-page.ts';
+import { detectPageCondition, diagnosePage, isErrorPage, isLoginPage } from '../../src/utils/error-page.ts';
 
 function createActionResult(data: { title?: string; h1?: string; h2?: string; html?: string; url?: string; httpStatus?: number }): ActionResult {
   const html = data.html ?? `<html><body><h1>${data.h1 ?? ''}</h1><h2>${data.h2 ?? ''}</h2></body></html>`;
@@ -72,6 +72,18 @@ describe('isErrorPage', () => {
 
     it('should detect error in longer title', () => {
       expect(isErrorPage(createActionResult({ title: 'MyApp - 404 Not Found' }))).toBe(true);
+    });
+  });
+
+  describe('diagnosePage', () => {
+    it('explains why a page is not analyzable', () => {
+      expect(diagnosePage(createActionResult({ httpStatus: 404 })).reason).toBe('server responded with HTTP 404');
+      expect(diagnosePage(createActionResult({ h1: '404 Not Found' })).reason).toBe('page heading says "404 Not Found"');
+      expect(diagnosePage(createActionResult({ html: '<html><body></body></html>' })).reason).toBe('page body is empty');
+    });
+
+    it('gives no reason for a page with content', () => {
+      expect(diagnosePage(createActionResult({ html: `<html><body>${'x'.repeat(600)}</body></html>` }))).toEqual({ condition: 'ok', reason: '' });
     });
   });
 

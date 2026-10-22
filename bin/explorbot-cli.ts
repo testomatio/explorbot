@@ -123,6 +123,12 @@ async function startTUI(explorBot: ExplorBot): Promise<void> {
   });
 }
 
+async function printPageContext(explorBot?: ExplorBot): Promise<void> {
+  if (!explorBot?.getExplorer()) return;
+  const { ContextCommand } = await import('../src/commands/context-command.js');
+  await new ContextCommand(explorBot).execute('--screenshot').catch((err) => console.error('Could not capture page context:', err instanceof Error ? err.message : err));
+}
+
 async function showStatsAndExit(code: number): Promise<never> {
   if (remote.isAttached()) {
     await remote.close(code);
@@ -165,10 +171,11 @@ addCommonOptions(
     .option('--configure <spec>', 'Reuse spec: keys new|from|style|subpages|pick_by|priority, e.g. "new:25%;pick_by=random;priority=critical,high"')
     .option('--dry-run', 'Mark picked tests as skipped without executing or generating new ones')
 ).action(async (explorePath, options) => {
+  let explorBot: ExplorBot | undefined;
   try {
     const urlFilter = new UrlFilter(options.urlFilter);
     const sitemapUrls = await readCliSitemap(explorePath, options.sitemap, urlFilter);
-    const explorBot = new ExplorBot(buildExplorBotOptions(explorePath || sitemapUrls?.[0], options));
+    explorBot = new ExplorBot(buildExplorBotOptions(explorePath || sitemapUrls?.[0], options));
     await explorBot.start();
     if (explorePath) await explorBot.visit(explorePath);
     const { ExploreCommand } = await import('../src/commands/explore-command.js');
@@ -188,6 +195,7 @@ addCommonOptions(
     await showStatsAndExit(0);
   } catch (error) {
     console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
+    await printPageContext(explorBot);
     await showStatsAndExit(1);
   }
 });
@@ -471,7 +479,13 @@ addCommonOptions(
     .join(' ');
   const { FreesailCommand } = await import('../src/commands/freesail-command.js');
   const cmd = new FreesailCommand(explorBot);
-  await cmd.execute(args);
+  try {
+    await cmd.execute(args);
+  } catch (error) {
+    console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
+    await printPageContext(explorBot);
+    await showStatsAndExit(1);
+  }
 });
 
 program

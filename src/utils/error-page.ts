@@ -13,30 +13,34 @@ const AUTH_PATH = /\b(log[-_]?in|sign[-_]?in|auth)\b/i;
 export type PageCondition = 'ok' | 'loading' | 'error';
 
 export function detectPageCondition(actionResult: ActionResult): PageCondition {
-  if (actionResult.httpStatus && actionResult.httpStatus >= 400) return 'error';
+  return diagnosePage(actionResult).condition;
+}
+
+export function diagnosePage(actionResult: ActionResult): PageDiagnosis {
+  if (actionResult.httpStatus && actionResult.httpStatus >= 400) return { condition: 'error', reason: `server responded with HTTP ${actionResult.httpStatus}` };
 
   const headingFields = [actionResult.title, actionResult.h1, actionResult.h2].filter(Boolean) as string[];
 
   for (const field of headingFields) {
     for (const error of HTTP_ERRORS) {
-      if (field.toLowerCase().includes(error.toLowerCase())) return 'error';
+      if (field.toLowerCase().includes(error.toLowerCase())) return { condition: 'error', reason: `page heading says "${field}"` };
     }
   }
 
   const aria = actionResult.ariaSnapshot || '';
-  if (/\bprogressbar\b/i.test(aria)) return 'loading';
-  if (/\[busy\]/.test(aria)) return 'loading';
+  if (/\bprogressbar\b/i.test(aria)) return { condition: 'loading', reason: 'a progress bar is still shown' };
+  if (/\[busy\]/.test(aria)) return { condition: 'loading', reason: 'an element is still marked busy' };
 
   for (const field of headingFields) {
-    if (LOADING_WORD.test(field)) return 'loading';
+    if (LOADING_WORD.test(field)) return { condition: 'loading', reason: `page heading says "${field}"` };
   }
 
-  if (!actionResult.html || isBodyEmpty(actionResult.html)) return 'loading';
+  if (!actionResult.html || isBodyEmpty(actionResult.html)) return { condition: 'loading', reason: 'page body is empty' };
 
   const bodyMatch = actionResult.html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
-  if (bodyMatch && bodyMatch[1].trim().length < SMALL_PAGE_THRESHOLD) return 'loading';
+  if (bodyMatch && bodyMatch[1].trim().length < SMALL_PAGE_THRESHOLD) return { condition: 'loading', reason: `page body has under ${SMALL_PAGE_THRESHOLD} characters of content` };
 
-  return 'ok';
+  return { condition: 'ok', reason: '' };
 }
 
 export function isErrorPage(actionResult: ActionResult): boolean {
@@ -66,4 +70,9 @@ export class ErrorPageError extends Error {
     super(`Error page detected at ${url}${details ? ` (${details})` : ''}`);
     this.name = 'ErrorPageError';
   }
+}
+
+interface PageDiagnosis {
+  condition: PageCondition;
+  reason: string;
 }

@@ -321,6 +321,14 @@ describe('Planner with aimock', () => {
     expect(prompt).toContain('return an empty scenarios list');
   });
 
+  it('treats authentication pages as not plannable only without a feature focus', async () => {
+    await planner.plan();
+    expect(extractPromptText(mock.getLastRequest())).toContain('password-recovery pages are entry gates');
+
+    await planner.plan('login');
+    expect(extractPromptText(mock.getLastRequest())).not.toContain('password-recovery pages are entry gates');
+  });
+
   it('returns an empty plan when AI returns no scenarios', async () => {
     mock.clearFixtures();
     mock.on({}, { content: JSON.stringify({ planName: 'Empty', scenarios: [] }) });
