@@ -10,7 +10,7 @@ import type { StateManager } from '../state-manager.js';
 import { WebPageState } from '../state-manager.js';
 import { Stats } from '../stats.ts';
 import { diffAriaSnapshots } from '../utils/aria.ts';
-import { ErrorPageError, detectPageCondition, diagnosePage } from '../utils/error-page.ts';
+import { ErrorPageError, detectPageCondition } from '../utils/error-page.ts';
 import { isBodyEmpty } from '../utils/html.ts';
 import { createDebug, tag } from '../utils/logger.js';
 import { mdq } from '../utils/markdown-query.ts';
@@ -143,15 +143,15 @@ export class Researcher extends ResearcherBase implements Agent {
       debugLog(`Annotated ${annotatedElements.length} interactive elements with eidx`);
       this.actionResult = await this.explorer.capture({ screenshot: screenshot && this.provider.hasVision() });
 
-      const { condition, reason } = diagnosePage(this.actionResult!);
+      const condition = detectPageCondition(this.actionResult!);
       if (condition === 'error') {
-        tag('warning').log(`Page at ${state.url} is not analyzable: ${reason}`);
+        tag('warning').log(`Detected error page at ${state.url}`);
         throw new ErrorPageError(state.url, this.actionResult!.title, this.actionResult!.httpStatus);
       }
       if (condition === 'loading') {
         const settled = await this.waitUntilSettled(screenshot);
         if (!settled) {
-          tag('warning').log(`Page at ${state.url} did not finish loading within timeout (${diagnosePage(this.actionResult!).reason}), continuing with best-effort research`);
+          tag('warning').log(`Page at ${state.url} did not finish loading within timeout, continuing with best-effort research`);
         }
       }
 

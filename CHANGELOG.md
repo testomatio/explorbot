@@ -5,7 +5,6 @@
 ### Changes
 - [Planner] Sign-in, sign-up and password-recovery pages are no longer planned during exploration; the run prints `Page is not plannable: <reason>` and moves on. With `--focus` (e.g. `--focus login`) these pages are still planned.
 - [Planner] When a page gets no tests, the reason is printed.
-- [Researcher] A page that can't be analyzed now says why: the HTTP status, the error heading it shows, an empty body, a progress bar still showing, or too little content.
 - `explore` and `freesail` print the current page on a failed exit: URL, headings, ARIA summary and research, plus the saved screenshot, HTML and ARIA file paths.
 - `/context` also prints the paths of the saved HTML and ARIA files.
 - AI connection errors name the missing environment variable (e.g. `ANTHROPIC_API_KEY is not set`). A rejected key is shown masked, e.g. `ANTHROPIC_API_KEY=sk-an**123 was rejected, check the key`.
