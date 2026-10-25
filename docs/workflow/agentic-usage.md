@@ -57,6 +57,7 @@ No `init`, no config file, no project directory, no model IDs to look up. These 
 | `EXPLORBOT_EPHEMERAL` | no | Keep no state between runs — output goes to a fresh temp directory instead of the site dir |
 | `EXPLORBOT_KNOWLEDGE` | no | Inline knowledge text, applied to every page |
 | `EXPLORBOT_KNOWLEDGE_FILE` | no | Path to a knowledge markdown file |
+| `EXPLORBOT_AUTH` | no | Auth details in free form (credentials, a token), kept in memory for the run and never written to disk; same as --auth |
 | `EXPLORBOT_SPEC` | no | Docbot application spec directory or index.md, used as page knowledge |
 | `EXPLORBOT_API_SPEC` | no | OpenAPI spec path for the API boat |
 | `EXPLORBOT_API_HEADERS` | no | Headers sent with every API request, one "Name: value" per line |
@@ -131,6 +132,12 @@ EXPLORBOT_KNOWLEDGE="Log in as admin@example.com / secret123. Dismiss the cookie
 EXPLORBOT_URL=https://app.example.com \
 EXPLORBOT_AI_PROVIDER=openrouter \
   npx explorbot explore /admin/users
+```
+
+`EXPLORBOT_AUTH` takes the same free-form credentials but keeps them in memory only — nothing lands in the knowledge directory. `--auth` is its flag twin:
+
+```bash
+EXPLORBOT_AUTH="login: admin@example.com password: secret123" npx explorbot explore /admin/users
 ```
 
 `EXPLORBOT_KNOWLEDGE_FILE` points at a markdown file the agent wrote. Its frontmatter is preserved, so it can target specific URLs — see [Knowledge](./knowledge.md) for the format:

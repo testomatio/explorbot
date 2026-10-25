@@ -460,7 +460,7 @@ describe('EXPLORBOT_ENV_VARS registry', () => {
   });
 
   it('lists no variable the code never reads', () => {
-    const code = ['src/config.ts', 'bin/explorbot-cli.ts', 'boat/api-tester/src/config.ts'].map((f) => readFileSync(f, 'utf8')).join('\n');
+    const code = ['src/config.ts', 'bin/explorbot-cli.ts', 'src/commands/options/auth-option.ts', 'boat/api-tester/src/config.ts'].map((f) => readFileSync(f, 'utf8')).join('\n');
     const unused = EXPLORBOT_ENV_VARS.filter((v) => !code.includes(`process.env.${v.name}`));
 
     expect(unused.map((v) => v.name)).toEqual([]);

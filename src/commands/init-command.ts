@@ -327,6 +327,11 @@ function printInitNextSteps(options: { url?: string; siteCommands?: NextStepComm
 
   if (options.siteCommands) sections.push({ label: 'Explore any site', commands: options.siteCommands });
 
+  sections.push({
+    label: 'Log in for one run (kept in memory, never saved)',
+    commands: [{ command: `${cli} explore /dashboard --auth 'login: admin@example.com password: secret123'` }],
+  });
+
   sections.push(
     {
       label: 'Run it from VS Code',

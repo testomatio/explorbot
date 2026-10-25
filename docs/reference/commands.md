@@ -93,6 +93,17 @@ npx explorbot explore /pay --knowledge 'Test card 4111 1111 1111 1111, any futur
 
 Like `--ws`, it is a program-level option rather than a per-command one: it works on every command — including `api`, `docs` and `prima` — and can go anywhere on the line. It is listed under `npx explorbot --help` rather than in each command's own help.
 
+### `--auth`
+
+Passes login details to the run in free form — credentials, a token, whatever the app asks for. It joins the run's knowledge on every page and API endpoint, stays in memory, and is never written to disk. `EXPLORBOT_AUTH` does the same from the environment; the flag wins when both are set.
+
+```bash
+npx explorbot explore /dashboard --auth 'login: admin@example.com password: secret123'
+npx explorbot api explore /orders --auth 'Bearer: eyJhbGciOi...'
+```
+
+Like `--knowledge`, it works on every command of `explorbot`, `api`, `docs` and `prima`, and can go anywhere on the line.
+
 ### `--session`
 
 Saves browser state (cookies, localStorage, sessionStorage) to a JSON file. The next run restores the session, so you skip login and setup steps.
@@ -129,6 +140,7 @@ EXPLORBOT_AI_PROVIDER=openrouter \
 | `EXPLORBOT_EPHEMERAL` | Keep no state between runs — output goes to a fresh temp directory instead of the site dir |
 | `EXPLORBOT_KNOWLEDGE` | Inline knowledge text, applied to every page |
 | `EXPLORBOT_KNOWLEDGE_FILE` | Path to a knowledge markdown file |
+| `EXPLORBOT_AUTH` | Auth details in free form (credentials, a token), kept in memory for the run and never written to disk; same as --auth |
 | `EXPLORBOT_SPEC` | Docbot application spec directory or index.md, used as page knowledge |
 | `EXPLORBOT_API_SPEC` | OpenAPI spec path for the API boat |
 | `EXPLORBOT_API_HEADERS` | Headers sent with every API request, one "Name: value" per line |
