@@ -25,15 +25,17 @@ export const checkHelp = dedent`
   --expected  one required outcome, repeatable for several. Without it the
               scenario text is the outcome. Each returns under
               ### Expected outcomes as PASSED, FAILED, CONTRADICTION or not verified.
-              "not verified" means never checked, not false.
+              "not verified" means never checked, not false; the line under it names
+              what kept the run from checking it.
   Proof is a full-page screenshot: what a user sees counts, the log only shows actions.
   When screenshot and log disagree, the page structure breaks the tie: the outcome
   becomes PASSED or FAILED with a "resolved:" line naming the side that was wrong.
   CONTRADICTION remains when it cannot be broken, or when the page holds something
   it does not display; judge the html, aria and screenshot under ### Artifacts yourself.
-  ok is false when any outcome FAILED or CONTRADICTED, or the run could not finish,
-  reported as such rather than as an app failure.
-  Side issues found on the way go under ### Answer, not as step failures.
+  ok is false when any outcome FAILED or CONTRADICTED, when none was verified, or when
+  the run could not finish, reported as such rather than as an app failure.
+  ### Steps lists only the steps that failed.
+  Side issues found on the way go under ### Page issues, not as step failures.
 `;
 
 export const doHelp = dedent`
@@ -54,6 +56,15 @@ export const verifyHelp = dedent`
 
 export const researchHelp = dedent`
   The map is saved per page state and joins later commands there, so one research run pays for all that follow it.
+`;
+
+export const uxHelp = dedent`
+  Reviews one area, not the page. A named focus is shown first with at most one click,
+  which may open a dialog, tab or section or go to another page; nothing is submitted. The area reviewed is the dialog or region open on the page,
+  else the named focus, else where the session's commands on this page acted, else main.
+  Measures it at the current width, 768px and 375px, then restores the viewport.
+  Findings come under ### Answer by priority; the review reports problems and never
+  proposes wording or visual style. ok stays true whatever it finds.
 `;
 
 export const statusHelp = dedent`

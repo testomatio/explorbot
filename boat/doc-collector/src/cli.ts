@@ -5,6 +5,8 @@ import { ConfigCommand } from '../../../src/commands/config-command.ts';
 import { RecommendedModelsCommand } from '../../../src/commands/recommended-models-command.ts';
 import { remote } from '../../../src/remote.ts';
 import { isVerboseMode, setPreserveConsoleLogs, setQuietMode } from '../../../src/utils/logger.ts';
+import { readCliSitemap } from '../../../src/utils/sitemap.ts';
+import { UrlFilter } from '../../../src/utils/url-filter.ts';
 import { DocBot, type DocbotOptions } from './docbot.ts';
 
 function buildOptions(options: any): DocbotOptions {
@@ -41,15 +43,19 @@ export function createDocsCommands(name = 'docs'): Command {
 
   addCommonOptions(
     cmd
-      .command('collect <path>')
+      .command('collect [path]')
       .description('Crawl pages and generate documentation spec')
+      .option('--sitemap <source>', 'Document only the pages listed in a sitemap: file path, URL, or - for stdin (a piped stdin is read automatically)')
+      .option('--url-filter <spec>', 'Pick sitemap pages: keys filter|exclude|sort|limit, e.g. "filter:/admin/*;exclude:/admin/logs/*;sort:priority;limit:20"')
       .option('--max-pages <count>', 'Maximum number of pages to document')
       .option('--no-collapse-template-pages', 'Visit every page even when its layout matches a documented page')
       .option('--template-similarity <percent>', 'Structural similarity percent that counts pages as the same layout (default 90)')
-  ).action(async (startPath, options) => {
+  ).action(async (pathArg, options) => {
     setPreserveConsoleLogs(true);
 
     try {
+      const sitemapUrls = await readCliSitemap(pathArg, options.sitemap, new UrlFilter(options.urlFilter));
+      const startPath = pathArg || sitemapUrls![0];
       const bot = new DocBot({
         ...buildOptions(options),
         startUrl: startPath,
@@ -65,7 +71,7 @@ export function createDocsCommands(name = 'docs'): Command {
         templateSimilarity = Number.parseInt(options.templateSimilarity, 10);
       }
 
-      const result = await bot.collect(startPath, { maxPages, collapseTemplatePages: options.collapseTemplatePages, templateSimilarity });
+      const result = await bot.collect(startPath, { maxPages, collapseTemplatePages: options.collapseTemplatePages, templateSimilarity, sitemapUrls });
 
       console.log(`\nDocumented ${result.pages.length} page(s)`);
       console.log(`Skipped ${result.skipped.length} page(s)`);

@@ -13,7 +13,7 @@ import { RecommendedModelsCommand } from '../src/commands/recommended-models-com
 import { App } from '../src/components/App.js';
 import { StatusPane } from '../src/components/StatusPane.js';
 import { decisionModelOption, knowledgeOption, wsOption } from '../src/commands/options/index.js';
-import { ConfigParser, EXPLORBOT_ENV_VARS, PROVIDERS } from '../src/config.js';
+import { ConfigParser, EXPLORBOT_ENV_VARS, PROVIDERS, outputPath } from '../src/config.js';
 import { ExplorBot, type ExplorBotOptions } from '../src/explorbot.js';
 import { remote } from '../src/remote.js';
 import { Stats } from '../src/stats.js';
@@ -23,6 +23,8 @@ import { isVerboseMode, log, setPreserveConsoleLogs, setQuietMode, tag } from '.
 import { jsonToTable } from '../src/utils/markdown-parser.js';
 import { parseMarkdownToTerminal } from '../src/utils/markdown-terminal.js';
 import { type NextStepSection, printNextSteps, relativeToCwd } from '../src/utils/next-steps.ts';
+import { readCliSitemap } from '../src/utils/sitemap.ts';
+import { UrlFilter } from '../src/utils/url-filter.ts';
 
 const program = new Command();
 const cli = getCliName();
@@ -121,6 +123,18 @@ async function startTUI(explorBot: ExplorBot): Promise<void> {
   });
 }
 
+function printPageContext(explorBot?: ExplorBot): void {
+  const state = explorBot?.stateManager().getCurrentState();
+  if (!state) return;
+  const lines = [`Last page: ${state.fullUrl || state.url}`];
+  if (state.title) lines.push(`Title: ${state.title}`);
+  if (state.screenshotFile) lines.push(`Screenshot: file://${outputPath('states', state.screenshotFile)}`);
+  if (state.htmlFile) lines.push(`HTML: file://${outputPath('states', state.htmlFile)}`);
+  if (state.ariaSnapshotFile) lines.push(`ARIA: file://${outputPath('states', state.ariaSnapshotFile)}`);
+  if (state.ariaSnapshot) lines.push('', state.ariaSnapshot);
+  console.error(lines.join('\n'));
+}
+
 async function showStatsAndExit(code: number): Promise<never> {
   if (remote.isAttached()) {
     await remote.close(code);
@@ -153,20 +167,27 @@ addCommonOptions(program.command('start [path]').description('Start web explorat
 
 addCommonOptions(
   program
-    .command('explore <path>')
+    .command('explore [path]')
     .description('Explore a page autonomously and run invented scenarios')
+    .option('--sitemap <source>', 'Explore every page listed in a sitemap: file path, URL, or - for stdin (a piped stdin is read automatically)')
+    .option('--url-filter <spec>', 'Pick pages to explore: keys filter|exclude|limit, plus sort:priority|lastmod for a sitemap, e.g. "filter:/admin/*;exclude:/admin/logs/*;limit:20"')
     .option('--max-tests <count>', 'Maximum number of tests to run')
     .option('--max-duration <minutes>', 'Wall-clock budget in minutes for the whole run; wraps up before the limit is hit')
     .option('--focus <feature>', 'Focus area for exploration')
     .option('--configure <spec>', 'Reuse spec: keys new|from|style|subpages|pick_by|priority, e.g. "new:25%;pick_by=random;priority=critical,high"')
     .option('--dry-run', 'Mark picked tests as skipped without executing or generating new ones')
 ).action(async (explorePath, options) => {
+  let explorBot: ExplorBot | undefined;
   try {
-    const explorBot = new ExplorBot(buildExplorBotOptions(explorePath, options));
+    const urlFilter = new UrlFilter(options.urlFilter);
+    const sitemapUrls = await readCliSitemap(explorePath, options.sitemap, urlFilter);
+    explorBot = new ExplorBot(buildExplorBotOptions(explorePath || sitemapUrls?.[0], options));
     await explorBot.start();
-    await explorBot.visit(explorePath);
+    if (explorePath) await explorBot.visit(explorePath);
     const { ExploreCommand } = await import('../src/commands/explore-command.js');
     const cmd = new ExploreCommand(explorBot);
+    cmd.sitemapUrls = sitemapUrls;
+    cmd.urlFilter = urlFilter;
     if (options.maxTests) cmd.maxTests = Number.parseInt(options.maxTests, 10);
     if (options.maxDuration) cmd.maxDurationMinutes = Number.parseInt(options.maxDuration, 10);
     else if (process.env.EXPLORBOT_MAX_DURATION) cmd.maxDurationMinutes = Number.parseInt(process.env.EXPLORBOT_MAX_DURATION, 10);
@@ -180,6 +201,7 @@ addCommonOptions(
     await showStatsAndExit(0);
   } catch (error) {
     console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
+    printPageContext(explorBot);
     await showStatsAndExit(1);
   }
 });
@@ -454,13 +476,22 @@ addCommonOptions(
     .option('--scope <prefix>', 'Restrict navigation to URL prefix')
     .option('--max-tests <count>', 'Maximum number of tests to run')
     .option('--max-duration <minutes>', 'Wall-clock budget in minutes for the whole run')
+    .option('--url-filter <spec>', 'Pick pages to explore: keys filter|exclude|limit, e.g. "filter:/admin/*;exclude:/admin/logs/*;limit:20"')
 ).action(async (startUrl, options) => {
   const explorBot = new ExplorBot(buildExplorBotOptions(startUrl || '/', options));
   await explorBot.start();
-  const args = [options.deep && '--deep', options.shallow && '--shallow', options.scope && `--scope ${options.scope}`, options.maxTests && `--max-tests ${options.maxTests}`, options.maxDuration && `--max-duration ${options.maxDuration}`].filter(Boolean).join(' ');
+  const args = [options.deep && '--deep', options.shallow && '--shallow', options.scope && `--scope ${options.scope}`, options.maxTests && `--max-tests ${options.maxTests}`, options.maxDuration && `--max-duration ${options.maxDuration}`, options.urlFilter && `--url-filter "${options.urlFilter}"`]
+    .filter(Boolean)
+    .join(' ');
   const { FreesailCommand } = await import('../src/commands/freesail-command.js');
   const cmd = new FreesailCommand(explorBot);
-  await cmd.execute(args);
+  try {
+    await cmd.execute(args);
+  } catch (error) {
+    console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
+    printPageContext(explorBot);
+    await showStatsAndExit(1);
+  }
 });
 
 program
@@ -491,6 +522,7 @@ program
   .option('-g, --global', 'Configure explorbot in ~/.explorbot to run from anywhere')
   .option('--provider <name>', `AI provider for the global config: ${Object.keys(PROVIDERS).join(', ')}`)
   .option('--api-key <key>', 'API key stored in ~/.explorbot/.env')
+  .option('--url <url>', 'Web application URL written to web.url in the local config')
   .action(async (options) => {
     try {
       const { runInit } = await import('../src/commands/init-command.js');
@@ -501,6 +533,7 @@ program
         global: options.global,
         provider: options.provider,
         apiKey: options.apiKey,
+        url: options.url,
       });
     } catch (error) {
       console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');

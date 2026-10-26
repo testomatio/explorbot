@@ -1,5 +1,103 @@
 # Changelog
 
+## 2026-10-23
+
+### New CLI Options
+- **`prima ux [focus]`** — Reviews one area of the current page for UX problems. A named area is shown first with at most one click, which may open a dialog, tab or section or go to another page; nothing is submitted. The area reviewed is the dialog or region open on the page, else the area you named, else the area your session's commands on this page acted in, else the main content. The area is measured at the current width, 768px and 375px (target size and spacing, overflow, zoom, small or cramped text, truncated text, motion), checked with axe, and judged against accessibility, interaction, responsive, navigation, copy, forms, readability, motion and chart rules. Up to 6 short findings, ranked Critical to Low. It reports problems only, never replacement wording or colors and styles. The viewport is restored afterwards. Screenshots are reviewed when `ai.visionModel` is set.
+  ```bash
+  prima ux
+  prima ux "the top navigation"
+  prima ux "checkout form"
+  ```
+
+### Configuration
+- **`rules/quartermaster/ux/*.md`** — The rules `prima ux` judges against. Put a file with the same name in your project's `./rules/quartermaster/ux/` to replace one, or add your own rules with `ai.agents.quartermaster.rules`.
+
+## 2026-10-22
+
+### Changes
+- prima `check`: before the scenario runs, the decision model (or the agentic model when none is configured) decides whether the page needs preparing first — reaching the page where the scenario starts, or setting up a precondition it relies on. Preparation runs through `do`, its steps appear under `### Steps` prefixed `prepare:`, and a failed preparation stops the check with the reason.
+- prima `check`: `### Steps` lists the CodeceptJS commands the run executed, in order, passed and failed — a failed command shows its error — instead of the tester's notes.
+- prima `check`: each step is marked with the page state it ran in (`// state 2`), and a new `### States` section lists every state the run visited with the path to its saved ARIA snapshot.
+- prima `go`: a URL that redirects (for example to a sign-in page) is recovered using knowledge — logging in and returning to the requested page. When it cannot be reached, `go` returns `ok: false` instead of reporting success on the wrong page.
+- prima `do`: when the model writes its actions as text instead of performing them, it is told nothing has run yet, and the failure says the model replied with text, instead of looking like a completed step.
+- Explorer: hidden duplicate elements (such as a second copy of a sign-in form) no longer make clicks and fills fail with "multiple elements found"; only visible elements are matched.
+- prima `config`: shows the site config file path.
+- AI: structured answers no longer print the AI SDK's "generateObject is deprecated" warning and stack trace on every call.
+
+## 2026-10-19
+
+### Changes
+- Sites: `localhost`, `127.0.0.1` and `[::1]` on the same port are now one site, so knowledge and experience saved for `http://localhost:3000` also apply when exploring `http://127.0.0.1:3000`.
+- [Pilot] An expected outcome the run never got to test — because it could not get past an earlier step or could not reach a control — is reported as "not verified" with the reason, instead of as a failure of the application.
+- prima `check`: `### Steps` lists only failed steps, each once — a step that failed several times shows its count; the "further steps ran without failing" line is gone.
+- [Navigator] When some assertions behind a verification pass and others fail, the decision model (or the agentic model when none is configured) decides whether the claim holds, instead of a majority vote. One badly written assertion no longer fails a claim the others prove.
+- [Navigator] `I.seeInSource` / `I.dontSeeInSource` are used for plain text only, never for markup copied from the page.
+- [Tester] A verification that passed is recorded as passed. Before, a batch of checks was recorded under the first check's message with the whole batch's status, so a passing check could appear as "Verification failed".
+- [Tester] A failed action is no longer logged twice (once as the action, once as "Failed to … (tool)") when the action already recorded its own failure.
+- prima `check`: console errors and other problems noticed on the page go under their own `### Page issues` section instead of `### Answer`.
+- prima `check`: every "not verified" outcome shows what kept the run from checking it, and a check that verified none of its outcomes returns `ok: false`, naming the outcome under `### Failure` without repeating the reason.
+- [Planner] Sign-in, sign-up and password-recovery pages are now ignored during exploration; the run prints `Page is not plannable: <reason>` and moves on. With `--focus` (e.g. `--focus login`) these pages are still planned. To change the list, put your own `rules/planner/ignored-pages.md` in the project.
+- [Planner] When a page gets no tests, the reason is printed.
+- `explore` and `freesail` print the last page on a failed exit: URL, title, ARIA snapshot, and the paths of its saved screenshot, HTML and ARIA files.
+- AI connection errors name the missing environment variable (e.g. `ANTHROPIC_API_KEY is not set`). A rejected key is shown masked, e.g. `ANTHROPIC_API_KEY=sk-an**123 was rejected, check the key`.
+
+## 2026-10-13
+
+### Changes
+- [Pilot] Expected outcomes are now judged against the scenario they belong to. An outcome that names something the scenario chooses ("the user I picked") no longer passes when the run took a different route or never managed to choose it — `prima check` reports it FAILED instead of PASSED.
+- [Pilot] An expected outcome the run recorded as failed is no longer reported as passed just because another outcome of the same test passed.
+
+## 2026-10-10
+
+### New CLI Options
+- **`--sitemap <source>`** on `explore` — Explores every page listed in a sitemap, one after another, instead of discovering sub-pages on its own. The source is a file, a URL, or `-` for stdin; a sitemap piped to stdin is read automatically when no page path is given, so the path argument is now optional. XML sitemaps, sitemap indexes and plain-text lists of URLs are supported. Pages on other sites are skipped with a warning.
+  ```bash
+  explorbot explore --sitemap sitemap.xml
+  explorbot explore --sitemap https://app.example.com/sitemap.xml
+  explorbot explore < sitemap.xml
+  ```
+- **`--sitemap <source>`** on `docs collect` — Documents only the pages listed in a sitemap; links found on those pages are not followed. `--max-pages` and the `includePaths`/`excludePaths`/`deniedPathSegments` settings still apply.
+  ```bash
+  explorbot docs collect --sitemap sitemap.xml --max-pages 50
+  cat sitemap.xml | explorbot docs collect
+  ```
+- **`--url-filter <spec>`** on `explore`, `freesail` and `docs collect` — Picks which pages get explored, written as `key:value` pairs separated by `;`, like `--configure`. `filter:<pattern>` keeps only matching pages, `exclude:<pattern>` drops matching pages (both repeatable, same patterns as knowledge `url:`), and `limit:<n>` caps how many pages are explored beyond the start page. With `--sitemap`, `sort:priority` or `sort:lastmod` orders the pages by the sitemap's priority or last-modified date. The start page is always explored. In `freesail`, the limit covers the whole run.
+  ```bash
+  explorbot explore / --url-filter "filter:/admin/*;exclude:/admin/logs/*;limit:10"
+  explorbot freesail / --url-filter "exclude:/billing/*;limit:20"
+  explorbot explore --sitemap sitemap.xml --url-filter "filter:/admin/*;sort:priority;limit:20"
+  ```
+
+### New TUI Commands
+- **`/explore --sitemap <source> --url-filter <spec>`** — Same as the CLI options above, from the TUI.
+  ```
+  /explore --sitemap sitemap.xml
+  /explore --url-filter "filter:/settings/*;limit:5"
+  ```
+- **`/freesail --url-filter <spec>`** — Keeps free sailing on pages that pass the filter and stops once its limit is used.
+  ```
+  /freesail --url-filter "exclude:/billing/*;limit:20"
+  ```
+
+### Changes
+- [Navigator] While free sailing, the Navigator is told which URL patterns to stay within and is asked for another page when it suggests one the URL filter rejects.
+
+## 2026-10-09
+
+### Configuration
+- **`ai.recommendedModels`** — Name a provider and every model role takes its bundled recommendations: `ai: { recommendedModels: 'openrouter' }` fills `model`, `visionModel`, `agenticModel` and `decisionModel`. An explicit role set alongside it wins, so one pinned model mixes freely with the recommendations. `explorbot init` now writes this instead of listing model ids. Default: unset — roles behave as before.
+
+### Changes
+- `explorbot init` in a terminal is now a full setup wizard: it asks for the AI provider, the API key (optionally checked with one test AI call), and the app's URL, then writes everything itself — the key into `.env`, the URL into `web.url`. No manual file editing is left.
+- Outside a terminal, init prints the exact paths of the files that still need attention — the API key in `.env` and the app URL in the config — instead of a generic checklist. The non-interactive path accepts `--url` and `--api-key`, so CI and agents get a complete config in one command:
+  ```bash
+  explorbot init --provider openrouter --api-key sk-... --url https://app.example.com
+  ```
+- Init now ends with a "What's next" block: a demo command to watch Explorbot work on a sample app (`npx explorbot explore https://todomvc.com/examples/react/dist/`), commands to explore your own app, the knowledge hint for logins, and links to the VS Code extension and the docs at testomat.ai.
+- An `explore` run ends with an "Explore more" section suggesting `explorbot explore /` to cover the whole site, plus a link to the docs.
+- Init makes it explicit how to connect the AI: the `.env` template and the missing-key warning point to the provider's key page (e.g. `https://openrouter.ai/keys`) and show the exact line to paste — `OPENROUTER_API_KEY=<your-key>`; the setup wizard shows where to create the key too.
+
 ## 2026-10-08
 
 ### Changes

@@ -24,6 +24,7 @@ import type { Provider } from './provider.js';
 import { POSSIBLE_SECTIONS, type Researcher } from './researcher.ts';
 import { findSimilarStateHash } from './researcher/cache.ts';
 import { hasFocusedSection } from './researcher/focus.ts';
+import { RulesLoader } from '../utils/rules-loader.ts';
 import { capabilityGroundingRule, dataProtectionRules, fileUploadRule } from './rules.ts';
 import type { Scout } from './scout.ts';
 
@@ -44,6 +45,7 @@ const TasksSchema = z.object({
       })
     )
     .describe('List of testing scenarios'),
+  notPlannableReason: z.string().nullish().describe('When scenarios is empty, one sentence saying why this page has nothing to test; otherwise null.'),
 });
 
 const PlannerBase = WithSessionDedup(WithSubPages(Object as unknown as new (...args: any[]) => object));
@@ -210,6 +212,10 @@ export class Planner extends PlannerBase implements Agent {
         throw new Error('No tasks were created successfully');
       }
 
+      if (!this.currentPlan && aiResult.object.scenarios.length === 0 && aiResult.object.notPlannableReason) {
+        tag('warning').log(`Page is not plannable: ${aiResult.object.notPlannableReason}`);
+      }
+
       const defaultStartUrl = this.getDefaultStartUrl(state);
       const fromPlanning = aiResult.object.scenarios.map((s: any) => new Test(s.scenario, s.priority, s.expectedOutcomes, s.startUrl || defaultStartUrl, s.steps || []));
 
@@ -345,11 +351,14 @@ export class Planner extends PlannerBase implements Agent {
 
     conversation.addUserText(this.getSystemMessage(feature));
 
+    let ignoredPagesRule = '';
+    if (!feature) ignoredPagesRule = `\n${RulesLoader.loadRules('planner', ['ignored-pages'], state.url)}`;
+
     const planningPrompt = dedent`
       <task>
       Based on the page research, create ${this.MIN_TASKS}-${this.MAX_TASKS} exploratory testing scenarios.
       For each scenario provide specific steps and expected outcomes.
-      Exception: if the page reports the requested resource is missing, shows a failure state, or holds no content and no controls, return an empty scenarios list. Never invent tests for a page with nothing to exercise.
+      Exception: if the page reports the requested resource is missing, shows a failure state, or holds no content and no controls, return an empty scenarios list. Never invent tests for a page with nothing to exercise.${ignoredPagesRule}
       </task>
 
       <rules>

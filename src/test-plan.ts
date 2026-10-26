@@ -331,10 +331,12 @@ export class Test extends Task {
     });
   }
 
+  hasAchieved(expectation: string): boolean {
+    return Object.values(this.notes).some((note) => note.message === expectation && note.status === TestResult.PASSED);
+  }
+
   hasAchievedAny(): boolean {
-    return this.expected.some((expectation) => {
-      return Object.values(this.notes).some((note) => note.message === expectation && note.status === TestResult.PASSED);
-    });
+    return this.expected.some((expectation) => this.hasAchieved(expectation));
   }
 
   getRunResult(): 'success' | 'partial' | 'failed' {
@@ -344,9 +346,7 @@ export class Test extends Task {
   }
 
   hasAchievedAll(): boolean {
-    return this.expected.every((expectation) => {
-      return Object.values(this.notes).some((note) => note.message === expectation && note.status === TestResult.PASSED);
-    });
+    return this.expected.every((expectation) => this.hasAchieved(expectation));
   }
 
   isComplete(): boolean {

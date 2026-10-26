@@ -15,7 +15,8 @@ export const JUDGE_PAGE_CAP = 12000;
 export class Decision {
   constructor(
     readonly value: string | null,
-    readonly confidence: number
+    readonly confidence: number,
+    readonly answered = true
   ) {}
 
   get approved(): boolean {
@@ -46,8 +47,15 @@ export class Judge {
   }
 
   async decide(question: string, options: string[] | boolean | null, state: unknown): Promise<Decision> {
-    if (!this.enabled.direct) return new Decision(null, 0);
+    if (!this.enabled.direct) return new Decision(null, 0, false);
     return this.consult(question, options, state);
+  }
+
+  async assert(statement: string, state: unknown): Promise<boolean | null> {
+    const decision = await this.decide(statement, null, state);
+    if (decision.approved) return true;
+    if (decision.answered && decision.confidence < 1 - this.threshold) return false;
+    return null;
   }
 
   async pick(question: string, options: string[], state: unknown): Promise<number | null> {
@@ -76,7 +84,7 @@ export class Judge {
     if (list?.includes(UNDECIDED)) instructions = `${question} ${UNDECIDED_HINT}`;
 
     const answer = await this.provider.decide(state, instructions, list).catch((error: unknown) => this.recordFailure(error));
-    if (!answer) return new Decision(null, 0);
+    if (!answer) return new Decision(null, 0, false);
     Observability.getSpan()?.setAttribute('langfuse.observation.output', JSON.stringify(answer));
     if (answer.probability <= this.threshold) return new Decision(null, answer.probability);
     if (answer.value === UNDECIDED) return new Decision(null, answer.probability);

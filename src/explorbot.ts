@@ -137,6 +137,7 @@ export class ExplorBot {
     if (typeof this.options.session === 'string') this.options.session = path.resolve(this.options.path || '.', this.options.session);
     if (this.options.optionalAi) return this.bootstrapOptionalProvider();
     this.provider = new AIProvider(this.config.ai);
+    this.provider.setJudge(this.judge());
     await this.provider.validateConnection();
   }
 
@@ -266,8 +267,11 @@ export class ExplorBot {
         return new Tester(deps, researcher, navigator, tools);
       });
 
-      const qm = this.agentQuartermaster();
-      if (qm) this.agents.tester.setQuartermaster(qm);
+      if (this.config.ai?.agents?.quartermaster?.enabled === true) {
+        const quartermaster = this.agentQuartermaster();
+        quartermaster.start(this.stateManager());
+        this.agents.tester.setQuartermaster(quartermaster);
+      }
       if (this.isHistorianEnabled()) this.agents.tester.setHistorian(this.agentHistorian());
       this.agents.tester.setPilot(this.agentPilot());
       this.agents.tester.setCaptain(this.agentCaptain());
@@ -289,17 +293,8 @@ export class ExplorBot {
     return (this.agents.experienceCompactor ||= new ExperienceCompactor(this.provider, this.experienceTracker()));
   }
 
-  agentQuartermaster(): Quartermaster | null {
-    const config = this.config.ai?.agents?.quartermaster;
-    if (config?.enabled !== true) return null;
-
-    if (!this.agents.quartermaster) {
-      this.agents.quartermaster = new Quartermaster(this.provider, {
-        model: config?.model,
-      });
-      this.agents.quartermaster.start(this.explorer, this.stateManager());
-    }
-    return this.agents.quartermaster;
+  agentQuartermaster(): Quartermaster {
+    return (this.agents.quartermaster ||= new Quartermaster(this.provider, this.explorer, { model: this.config.ai?.agents?.quartermaster?.model }));
   }
 
   agentHistorian(): Historian {
@@ -571,6 +566,7 @@ export class ExplorBot {
   private async bootstrapOptionalProvider(): Promise<void> {
     try {
       const provider = new AIProvider(this.config.ai);
+      provider.setJudge(this.judge());
       await provider.validateConnection();
       this.provider = provider;
     } catch (error) {

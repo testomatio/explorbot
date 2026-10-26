@@ -11,13 +11,13 @@ import { deepMerge } from './utils/merge.js';
 import { log, tag } from './utils/logger.js';
 
 export const PROVIDERS: Record<string, ProviderInfo> = {
-  openai: { envKey: 'OPENAI_API_KEY', load: async () => (await import('@ai-sdk/openai')).createOpenAI() },
-  anthropic: { envKey: 'ANTHROPIC_API_KEY', load: async () => (await import('@ai-sdk/anthropic')).createAnthropic() },
-  google: { envKey: 'GOOGLE_GENERATIVE_AI_API_KEY', load: async () => (await import('@ai-sdk/google')).createGoogleGenerativeAI() },
-  groq: { envKey: 'GROQ_API_KEY', load: async () => (await import('@ai-sdk/groq')).createGroq() },
-  mistral: { envKey: 'MISTRAL_API_KEY', load: async () => (await import('@ai-sdk/mistral')).createMistral() },
-  openrouter: { envKey: 'OPENROUTER_API_KEY', load: async () => (await import('@openrouter/ai-sdk-provider')).createOpenRouter() },
-  sambanova: { envKey: 'SAMBANOVA_API_KEY', load: async () => (await import('sambanova-ai-provider')).createSambaNova() },
+  openai: { envKey: 'OPENAI_API_KEY', keyUrl: 'https://platform.openai.com/api-keys', load: async () => (await import('@ai-sdk/openai')).createOpenAI() },
+  anthropic: { envKey: 'ANTHROPIC_API_KEY', keyUrl: 'https://console.anthropic.com/settings/keys', load: async () => (await import('@ai-sdk/anthropic')).createAnthropic() },
+  google: { envKey: 'GOOGLE_GENERATIVE_AI_API_KEY', keyUrl: 'https://aistudio.google.com/apikey', load: async () => (await import('@ai-sdk/google')).createGoogleGenerativeAI() },
+  groq: { envKey: 'GROQ_API_KEY', keyUrl: 'https://console.groq.com/keys', load: async () => (await import('@ai-sdk/groq')).createGroq() },
+  mistral: { envKey: 'MISTRAL_API_KEY', keyUrl: 'https://console.mistral.ai/api-keys', load: async () => (await import('@ai-sdk/mistral')).createMistral() },
+  openrouter: { envKey: 'OPENROUTER_API_KEY', keyUrl: 'https://openrouter.ai/keys', load: async () => (await import('@openrouter/ai-sdk-provider')).createOpenRouter() },
+  sambanova: { envKey: 'SAMBANOVA_API_KEY', keyUrl: 'https://cloud.sambanova.ai/apis', load: async () => (await import('sambanova-ai-provider')).createSambaNova() },
 };
 
 export const MODEL_ROLES: ModelRole[] = ['model', 'visionModel', 'agenticModel'];
@@ -169,6 +169,7 @@ interface AgentsConfig {
 
 interface AIConfig {
   model: any;
+  recommendedModels?: string;
   apiKey?: string;
   config?: Record<string, any>;
   langfuse?: {
@@ -890,9 +891,32 @@ export async function resolveConfigModels(ai?: AIConfig): Promise<void> {
     if (typeof ai[role] === 'string') ai[role] = await resolveModel(ai[role], role);
   }
 
+  await fillRecommendedModels(ai);
+
   for (const agent of Object.values(ai.agents || {})) {
     if (typeof agent?.model === 'string') agent.model = await resolveModel(agent.model);
   }
+}
+
+async function fillRecommendedModels(ai: AIConfig): Promise<void> {
+  const provider = ai.recommendedModels;
+  if (!provider) return;
+
+  const recommended = ConfigParser.recommendedModels()[provider];
+  if (!recommended) {
+    throw new Error(`No recommended models for "${provider}". Use a provider with recommendations: ${Object.keys(ConfigParser.recommendedModels()).join(', ')}`);
+  }
+
+  for (const role of MODEL_ROLES) {
+    if (ai[role]) continue;
+    if (!recommended[role]) continue;
+    ai[role] = await resolveModel(provider, role);
+  }
+
+  if (!ai.decisionModel && recommended.decisionModel) ai.decisionModel = { provider, model: recommended.decisionModel };
+
+  const missing = missingModelRoles(provider);
+  if (missing.length) tag('warning').log(`No recommended ${missing.join(' and ')} for ${provider} — set them explicitly as "provider/model-id"`);
 }
 
 export function resolveLangfuse(ai?: AIConfig): void {
@@ -994,6 +1018,7 @@ interface ConfiguredModel {
 
 interface ProviderInfo {
   envKey: string;
+  keyUrl: string;
   load: () => Promise<(modelId: string) => any>;
 }
 

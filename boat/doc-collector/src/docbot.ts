@@ -5,6 +5,7 @@ import type { Link, WebPageState } from '../../../src/state-manager.ts';
 import { normalizeUrl } from '../../../src/state-manager.ts';
 import { tag } from '../../../src/utils/logger.ts';
 import { sanitizeFilename } from '../../../src/utils/strings.ts';
+import { keepSiteUrls } from '../../../src/utils/sitemap.ts';
 import { Documentarian, type PageDocumentation } from './ai/documentarian.ts';
 import type { DocStateTransition } from './ai/tools.ts';
 import { type DocbotConfig, DocbotConfigParser } from './config.ts';
@@ -66,7 +67,12 @@ class DocBot {
     const skipped: SkippedPage[] = [];
     const baseUrl = this.explorBot.getConfig().playwright.url;
 
-    this.enqueuePath(effectiveStartPath, queue, queued);
+    const followLinks = !opts.sitemapUrls;
+    let seeds = [effectiveStartPath];
+    if (opts.sitemapUrls) seeds = keepSiteUrls(opts.sitemapUrls, baseUrl).filter((url) => shouldCrawlDocPath(url, this.config));
+    for (const seed of seeds) {
+      this.enqueuePath(seed, queue, queued);
+    }
 
     while (queue.length > 0 && pages.length < effectiveMaxPages) {
       const target = queue.shift();
@@ -80,7 +86,7 @@ class DocBot {
       }
 
       const stateManager = this.explorBot.stateManager();
-      if (stateManager.hasVisitedState(target)) {
+      if (followLinks && stateManager.hasVisitedState(target)) {
         continue;
       }
 
@@ -110,6 +116,7 @@ class DocBot {
               reason: `same layout as ${templateUrl} (only content differs)`,
             });
             documented.add(pageKey);
+            if (!followLinks) continue;
             for (const nextPath of this.extractNextPaths(state, baseUrl, '')) {
               if (documented.has(this.getPageKey(nextPath)) || stateManager.hasVisitedState(nextPath)) continue;
               this.enqueuePath(nextPath, queue, queued);
@@ -166,6 +173,7 @@ class DocBot {
 
         const templateRecord = buildTemplateRecord(state.url, state.ariaSnapshot ?? null);
         if (templateRecord) templates.push(templateRecord);
+        if (!followLinks) continue;
 
         const nextPaths = this.extractNextPaths(state, baseUrl, research, documentation);
         const interactionPriorityPaths = new Set(this.extractInteractionPaths(baseUrl, documentation));
@@ -559,6 +567,7 @@ interface CollectOptions {
   maxPages?: number;
   collapseTemplatePages?: boolean;
   templateSimilarity?: number;
+  sitemapUrls?: string[];
 }
 
 interface CollectionResult {
