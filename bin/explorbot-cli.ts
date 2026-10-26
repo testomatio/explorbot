@@ -12,7 +12,7 @@ import { HelpJsonCommand } from '../src/commands/help-json-command.js';
 import { RecommendedModelsCommand } from '../src/commands/recommended-models-command.js';
 import { App } from '../src/components/App.js';
 import { StatusPane } from '../src/components/StatusPane.js';
-import { decisionModelOption, knowledgeOption, wsOption } from '../src/commands/options/index.js';
+import { authOption, decisionModelOption, knowledgeOption, wsOption } from '../src/commands/options/index.js';
 import { ConfigParser, EXPLORBOT_ENV_VARS, PROVIDERS, outputPath } from '../src/config.js';
 import { ExplorBot, type ExplorBotOptions } from '../src/explorbot.js';
 import { remote } from '../src/remote.js';
@@ -35,6 +35,7 @@ const pkgVersion = JSON.parse(fs.readFileSync(pkgPath, 'utf-8')).version as stri
 program.name(cli).description('AI-powered web exploration tool').version(pkgVersion, '-V, --version');
 wsOption.register(program);
 knowledgeOption.register(program);
+authOption.register(program);
 decisionModelOption.register(program);
 
 process.on('uncaughtException', async (error) => {

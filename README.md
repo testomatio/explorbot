@@ -137,7 +137,7 @@ For a CI job, a demo, or a coding agent, pass everything as environment variable
 ```bash
 EXPLORBOT_URL=https://app.example.com \
 EXPLORBOT_AI_PROVIDER=openrouter \
-EXPLORBOT_KNOWLEDGE="Log in as admin@example.com / secret123" \
+EXPLORBOT_AUTH="login: admin@example.com password: secret123" \
   npx explorbot explore /admin/users --max-tests 3
 ```
 

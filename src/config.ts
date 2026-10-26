@@ -284,6 +284,7 @@ export const EXPLORBOT_ENV_VARS: EnvVar[] = [
   { name: 'EXPLORBOT_EPHEMERAL', description: 'Keep no state between runs — output goes to a fresh temp directory instead of the site dir' },
   { name: 'EXPLORBOT_KNOWLEDGE', description: 'Inline knowledge text, applied to every page' },
   { name: 'EXPLORBOT_KNOWLEDGE_FILE', description: 'Path to a knowledge markdown file' },
+  { name: 'EXPLORBOT_AUTH', description: 'Auth details in free form (credentials, a token), kept in memory for the run and never written to disk; same as --auth', secret: true },
   { name: 'EXPLORBOT_SPEC', description: 'Docbot application spec directory or index.md, used as page knowledge' },
   { name: 'EXPLORBOT_API_SPEC', description: 'OpenAPI spec path for the API boat' },
   { name: 'EXPLORBOT_API_HEADERS', description: 'Headers sent with every API request, one "Name: value" per line', secret: true },

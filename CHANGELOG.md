@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-10-26
+
+### New CLI Options
+- **`--auth <text>`** — Passes login details for one run in free form: credentials, a token, whatever the app asks for. They apply on every page and API endpoint, stay in memory, and are never written to disk. Works on `explorbot`, `explorbot api`, `explorbot docs`, `apibot`, `doc-collector` and `prima`, anywhere on the line. `init` now suggests it as a quick way to start on an app behind a login.
+  ```bash
+  explorbot explore /dashboard --auth 'login: admin@example.com password: secret123'
+  apibot explore /orders --auth 'Bearer: eyJhbGciOi...'
+  prima check "the editor saves" --auth 'login: admin password: secret'
+  ```
+
+### Configuration
+- **`EXPLORBOT_AUTH`** — Environment twin of `--auth`, e.g. `EXPLORBOT_AUTH="login: admin@example.com password: secret123"`; the flag wins when both are set. Unlike `EXPLORBOT_KNOWLEDGE`, nothing lands in the knowledge directory, and `explorbot config` shows it only as `set`.
+
 ## 2026-10-23
 
 ### New CLI Options
