@@ -89,6 +89,11 @@ describe('isErrorPage', () => {
       expect(detectPageCondition(createActionResult({ html: '<html><body>   \n\t   </body></html>' }))).toBe('loading');
     });
 
+    it('should classify an app shell holding only scripts as loading', () => {
+      const bundle = `<script>${'var app = 1;'.repeat(100)}</script>`;
+      expect(detectPageCondition(createActionResult({ html: `<html><body><div id="root"></div>${bundle}</body></html>` }))).toBe('loading');
+    });
+
     it('should classify very small page (< 500 chars) as loading', () => {
       const smallContent = 'x'.repeat(100);
       expect(detectPageCondition(createActionResult({ html: `<html><body>${smallContent}</body></html>` }))).toBe('loading');

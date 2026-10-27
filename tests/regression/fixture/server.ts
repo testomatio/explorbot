@@ -1,6 +1,6 @@
 import { handleApi } from './api.ts';
 import { type Variant, type VariantMode, createRegistry } from './components.ts';
-import { activityWidget, issueDetailPage, issuesPage, loginPage, settingsPage, vaultPage } from './pages.ts';
+import { activityWidget, issueDetailPage, issuesPage, loginPage, settingsPage, slowStartShell, vaultPage } from './pages.ts';
 import { type Store, createStore } from './store.ts';
 
 export const VAULT_CODE = 'K7-9284-XRAY-TANGO';
@@ -9,14 +9,14 @@ const PUBLIC_PATHS = ['/login', '/logout', '/vault', '/vault/unlock', '/assets/c
 
 const CLIENT_JS = await Bun.file(`${import.meta.dir}/client.js`).text();
 
-export function startFixture(opts: { port?: number; variant?: VariantMode; seed?: number } = {}): Fixture {
+export function startFixture(opts: { port?: number; variant?: VariantMode; seed?: number; slowStartMs?: number } = {}): Fixture {
   const variant = opts.variant || 'native';
   const seed = opts.seed || 42;
   const store = createStore();
   const server = Bun.serve({
     port: opts.port || 0,
     idleTimeout: 60,
-    fetch: (req) => handle(req, store, variant, seed),
+    fetch: (req) => handle(req, store, variant, seed, opts.slowStartMs || 0),
   });
   return {
     url: `http://localhost:${server.port}`,
@@ -25,7 +25,7 @@ export function startFixture(opts: { port?: number; variant?: VariantMode; seed?
   };
 }
 
-async function handle(req: Request, store: Store, defaultVariant: VariantMode, defaultSeed: number): Promise<Response> {
+async function handle(req: Request, store: Store, defaultVariant: VariantMode, defaultSeed: number, slowStartMs: number): Promise<Response> {
   const url = new URL(req.url);
   const path = url.pathname;
   const method = req.method;
@@ -74,6 +74,7 @@ async function handle(req: Request, store: Store, defaultVariant: VariantMode, d
 
   if (path === '/') return redirect('/issues');
 
+  if (path === '/issues' && method === 'GET' && slowStartMs && !cookies.trackly_started) return html(slowStartShell(slowStartMs));
   if (path === '/issues' && method === 'GET') {
     const filters = { q: url.searchParams.get('q') || undefined, status: url.searchParams.get('status') || undefined, label: url.searchParams.get('label') || undefined };
     return html(issuesPage(reg, store, filters, user, { openDrawer: url.searchParams.get('new') === '1' }));

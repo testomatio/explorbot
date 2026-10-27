@@ -221,6 +221,18 @@ export function vaultPage(state: { error?: boolean; unlocked?: boolean; docs?: s
   return doc('Archive · Trackly', body, null, 'vault');
 }
 
+export function slowStartShell(delayMs: number): string {
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Trackly</title></head><body><div id="app"></div><script>
+    setTimeout(async () => {
+      document.cookie = 'trackly_started=1; Path=/';
+      const page = await (await fetch(location.href)).text();
+      document.open();
+      document.write(page);
+      document.close();
+    }, ${delayMs});
+  </script></body></html>`;
+}
+
 function issueRow(issue: Issue, labels: { id: number; name: string }[], users: { id: number; name: string }[]): string {
   const labelNames = issue.labels
     .map((id) => labels.find((l) => l.id === id)?.name)

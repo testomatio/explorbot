@@ -31,9 +31,12 @@ function waitForDomQuiet(page: any, timeout: number): Promise<void> {
     .catch(() => {});
 }
 
-function waitForNetworkIdle(page: any, timeout: number): Promise<void> {
-  if (!page?.waitForLoadState) return Promise.resolve();
-  return page.waitForLoadState('networkidle', { timeout }).catch(() => {});
+export function waitForNetworkIdle(page: any, timeout: number): Promise<boolean> {
+  if (!page?.waitForLoadState) return Promise.resolve(true);
+  return page.waitForLoadState('networkidle', { timeout }).then(
+    () => true,
+    () => false
+  );
 }
 
 async function waitForVisibleSpinnersHidden(page: any, selectors: string[], timeout: number): Promise<void> {
@@ -64,7 +67,8 @@ function waitForPageBodyContent(page: any, timeout: number): Promise<void> {
       () => {
         const body = document.body;
         if (!body) return false;
-        return body.children.length > 0 || body.textContent?.trim().length > 0;
+        if (body.innerText.trim().length > 0) return true;
+        return !!body.querySelector('input, button, select, textarea, img, svg, canvas, iframe, video');
       },
       undefined,
       { timeout }

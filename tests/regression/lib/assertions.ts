@@ -71,7 +71,7 @@ export function assertControlRun(runDir: string, cliRan: boolean): AssertResult 
   return { passed: failedAsExpected, details: [detail] };
 }
 
-function status(ok: boolean): string {
+export function status(ok: boolean): string {
   if (ok) return 'PASS';
   return 'FAIL';
 }

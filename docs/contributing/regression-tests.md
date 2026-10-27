@@ -28,6 +28,10 @@ The plan (`tests/regression/seeds/vault-plan.md`) describes *what* to do but nev
 
 > The code is carried in a knowledge file, not only experience, on purpose. Knowledge is Explorbot's prominent, deterministic channel for page-specific data — the same mechanism scenario A uses for login credentials. Empirically, cheap models followed an experience-only code recipe only occasionally, so an experience-only gate was a coin-flip; knowledge makes the gate reliable while the experience file still exercises recipe reuse.
 
+### Scenario C — late-rendering start page (`regression:slow`)
+
+Runs scenario A again with the fixture's slow start on: on the first visit of a session `/issues` arrives as an empty shell and renders client-side 12 seconds later, longer than the page-readiness wait. Scenario A's assertions must still hold, which proves the Researcher waited for the real page instead of researching the blank shell.
+
 ## The fixture app — "Trackly"
 
 A self-contained issue tracker served in-process by `tests/regression/fixture/server.ts` (`Bun.serve`, ephemeral port, fresh in-memory store per attempt). No external network, no database.
@@ -68,7 +72,8 @@ bunx bunosh regression:serve
 export OPENROUTER_API_KEY=sk-...
 bunx bunosh regression:experience --retries 0   # cheapest AI path
 bunx bunosh regression:basic --retries 0
-bunx bunosh regression:all                       # both scenarios, default retries
+bunx bunosh regression:slow --retries 0
+bunx bunosh regression:all                       # all scenarios, default retries
 ```
 
 Each attempt runs in an isolated throwaway directory under `tests/regression/.runs/` (gitignored). Inspect `tests/regression/.runs/<scenario>-<variant>-a<n>/output/` for the research, plans, and reporter markdown a run produced, and `tests/regression/.runs/report.md` for the summary.

@@ -22,6 +22,7 @@ const { shell, writeToFile, task, stopOnFail, ai } = global.bunosh;
 
 const CLI = resolve('bin/explorbot-cli.ts');
 const REG_ROOT = resolve('tests/regression');
+const SLOW_START_MS = 12000;
 const RUNS = join(REG_ROOT, '.runs');
 const BENCH = join(REG_ROOT, '.bench');
 const SLOT_ENV = { base: 'BENCH_MODEL', agentic: 'BENCH_AGENTIC_MODEL', vision: 'BENCH_VISION_MODEL' };
@@ -329,6 +330,22 @@ export async function regressionBasic(options = { retries: 2, variant: 'native',
 }
 
 /**
+ * Regression scenario C: explore a start page that renders client-side long after load.
+ * @param {object} options
+ * @param {number} [options.retries=2] - Re-runs after a failed attempt
+ * @param {string} [options.variant=native] - Widget variant: native|aria|plain|random
+ * @param {number} [options.seed=42] - RNG seed for the random variant
+ */
+export async function regressionSlow(options = { retries: 2, variant: 'native', seed: 42 }) {
+  if (!(await requireKey())) return;
+  const variant = validateVariant(options.variant);
+  if (!variant) return;
+  const result = await runBasicScenario(variant, Number(options.seed) || 42, Number(options.retries) || 0, 'slow', { slowStartMs: SLOW_START_MS });
+  writeReportFiles();
+  await gate(`Scenario slow (${variant})`, result.passed, `slow (${variant}) failed after ${result.attempts} attempt(s)`);
+}
+
+/**
  * Regression scenario B: experience reuse. Control run must fail without seeds; seeded run must pass.
  * @param {object} options
  * @param {number} [options.retries=2] - Re-runs of the seeded direction
@@ -355,6 +372,7 @@ export async function regressionExperience(options = { retries: 2, variant: 'nat
 export async function regressionAll(options = { retries: 2, variant: 'native', seed: 42 }) {
   await regressionBasic(options);
   await regressionExperience(options);
+  await regressionSlow(options);
 }
 
 /**
@@ -466,6 +484,15 @@ export async function regressionSmoke() {
   const plans = parsePlansFromMarkdown(VAULT_PLAN);
   await check('seed plan parses to one test at /vault', plans.length === 1 && plans[0].tests.length === 1 && plans[0].tests[0].startUrl === '/vault');
   await check('seed plan does not leak the access code', !readFileSync(VAULT_PLAN, 'utf-8').includes('K7-9284'));
+  const slowFixture = startFixture({ port: 0, variant: 'native', seed: 42, slowStartMs: SLOW_START_MS });
+  const slowLogin = await fetch(`${slowFixture.url}/login`, { method: 'POST', redirect: 'manual', body: new URLSearchParams({ email: 'demo@example.com', password: 'hunter2-fixture' }) });
+  const slowCookie = (slowLogin.headers.get('set-cookie') || '').split(';')[0];
+  const shellPage = await (await fetch(`${slowFixture.url}/issues`, { headers: { cookie: slowCookie } })).text();
+  await check('slow start serves an empty shell first', shellPage.includes('id="app"') && !shellPage.includes('<table'));
+  const started = await (await fetch(`${slowFixture.url}/issues`, { headers: { cookie: `${slowCookie}; trackly_started=1` } })).text();
+  await check('slow start renders the issue list once started', started.includes('<table'));
+  slowFixture.stop();
+
   const knowledge = matter(readFileSync(join(SEEDS, 'knowledge', 'login.md'), 'utf-8'));
   await check('login knowledge targets /login', knowledge.data.url === '/login');
   const vaultKnowledge = matter(readFileSync(join(SEEDS, 'knowledge', 'vault.md'), 'utf-8'));
@@ -569,15 +596,15 @@ export async function benchReport() {
   say(`Benchmark report written to ${join(BENCH, 'report.md')}`);
 }
 
-async function runBasicScenario(variant, seed, retries) {
-  const label = `basic (${variant})`;
+async function runBasicScenario(variant, seed, retries, name = 'basic', fixtureOpts = {}) {
+  const label = `${name} (${variant})`;
   const maxAttempts = retries + 1;
   let passed = false;
   let attempts = 0;
   for (let attempt = 1; attempt <= maxAttempts && !passed; attempt++) {
     attempts = attempt;
-    const fixture = startFixture({ variant, seed });
-    const runDir = prepareRunDir(dirName('basic', variant, seed), attempt);
+    const fixture = startFixture({ variant, seed, ...fixtureOpts });
+    const runDir = prepareRunDir(dirName(name, variant, seed), attempt);
     cpSync(join(SEEDS, 'knowledge', 'login.md'), join(runDir, 'knowledge', 'login.md'));
     const started = Date.now();
     const res = await shell`timeout 1800 bun ${CLI} explore /issues --headless --max-tests 5 -p ${runDir}`.env(runEnv(fixture.url));
