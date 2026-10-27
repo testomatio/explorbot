@@ -32,6 +32,10 @@ The plan (`tests/regression/seeds/vault-plan.md`) describes *what* to do but nev
 
 Runs scenario A again with the fixture's slow start on: on the first visit of a session `/issues` arrives as an empty shell and renders client-side 12 seconds later, longer than the page-readiness wait. Scenario A's assertions must still hold, which proves the Researcher waited for the real page instead of researching the blank shell.
 
+### Scenario D — sign-in form at the start URL (`regression:gated`)
+
+Runs scenario A's assertions against `explore /workspace`. Signed out, `/workspace` shows the sign-in form at its own URL instead of redirecting to `/login`, and signing in there keeps you on `/workspace`. The planner sees only a sign-in form and plans nothing, so explore must sign in through the Navigator with the credentials in `seeds/knowledge/workspace.md` and plan the page again.
+
 ## The fixture app — "Trackly"
 
 A self-contained issue tracker served in-process by `tests/regression/fixture/server.ts` (`Bun.serve`, ephemeral port, fresh in-memory store per attempt). No external network, no database.
@@ -44,6 +48,7 @@ A self-contained issue tracker served in-process by `tests/regression/fixture/se
 | `/issues/:id` | yes | detail, change-status menu, comment form, delete modal |
 | `/settings` | yes | Profile/Preferences tabs + an activity iframe |
 | `/vault` | no | scenario B access-code gate |
+| `/workspace` | no / yes | scenario D: the sign-in form when signed out, the issue list when signed in |
 | `/api/*` | cookie | REST API over the same store, `+ /api/openapi.json` |
 
 The REST API mirrors the store and is served for a future API-testing scenario; the current scenarios do not exercise it.
@@ -73,6 +78,7 @@ export OPENROUTER_API_KEY=sk-...
 bunx bunosh regression:experience --retries 0   # cheapest AI path
 bunx bunosh regression:basic --retries 0
 bunx bunosh regression:slow --retries 0
+bunx bunosh regression:gated --retries 0
 bunx bunosh regression:all                       # all scenarios, default retries
 ```
 

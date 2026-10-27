@@ -6,7 +6,7 @@ import { Stats } from '../stats.js';
 import { type Plan, type Test, TestResult } from '../test-plan.js';
 import { browserErrorMessage } from '../utils/browser-errors.ts';
 import { getCliName } from '../utils/cli-name.ts';
-import { ErrorPageError, getStateErrorPageError } from '../utils/error-page.ts';
+import { ErrorPageError, LoginPageError, getStateErrorPageError } from '../utils/error-page.ts';
 import { tag } from '../utils/logger.js';
 import { type NextStepSection, printNextSteps, relativeToCwd } from '../utils/next-steps.ts';
 import { keepSiteUrls, readSitemap } from '../utils/sitemap.ts';
@@ -375,9 +375,16 @@ export class ExploreCommand extends BaseCommand {
     const before = new Set(this.explorBot.getCurrentPlan()?.tests ?? []);
 
     await this.explorBot.plan(feature, opts);
+    if (this.explorBot.lastPlanError instanceof LoginPageError && !this.dryRun && (await this.signIn(pageUrl))) {
+      await this.explorBot.plan(feature, opts);
+    }
     if (this.explorBot.lastPlanError) {
       if (this.explorBot.lastPlanError instanceof ErrorPageError) {
         throw this.explorBot.lastPlanError;
+      }
+      if (this.explorBot.lastPlanError instanceof LoginPageError) {
+        tag('warning').log(`Skipping page: ${this.explorBot.lastPlanError.message}`);
+        return;
       }
       tag('info').log(`Retrying planning style '${opts.style}'...`);
       if (pageUrl && !this.dryRun) await this.explorBot.visit(pageUrl);
@@ -394,6 +401,16 @@ export class ExploreCommand extends BaseCommand {
     if (added.length === 0) return;
     const urlNote = pageUrl ? ` for ${pageUrl}` : '';
     this.printPreview(`Planner added ${added.length} new test(s) [style=${opts.style}]${urlNote}:`, added);
+  }
+
+  private async signIn(pageUrl?: string): Promise<boolean> {
+    const navigator = this.explorBot.agentNavigator();
+    if (!(await navigator.signIn())) {
+      tag('warning').log(`Sign-in failed: ${navigator.lastFailureReason || 'no working solution'}`);
+      return false;
+    }
+    if (pageUrl) await this.explorBot.visit(pageUrl);
+    return true;
   }
 
   private parseConfigure(raw: string | undefined): ConfigureSpec {

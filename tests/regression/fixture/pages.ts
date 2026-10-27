@@ -14,14 +14,14 @@ const PRIORITY_OPTIONS = [
   { value: 'critical', label: 'Critical' },
 ];
 
-export function loginPage(error?: string): string {
+export function loginPage(error?: string, action = '/login'): string {
   const alert = error ? `<p role="alert" class="alert">${esc(error)}</p>` : '';
   const body = `
     <main class="auth">
       <h1>Trackly</h1>
       <p>Sign in to manage issues.</p>
       ${alert}
-      <form method="post" action="/login">
+      <form method="post" action="${action}">
         <div class="field"><label for="email">Email</label><input id="email" name="email" type="email" required></div>
         <div class="field"><label for="password">Password</label><input id="password" name="password" type="password" required></div>
         <button type="submit">Sign in</button>

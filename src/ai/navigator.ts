@@ -31,6 +31,7 @@ import { isInteractive } from './task-agent.js';
 import { createLearnExperienceTool } from './tools.ts';
 
 const debugLog = createDebug('explorbot:navigator');
+const SIGN_IN_MESSAGE = 'This page shows a sign-in form. Sign in using credentials from the provided knowledge so the page content becomes available.';
 
 class Navigator implements Agent {
   emoji = '🧭';
@@ -192,6 +193,13 @@ class Navigator implements Agent {
       }
       throw error;
     }
+  }
+
+  async signIn(): Promise<boolean> {
+    const action = this.explorer.action();
+    const actionResult = action.actionResult || ActionResult.fromState(action.stateManager.getCurrentState()!);
+    tag('info').log(`Signing in at ${actionResult.url}`);
+    return this.resolveState(SIGN_IN_MESSAGE, actionResult, { action });
   }
 
   private navigationError(url: string, fallback: string): Error {

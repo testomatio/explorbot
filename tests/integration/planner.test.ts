@@ -6,10 +6,11 @@ import { LLMock } from '@copilotkit/aimock';
 import { Planner } from '../../src/ai/planner.ts';
 import { clearSessionDedup } from '../../src/ai/planner/session-dedup.ts';
 import { clearStyleCache } from '../../src/ai/planner/styles.ts';
-import { clearPlanRegistry, registerPlan } from '../../src/ai/planner/subpages.ts';
+import { clearPlanRegistry, getRegisteredPlan, registerPlan } from '../../src/ai/planner/subpages.ts';
 import { Provider } from '../../src/ai/provider.ts';
 import { ConfigParser } from '../../src/config.ts';
 import { Plan, Test, TestResult } from '../../src/test-plan.ts';
+import { LoginPageError } from '../../src/utils/error-page.ts';
 
 const UI_MAPS_DIR = join(process.cwd(), 'test-data', 'ui-maps');
 
@@ -337,6 +338,16 @@ describe('Planner with aimock', () => {
     const plan = await planner.plan();
 
     expect(plan.tests.length).toBe(0);
+  });
+
+  it('signals a sign-in page when AI returns no scenarios for it', async () => {
+    const loginState = { ...fakeState, url: '/workspace', hash: 'login-hash', html: '<html><body><form><input type="email"><input type="password"><button>Sign in</button></form></body></html>' };
+    const loginPlanner = new Planner({ ...createMockDeps(loginState), ai: provider } as any, { research: async () => taskBoardUiMap } as any);
+    mock.clearFixtures();
+    mock.on({}, { content: JSON.stringify({ planName: 'Empty', scenarios: [], notPlannableReason: 'sign-in page' }) });
+
+    await expect(loginPlanner.plan()).rejects.toBeInstanceOf(LoginPageError);
+    expect(getRegisteredPlan('/workspace')).toBeFalsy();
   });
 
   it('keeps an existing plan when a later style returns empty scenarios', async () => {

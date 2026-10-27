@@ -10,6 +10,7 @@ import type { StateManager } from '../state-manager.js';
 import { Stats } from '../stats.ts';
 import { Suite } from '../suite.ts';
 import { Plan, Test } from '../test-plan.ts';
+import { LoginPageError, isLoginPage } from '../utils/error-page.ts';
 import { createDebug, tag } from '../utils/logger.js';
 import { jsonToTable } from '../utils/markdown-parser.ts';
 import { mdq } from '../utils/markdown-query.js';
@@ -214,6 +215,9 @@ export class Planner extends PlannerBase implements Agent {
 
       if (!this.currentPlan && aiResult.object.scenarios.length === 0 && aiResult.object.notPlannableReason) {
         tag('warning').log(`Page is not plannable: ${aiResult.object.notPlannableReason}`);
+      }
+      if (!this.currentPlan && aiResult.object.scenarios.length === 0 && isLoginPage(actionResult)) {
+        throw new LoginPageError(state.url);
       }
 
       const defaultStartUrl = this.getDefaultStartUrl(state);

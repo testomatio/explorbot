@@ -27,6 +27,8 @@ Log in with these credentials:
 
 Explorbot reads this when it opens the login page and signs in on its own. See [Knowledge](../workflow/knowledge.md).
 
+Some apps show the sign-in form at the page you asked for instead of redirecting to `/login`. When `explore` finds nothing to test there but a sign-in form, it signs in with this knowledge, reopens the page and plans it again. Set the knowledge file's `url` to that page so the credentials load there.
+
 ## Stay logged in between runs
 
 Logging in on every run is slow. Use `--session` to save cookies and local storage, then restore them next time:

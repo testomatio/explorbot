@@ -3,6 +3,7 @@ import { ExploreCommand } from '../../src/commands/explore-command.ts';
 import { ConfigParser } from '../../src/config.ts';
 import type { ExplorBot } from '../../src/explorbot.ts';
 import { Plan, Test } from '../../src/test-plan.ts';
+import { LoginPageError } from '../../src/utils/error-page.ts';
 
 beforeEach(() => {
   ConfigParser.resetForTesting();
@@ -484,5 +485,44 @@ describe('ExploreCommand max duration', () => {
     await cmd.execute('--configure "new:0%"');
 
     expect(testerCalled).toBe(1);
+  });
+});
+
+describe('ExploreCommand on a sign-in page', () => {
+  function setupLoginBot(signedIn: boolean) {
+    const calls: string[] = [];
+    const plan = new Plan('Workspace');
+    const explorBot: any = {
+      lastPlanError: null,
+      plan: async () => {
+        calls.push('plan');
+        explorBot.lastPlanError = null;
+        if (calls.filter((c) => c === 'plan').length === 1) explorBot.lastPlanError = new LoginPageError('/workspace');
+      },
+      agentNavigator: () => ({
+        lastFailureReason: 'no credentials',
+        signIn: async () => {
+          calls.push('signIn');
+          return signedIn;
+        },
+      }),
+      visit: async (url: string) => {
+        calls.push(`visit ${url}`);
+      },
+      getCurrentPlan: () => plan,
+    };
+    return { cmd: new ExploreCommand(explorBot as ExplorBot), calls };
+  }
+
+  test('signs in, returns to the page and plans it again', async () => {
+    const { cmd, calls } = setupLoginBot(true);
+    await (cmd as any).planWithRetry(undefined, { fresh: true, style: 'normal' }, '/workspace');
+    expect(calls).toEqual(['plan', 'signIn', 'visit /workspace', 'plan']);
+  });
+
+  test('skips the page without a generic retry when sign-in fails', async () => {
+    const { cmd, calls } = setupLoginBot(false);
+    await (cmd as any).planWithRetry(undefined, { fresh: true, style: 'normal' }, '/workspace');
+    expect(calls).toEqual(['plan', 'signIn']);
   });
 });

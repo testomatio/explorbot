@@ -10,6 +10,8 @@ const LOADING_WORD = /\bloading\b/i;
 const PASSWORD_INPUT = /<input\b[^>]*\btype\s*=\s*["']?password\b/i;
 const AUTH_PATH = /\b(log[-_]?in|sign[-_]?in|auth)\b/i;
 
+export const LOGIN_REQUIRED = 'Page shows a sign-in form and nothing else to test';
+
 export type PageCondition = 'ok' | 'loading' | 'error';
 
 export function detectPageCondition(actionResult: ActionResult): PageCondition {
@@ -65,5 +67,12 @@ export class ErrorPageError extends Error {
     const details = [status, title].filter(Boolean).join(', ');
     super(`Error page detected at ${url}${details ? ` (${details})` : ''}`);
     this.name = 'ErrorPageError';
+  }
+}
+
+export class LoginPageError extends Error {
+  constructor(public readonly url: string) {
+    super(`${LOGIN_REQUIRED}: ${url}`);
+    this.name = 'LoginPageError';
   }
 }

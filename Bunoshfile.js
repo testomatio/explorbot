@@ -23,6 +23,9 @@ const { shell, writeToFile, task, stopOnFail, ai } = global.bunosh;
 const CLI = resolve('bin/explorbot-cli.ts');
 const REG_ROOT = resolve('tests/regression');
 const SLOW_START_MS = 12000;
+const BASIC_SCENARIO = { name: 'basic', path: '/issues', knowledge: 'login.md', fixture: {} };
+const SLOW_SCENARIO = { ...BASIC_SCENARIO, name: 'slow', fixture: { slowStartMs: SLOW_START_MS } };
+const GATED_SCENARIO = { ...BASIC_SCENARIO, name: 'gated', path: '/workspace', knowledge: 'workspace.md' };
 const RUNS = join(REG_ROOT, '.runs');
 const BENCH = join(REG_ROOT, '.bench');
 const SLOT_ENV = { base: 'BENCH_MODEL', agentic: 'BENCH_AGENTIC_MODEL', vision: 'BENCH_VISION_MODEL' };
@@ -321,12 +324,7 @@ export async function htmlAccessibility(filename) {
  * @param {number} [options.seed=42] - RNG seed for the random variant
  */
 export async function regressionBasic(options = { retries: 2, variant: 'native', seed: 42 }) {
-  if (!(await requireKey())) return;
-  const variant = validateVariant(options.variant);
-  if (!variant) return;
-  const result = await runBasicScenario(variant, Number(options.seed) || 42, Number(options.retries) || 0);
-  writeReportFiles();
-  await gate(`Scenario basic (${variant})`, result.passed, `basic (${variant}) failed after ${result.attempts} attempt(s)`);
+  await gateBasicScenario(options, BASIC_SCENARIO);
 }
 
 /**
@@ -337,12 +335,18 @@ export async function regressionBasic(options = { retries: 2, variant: 'native',
  * @param {number} [options.seed=42] - RNG seed for the random variant
  */
 export async function regressionSlow(options = { retries: 2, variant: 'native', seed: 42 }) {
-  if (!(await requireKey())) return;
-  const variant = validateVariant(options.variant);
-  if (!variant) return;
-  const result = await runBasicScenario(variant, Number(options.seed) || 42, Number(options.retries) || 0, 'slow', { slowStartMs: SLOW_START_MS });
-  writeReportFiles();
-  await gate(`Scenario slow (${variant})`, result.passed, `slow (${variant}) failed after ${result.attempts} attempt(s)`);
+  await gateBasicScenario(options, SLOW_SCENARIO);
+}
+
+/**
+ * Regression scenario D: explore a page that shows a sign-in form at its own URL instead of redirecting.
+ * @param {object} options
+ * @param {number} [options.retries=2] - Re-runs after a failed attempt
+ * @param {string} [options.variant=native] - Widget variant: native|aria|plain|random
+ * @param {number} [options.seed=42] - RNG seed for the random variant
+ */
+export async function regressionGated(options = { retries: 2, variant: 'native', seed: 42 }) {
+  await gateBasicScenario(options, GATED_SCENARIO);
 }
 
 /**
@@ -373,6 +377,7 @@ export async function regressionAll(options = { retries: 2, variant: 'native', s
   await regressionBasic(options);
   await regressionExperience(options);
   await regressionSlow(options);
+  await regressionGated(options);
 }
 
 /**
@@ -493,6 +498,19 @@ export async function regressionSmoke() {
   await check('slow start renders the issue list once started', started.includes('<table'));
   slowFixture.stop();
 
+  const gatedFixture = startFixture({ port: 0, variant: 'native', seed: 42 });
+  const gateResponse = await fetch(`${gatedFixture.url}/workspace`, { redirect: 'manual' });
+  const gatePage = await gateResponse.text();
+  await check('anonymous /workspace shows the sign-in form without redirecting', gateResponse.status === 200 && gatePage.includes('type="password"') && gatePage.includes('action="/workspace"'));
+  const gatedLogin = await fetch(`${gatedFixture.url}/workspace`, { method: 'POST', redirect: 'manual', body: new URLSearchParams({ email: 'demo@example.com', password: 'hunter2-fixture' }) });
+  const gatedCookie = (gatedLogin.headers.get('set-cookie') || '').split(';')[0];
+  await check('signing in at /workspace stays on /workspace', gatedLogin.status === 302 && gatedLogin.headers.get('location') === '/workspace');
+  const workspace = await (await fetch(`${gatedFixture.url}/workspace`, { headers: { cookie: gatedCookie } })).text();
+  await check('signed-in /workspace renders the issue list', workspace.includes('<table') && !workspace.includes('type="password"'));
+  gatedFixture.stop();
+  const workspaceKnowledge = matter(readFileSync(join(SEEDS, 'knowledge', 'workspace.md'), 'utf-8'));
+  await check('workspace knowledge targets /workspace', workspaceKnowledge.data.url === '/workspace');
+
   const knowledge = matter(readFileSync(join(SEEDS, 'knowledge', 'login.md'), 'utf-8'));
   await check('login knowledge targets /login', knowledge.data.url === '/login');
   const vaultKnowledge = matter(readFileSync(join(SEEDS, 'knowledge', 'vault.md'), 'utf-8'));
@@ -596,18 +614,27 @@ export async function benchReport() {
   say(`Benchmark report written to ${join(BENCH, 'report.md')}`);
 }
 
-async function runBasicScenario(variant, seed, retries, name = 'basic', fixtureOpts = {}) {
-  const label = `${name} (${variant})`;
+async function gateBasicScenario(options, scenario) {
+  if (!(await requireKey())) return;
+  const variant = validateVariant(options.variant);
+  if (!variant) return;
+  const result = await runBasicScenario(variant, Number(options.seed) || 42, Number(options.retries) || 0, scenario);
+  writeReportFiles();
+  await gate(`Scenario ${scenario.name} (${variant})`, result.passed, `${scenario.name} (${variant}) failed after ${result.attempts} attempt(s)`);
+}
+
+async function runBasicScenario(variant, seed, retries, scenario = BASIC_SCENARIO) {
+  const label = `${scenario.name} (${variant})`;
   const maxAttempts = retries + 1;
   let passed = false;
   let attempts = 0;
   for (let attempt = 1; attempt <= maxAttempts && !passed; attempt++) {
     attempts = attempt;
-    const fixture = startFixture({ variant, seed, ...fixtureOpts });
-    const runDir = prepareRunDir(dirName(name, variant, seed), attempt);
-    cpSync(join(SEEDS, 'knowledge', 'login.md'), join(runDir, 'knowledge', 'login.md'));
+    const fixture = startFixture({ variant, seed, ...scenario.fixture });
+    const runDir = prepareRunDir(dirName(scenario.name, variant, seed), attempt);
+    cpSync(join(SEEDS, 'knowledge', scenario.knowledge), join(runDir, 'knowledge', scenario.knowledge));
     const started = Date.now();
-    const res = await shell`timeout 1800 bun ${CLI} explore /issues --headless --max-tests 5 -p ${runDir}`.env(runEnv(fixture.url));
+    const res = await shell`timeout 1800 bun ${CLI} explore ${scenario.path} --headless --max-tests 5 -p ${runDir}`.env(runEnv(fixture.url));
     fixture.stop();
     const outcome = assertBasicRun(runDir, String(res.output || ''));
     records.push({ label, kind: 'gate', attempt, maxAttempts, passed: outcome.passed, durationSec: elapsed(started), details: outcome.details, analysis: readSessionAnalysis(runDir) });
