@@ -45,7 +45,7 @@ const TasksSchema = z.object({
       })
     )
     .describe('List of testing scenarios'),
-  notPlannableReason: z.string().nullish().describe('When scenarios is empty, one sentence saying why this page has nothing to test; otherwise null.'),
+  notPlannableReason: z.string().nullable().describe('When scenarios is empty, one sentence saying why this page has nothing to test; otherwise null.'),
 });
 
 const PlannerBase = WithSessionDedup(WithSubPages(Object as unknown as new (...args: any[]) => object));
