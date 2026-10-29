@@ -505,7 +505,7 @@ export async function benchModel(model = '', options = { runs: 2, slot: 'base', 
     const dir = join(BENCH, `${benchSlug(label)}-${run}`);
     rmSync(dir, { recursive: true, force: true });
     mkdirSync(dir, { recursive: true });
-    process.env[slotVar] = slug;
+    process.env[slotVar] = `openrouter/${slug}`;
     process.env.USAGE_FILE = join(dir, 'usage.jsonl');
     say(`Benchmarking ${label} — run ${run}/${runs} (${variant})`);
 
