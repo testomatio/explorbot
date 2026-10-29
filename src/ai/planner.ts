@@ -412,7 +412,7 @@ export class Planner extends PlannerBase implements Agent {
     conversation.addUserText(this.getTasksMessage());
     const currentState = this.stateManager.getCurrentState();
     const research = await this.researcher.research(currentState || state, {
-      deep: true,
+      deep: !!feature || !isLoginPage(state),
     });
 
     let docsPromise: Promise<string> | null = null;

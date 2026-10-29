@@ -350,6 +350,27 @@ describe('Planner with aimock', () => {
     expect(getRegisteredPlan('/workspace')).toBeFalsy();
   });
 
+  it('skips deep research on a sign-in page unless it is the focus', async () => {
+    const loginState = { ...fakeState, url: '/workspace', hash: 'login-hash', html: '<html><body><form><input type="email"><input type="password"><button>Sign in</button></form></body></html>' };
+    const deepRequests: boolean[] = [];
+    const loginPlanner = new Planner(
+      { ...createMockDeps(loginState), ai: provider } as any,
+      {
+        research: async (_state: any, opts: any) => {
+          deepRequests.push(opts.deep);
+          return taskBoardUiMap;
+        },
+      } as any
+    );
+    mock.clearFixtures();
+    mock.on({}, { content: JSON.stringify({ planName: 'Empty', scenarios: [], notPlannableReason: 'sign-in page' }) });
+
+    await loginPlanner.plan().catch(() => {});
+    await loginPlanner.plan('login').catch(() => {});
+
+    expect(deepRequests).toEqual([false, true]);
+  });
+
   it('keeps an existing plan when a later style returns empty scenarios', async () => {
     const existingPlan = new Plan('Task Board Testing');
     existingPlan.url = '/tasks/board';

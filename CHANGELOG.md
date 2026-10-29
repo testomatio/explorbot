@@ -5,7 +5,7 @@
 ### Changes
 - [Researcher] A page that is still blank or barely rendered when it opens is no longer researched as an empty page. Explorbot keeps waiting, up to `ai.agents.researcher.errorPageTimeout` seconds (default 10), and every few seconds the AI judges whether the page has finished loading, so a genuinely small page doesn't wait the full time.
 - Page readiness: a page counts as rendered only when it shows visible text or a visible control or media element. An app shell holding only scripts or an empty root element no longer counts as loaded.
-- [Planner] [Navigator] `explore` on a page that shows only a sign-in form at the URL you asked for, instead of redirecting to a login page, now signs in with the credentials from your knowledge, reopens the page and plans it. Before, it planned nothing and moved on, or planned tests for the login form. If signing in fails, the page is skipped with the reason.
+- [Planner] [Navigator] `explore` on a page that shows only a sign-in form at the URL you asked for, instead of redirecting to a login page, now signs in with the credentials from your knowledge, reopens the page and plans it. Before, it planned nothing and moved on, or planned tests for the login form. If signing in fails, the page is skipped with the reason. The sign-in page is no longer researched in depth (clicking every menu and panel) unless `--focus` asks for it.
 
 ## 2026-10-23
 
