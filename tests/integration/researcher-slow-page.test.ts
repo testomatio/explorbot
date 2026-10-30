@@ -21,15 +21,6 @@ const research = `## Content
 | 'Create Task' | button | { role: 'button', text: 'Create Task' } | '.create-task-btn' | (240, 30) |
 `;
 
-const welcomeResearch = `## Content
-
-> Container: \`body\`
-
-| Element | Type | ARIA | CSS | Coordinates |
-|------|------|------|------|------|
-| 'Continue' | button | { role: 'button', text: 'Continue' } | 'button' | (40, 60) |
-`;
-
 describe('Researcher waits for a page that renders late', () => {
   let browser: Browser;
   let page: Page;
@@ -135,9 +126,9 @@ describe('Researcher waits for a page that renders late', () => {
     await expect(createResearcher(judge).research(await captureRealState())).rejects.toThrow('Error page detected');
   }, 30000);
 
-  it('continues right away when the judge sees a loaded small page', async () => {
+  it('asks the judge once even when research retries on the same page', async () => {
     await page.setContent('<html><body><h1>Welcome</h1><button>Continue</button></body></html>');
-    mock.on({}, { content: welcomeResearch });
+    mock.on({}, { content: research });
     let asked = 0;
     const judge = { pick: async () => ++asked && 3 };
 

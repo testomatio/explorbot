@@ -138,7 +138,8 @@ export class Researcher extends ResearcherBase implements Agent {
       if (light) tag('info').log('Light research: single pass, locator verification skipped');
       setActivity(`${this.emoji} Researching...`, 'action');
 
-      await this.ensureNavigated(displayUrl, screenshot && this.provider.hasVision());
+      const retrying = opts._retriesLeft !== undefined;
+      if (!retrying) await this.ensureNavigated(displayUrl, screenshot && this.provider.hasVision());
       await this.hooksRunner.runBeforeHook('researcher', state.url);
 
       const { elements: annotatedElements } = await this.explorer.withPage(annotatePageElements);
@@ -150,7 +151,7 @@ export class Researcher extends ResearcherBase implements Agent {
         tag('warning').log(`Detected error page at ${state.url}`);
         throw new ErrorPageError(state.url, this.actionResult!.title, this.actionResult!.httpStatus);
       }
-      if (condition === 'loading') {
+      if (condition === 'loading' && !retrying) {
         const settled = await this.waitUntilSettled(screenshot);
         if (!settled) {
           tag('warning').log(`Page at ${state.url} did not finish loading within timeout, continuing with best-effort research`);
