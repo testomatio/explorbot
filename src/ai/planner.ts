@@ -45,7 +45,7 @@ const TasksSchema = z.object({
       })
     )
     .describe('List of testing scenarios'),
-  notPlannableReason: z.string().nullable().describe('When scenarios is empty, one sentence saying why this page has nothing to test; otherwise null.'),
+  blockedBy: z.string().nullable().describe('When scenarios is empty, one sentence saying why this page has nothing to test; otherwise null.'),
 });
 
 const PlannerBase = WithSessionDedup(WithSubPages(Object as unknown as new (...args: any[]) => object));
@@ -212,8 +212,8 @@ export class Planner extends PlannerBase implements Agent {
         throw new Error('No tasks were created successfully');
       }
 
-      if (!this.currentPlan && aiResult.object.scenarios.length === 0 && aiResult.object.notPlannableReason) {
-        tag('warning').log(`Page is not plannable: ${aiResult.object.notPlannableReason}`);
+      if (!this.currentPlan && aiResult.object.scenarios.length === 0 && aiResult.object.blockedBy) {
+        tag('warning').log(`Page is not plannable: ${aiResult.object.blockedBy}`);
       }
 
       const defaultStartUrl = this.getDefaultStartUrl(state);

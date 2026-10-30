@@ -17,7 +17,7 @@ const taskBoardUiMap = readFileSync(join(UI_MAPS_DIR, 'task-board.md'), 'utf8');
 
 const defaultScenarios = {
   planName: 'Task Board Testing',
-  notPlannableReason: null,
+  blockedBy: null,
   scenarios: [
     {
       scenario: 'Create a new task via the Create Task modal',
@@ -332,7 +332,7 @@ describe('Planner with aimock', () => {
 
   it('returns an empty plan when AI returns no scenarios', async () => {
     mock.clearFixtures();
-    mock.on({}, { content: JSON.stringify({ planName: 'Empty', scenarios: [], notPlannableReason: 'nothing to test' }) });
+    mock.on({}, { content: JSON.stringify({ planName: 'Empty', scenarios: [], blockedBy: 'nothing to test' }) });
 
     const plan = await planner.plan();
 
@@ -346,7 +346,7 @@ describe('Planner with aimock', () => {
     planner.currentPlan = existingPlan;
 
     mock.clearFixtures();
-    mock.on({}, { content: JSON.stringify({ planName: 'Empty', scenarios: [], notPlannableReason: 'nothing to test' }) });
+    mock.on({}, { content: JSON.stringify({ planName: 'Empty', scenarios: [], blockedBy: 'nothing to test' }) });
 
     const plan = await planner.plan();
 

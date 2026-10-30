@@ -377,7 +377,7 @@ export class Researcher extends ResearcherBase implements Agent {
     let networkIdle = await this.explorer.withPage((page) => waitForNetworkIdle(page, errorPageTimeout * 1000));
 
     for (let poll = 0; poll <= errorPageTimeout; poll++) {
-      if (poll > 0) [networkIdle] = await Promise.all([this.explorer.withPage((page) => waitForNetworkIdle(page, SETTLE_POLL_MS)), sleep(SETTLE_POLL_MS)]);
+      if (poll > 0) networkIdle = await this.waitForSettlePoll();
       await this.explorer.withPage(annotatePageElements);
       this.actionResult = await this.explorer.capture({ screenshot: includeScreenshot });
       const condition = detectPageCondition(this.actionResult!);
@@ -391,6 +391,11 @@ export class Researcher extends ResearcherBase implements Agent {
     }
 
     return false;
+  }
+
+  private async waitForSettlePoll(): Promise<boolean> {
+    const [networkIdle] = await Promise.all([this.explorer.withPage((page) => waitForNetworkIdle(page, SETTLE_POLL_MS)), sleep(SETTLE_POLL_MS)]);
+    return networkIdle;
   }
 
   private async isFullyLoaded(networkIdle: boolean): Promise<boolean> {
