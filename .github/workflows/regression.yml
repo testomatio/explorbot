@@ -1,9 +1,9 @@
 # Self-regression: runs Explorbot end-to-end with real AI against a local fixture app.
 #
 # Cost: every run burns real LLM tokens and up to 150 minutes of runner time, so it never
-# runs unapproved. Each push to a non-draft PR queues a run that waits at the `regression`
-# environment gate; a reviewer starts it with "Review deployments → Approve and deploy" on
-# the PR. Every push waits for its own approval, including the PR author's own pushes.
+# runs unapproved. Each push to a non-draft PR that changes src/ai/ queues a run that
+# waits at the `regression` environment gate; a reviewer starts it with "Review
+# deployments → Approve and deploy" on the PR. Every push waits for its own approval, including the PR author's own pushes.
 # It can also be dispatched manually.
 #
 # Security: the `regression` GitHub environment holds the OPENROUTER_API_KEY secret behind
@@ -17,6 +17,7 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     branches: [main, develop]
+    paths: ['src/ai/**']
   workflow_dispatch:
     inputs:
       scenario:
