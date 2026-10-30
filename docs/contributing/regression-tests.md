@@ -34,7 +34,7 @@ Runs scenario A again with the fixture's slow start on: on the first visit of a 
 
 ### Scenario D — sign-in form at the start URL (`regression:gated`)
 
-Runs scenario A's assertions against `explore /workspace`. Signed out, `/workspace` shows the sign-in form at its own URL instead of redirecting to `/login`, and signing in there keeps you on `/workspace`. The planner reports the page blocked by a sign-in form, so explore must hand the report to Captain, sign in with the credentials in `seeds/knowledge/workspace.md` and plan the page again.
+Runs scenario A's assertions against `explore /workspace`. Signed out, `/workspace` shows the sign-in form at its own URL instead of redirecting to `/login`, and signing in there keeps you on `/workspace`. The planner reports the page blocked by a sign-in form, so explore must hand the report to Captain, which signs in with the credentials in `seeds/knowledge/workspace.md` and re-plans the page through its `plan()` tool.
 
 ## The fixture app — "Trackly"
 
