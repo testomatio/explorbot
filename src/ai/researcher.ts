@@ -18,7 +18,7 @@ import { waitForDomChange, waitForPageReadiness } from '../utils/page-readiness.
 import { RulesLoader } from '../utils/rules-loader.ts';
 import { annotatePageElements } from '../utils/web-annotate.ts';
 import type { Agent, AgentDeps } from './agent.js';
-import { JUDGE_PAGE_CAP, UNDECIDED } from './judge.ts';
+import { UNDECIDED, pageEvidence } from './judge.ts';
 import type { Navigator } from './navigator.ts';
 import { ContextLengthError, type Provider } from './provider.js';
 import { findSimilarResearch, getCachedResearch, getPreviousResearch, reportResearch, saveResearch } from './researcher/cache.ts';
@@ -36,6 +36,7 @@ import { TaskAgent } from './task-agent.ts';
 export type { Locator } from './researcher/locators.ts';
 
 const debugLog = createDebug('explorbot:researcher');
+const HIDDEN_CONTENT_STATEMENT = 'The page has collapsed or hidden content behind controls that open or expand it.';
 
 export const POSSIBLE_SECTIONS = {
   overlay: 'dialog, modal, drawer, popup, or active form overlay',
@@ -293,7 +294,7 @@ export class Researcher extends ResearcherBase implements Agent {
         if (fallback) markSectionAsFocused(result, fallback);
       }
 
-      if (!interrupted() && deep) {
+      if (!interrupted() && deep && (await this.hasHiddenContent())) {
         try {
           await this.performDeepAnalysis(researchState, result);
         } catch (err) {
@@ -396,12 +397,19 @@ export class Researcher extends ResearcherBase implements Agent {
       'error page: shows an error instead of the requested content': 'error',
       'loaded: the main content is rendered': 'ok',
     };
-    const decision = await this.judge.decide('The page was blank or barely rendered when it opened. What state is it in now?', [...Object.keys(conditions), UNDECIDED], {
-      url: this.actionResult!.url,
-      title: this.actionResult!.title,
-      page: this.actionResult!.getCompactARIA().slice(0, JUDGE_PAGE_CAP),
-    });
+    const decision = await this.judge.decide('The page was blank or barely rendered when it opened. What state is it in now?', [...Object.keys(conditions), UNDECIDED], pageEvidence(this.actionResult!));
     return conditions[decision.value ?? ''] || 'ok';
+  }
+
+  private async hasHiddenContent(): Promise<boolean> {
+    const captured = await this.explorer.capture({ screenshot: true });
+    const hidden = await this.provider.oracle(HIDDEN_CONTENT_STATEMENT, pageEvidence(captured), { agentName: 'researcher', screenshot: captured.screenshot, telemetry: { functionId: 'researcher.hasHiddenContent' } });
+    if (hidden === null) {
+      tag('warning').log('Could not check the page for hidden content, running deep analysis');
+      return true;
+    }
+    if (!hidden) tag('step').log('Nothing to expand on this page, skipping deep analysis');
+    return hidden;
   }
 
   private getConfiguredSections(): Record<string, string> {

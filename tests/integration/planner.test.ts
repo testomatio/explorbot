@@ -6,10 +6,11 @@ import { LLMock } from '@copilotkit/aimock';
 import { Planner } from '../../src/ai/planner.ts';
 import { clearSessionDedup } from '../../src/ai/planner/session-dedup.ts';
 import { clearStyleCache } from '../../src/ai/planner/styles.ts';
-import { clearPlanRegistry, registerPlan } from '../../src/ai/planner/subpages.ts';
+import { clearPlanRegistry, getRegisteredPlan, registerPlan } from '../../src/ai/planner/subpages.ts';
 import { Provider } from '../../src/ai/provider.ts';
 import { ConfigParser } from '../../src/config.ts';
 import { Plan, Test, TestResult } from '../../src/test-plan.ts';
+import { PlanningBlockedError } from '../../src/utils/error-page.ts';
 
 const UI_MAPS_DIR = join(process.cwd(), 'test-data', 'ui-maps');
 
@@ -18,6 +19,7 @@ const taskBoardUiMap = readFileSync(join(UI_MAPS_DIR, 'task-board.md'), 'utf8');
 const defaultScenarios = {
   planName: 'Task Board Testing',
   blockedBy: null,
+  prerequisite: null,
   scenarios: [
     {
       scenario: 'Create a new task via the Create Task modal',
@@ -332,11 +334,22 @@ describe('Planner with aimock', () => {
 
   it('returns an empty plan when AI returns no scenarios', async () => {
     mock.clearFixtures();
-    mock.on({}, { content: JSON.stringify({ planName: 'Empty', scenarios: [], blockedBy: 'nothing to test' }) });
+    mock.on({}, { content: JSON.stringify({ planName: 'Empty', scenarios: [], blockedBy: 'nothing to test', prerequisite: null }) });
 
     const plan = await planner.plan();
 
     expect(plan.tests.length).toBe(0);
+  });
+
+  it('reports the step the page is blocked by when AI names a prerequisite', async () => {
+    mock.clearFixtures();
+    mock.on({}, { content: JSON.stringify({ planName: 'Empty', scenarios: [], blockedBy: 'sign-in form only', prerequisite: 'Sign in' }) });
+
+    const error = await planner.plan().catch((e) => e);
+
+    expect(error).toBeInstanceOf(PlanningBlockedError);
+    expect(error.message).toBe('Planner could not plan /tasks/board: Sign in');
+    expect(getRegisteredPlan('/tasks/board')).toBeFalsy();
   });
 
   it('keeps an existing plan when a later style returns empty scenarios', async () => {
@@ -346,7 +359,7 @@ describe('Planner with aimock', () => {
     planner.currentPlan = existingPlan;
 
     mock.clearFixtures();
-    mock.on({}, { content: JSON.stringify({ planName: 'Empty', scenarios: [], blockedBy: 'nothing to test' }) });
+    mock.on({}, { content: JSON.stringify({ planName: 'Empty', scenarios: [], blockedBy: 'nothing to test', prerequisite: null }) });
 
     const plan = await planner.plan();
 

@@ -6,7 +6,7 @@ import { Stats } from '../stats.js';
 import { type Plan, type Test, TestResult } from '../test-plan.js';
 import { browserErrorMessage } from '../utils/browser-errors.ts';
 import { getCliName } from '../utils/cli-name.ts';
-import { ErrorPageError, getStateErrorPageError } from '../utils/error-page.ts';
+import { ErrorPageError, PlanningBlockedError, getStateErrorPageError } from '../utils/error-page.ts';
 import { tag } from '../utils/logger.js';
 import { type NextStepSection, printNextSteps, relativeToCwd } from '../utils/next-steps.ts';
 import { keepSiteUrls, readSitemap } from '../utils/sitemap.ts';
@@ -375,9 +375,18 @@ export class ExploreCommand extends BaseCommand {
     const before = new Set(this.explorBot.getCurrentPlan()?.tests ?? []);
 
     await this.explorBot.plan(feature, opts);
+    if (this.explorBot.lastPlanError instanceof PlanningBlockedError && !this.dryRun) {
+      await this.explorBot.agentCaptain().handle(this.explorBot.lastPlanError.message, { reset: true });
+      if (pageUrl) await this.explorBot.visit(pageUrl);
+      await this.explorBot.plan(feature, opts);
+    }
     if (this.explorBot.lastPlanError) {
       if (this.explorBot.lastPlanError instanceof ErrorPageError) {
         throw this.explorBot.lastPlanError;
+      }
+      if (this.explorBot.lastPlanError instanceof PlanningBlockedError) {
+        tag('warning').log(`Skipping page: ${this.explorBot.lastPlanError.message}`);
+        return;
       }
       tag('info').log(`Retrying planning style '${opts.style}'...`);
       if (pageUrl && !this.dryRun) await this.explorBot.visit(pageUrl);

@@ -5,6 +5,7 @@ import { type Store, createStore } from './store.ts';
 
 export const VAULT_CODE = 'K7-9284-XRAY-TANGO';
 const VAULT_DOCS = ['Quarterly report', 'Design archive', 'Payroll ledger'];
+const SIGN_IN_TARGETS: Record<string, string> = { '/login': '/issues', '/workspace': '/workspace' };
 const PUBLIC_PATHS = ['/login', '/logout', '/vault', '/vault/unlock', '/assets/client.js'];
 
 const CLIENT_JS = await Bun.file(`${import.meta.dir}/client.js`).text();
@@ -54,11 +55,11 @@ async function handle(req: Request, store: Store, defaultVariant: VariantMode, d
   if (apiResponse) return apiResponse;
 
   if (path === '/login' && method === 'GET') return html(loginPage());
-  if (path === '/login' && method === 'POST') {
+  if (SIGN_IN_TARGETS[path] && method === 'POST') {
     const form = await req.formData();
     const token = store.login(String(form.get('email') || ''), String(form.get('password') || ''));
-    if (!token) return html(loginPage('Invalid email or password'), 401);
-    return redirect('/issues', `trackly_session=${token}; Path=/; HttpOnly`);
+    if (!token) return html(loginPage('Invalid email or password', path), 401);
+    return redirect(SIGN_IN_TARGETS[path], `trackly_session=${token}; Path=/; HttpOnly`);
   }
   if (path === '/logout') return redirect('/login', 'trackly_session=; Path=/; Max-Age=0');
 
@@ -69,6 +70,9 @@ async function handle(req: Request, store: Store, defaultVariant: VariantMode, d
     return html(vaultPage({ error: true }));
   }
   if (path.startsWith('/vault')) return redirect('/vault');
+
+  if (path === '/workspace' && !user) return html(loginPage(undefined, '/workspace'));
+  if (path === '/workspace') return html(issuesPage(reg, store, {}, user));
 
   if (!user) return redirect('/login');
 

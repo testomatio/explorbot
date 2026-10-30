@@ -123,6 +123,7 @@ export class Captain extends CaptainBase implements Agent {
     - After a successful action, if the pageDiff confirms the goal, call done() immediately — do not verify with see() or context() unless the user explicitly asked for verification
     - Prefer completing in fewer tool calls over thoroughness
     - NEVER run tests unless the user explicitly asks
+    - When an agent reports it is blocked, decide which agent can resolve it and delegate to that agent
     - If you are answering with information rather than completing a browser action, include the actual user-facing answer in done({ details }). Do not only say that it was shown or explained.
     ${mode === 'web' || mode === 'heal' ? this.webModeRules() : ''}
     ${mode === 'test' || mode === 'heal' ? this.testModeRules() : ''}

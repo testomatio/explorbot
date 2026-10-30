@@ -858,7 +858,7 @@ class Navigator implements Agent {
 
     const totalAttempted = Math.min(codeBlocks.length, this.verifyAttempts);
     let verified = successfulCodes.length > 0 && !failures;
-    if (successfulCodes.length && failures) verified = await this.provider.oracle(message, { assertions: results.map(({ code, passed, error }) => ({ code, passed, error })) }, { agentName: 'navigator', telemetry: { functionId: 'navigator.verifyState' } });
+    if (successfulCodes.length && failures) verified = (await this.provider.oracle(message, { assertions: results.map(({ code, passed, error }) => ({ code, passed, error })) }, { agentName: 'navigator', telemetry: { functionId: 'navigator.verifyState' } })) === true;
     if (alreadyVerified) verified = true;
 
     const inexpressible = !alreadyVerified && totalAttempted === 0;

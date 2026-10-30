@@ -155,14 +155,23 @@ export class Provider {
     this.judge = judge;
   }
 
-  async oracle(statement: string, state: unknown, options: any = {}): Promise<boolean> {
-    const judged = await this.judge?.assert(statement, state);
+  async oracle(statement: string, state: unknown, options: any = {}): Promise<boolean | null> {
+    const { screenshot, ...generateOptions } = options;
+    let judgeState = state;
+    if (screenshot) judgeState = { ...(state as object), screenshot: `data:image/png;base64,${screenshot.toString('base64')}` };
+    const judged = await this.judge?.assert(statement, judgeState);
     if (typeof judged === 'boolean') return judged;
 
     const schema = z.object({ holds: z.boolean().describe('whether the statement is true') });
-    const content = `${statement}\n\n${JSON.stringify(state, null, 2)}`;
-    const response = await this.generateObject([{ role: 'user' as const, content }], schema, this.getAgenticModel(options.agentName), options).catch(() => null);
-    return response?.object?.holds === true;
+    let content: any = `${statement}\n\n${JSON.stringify(state, null, 2)}`;
+    if (screenshot)
+      content = [
+        { type: 'text', text: content },
+        { type: 'file', mediaType: 'image/png', data: screenshot },
+      ];
+    const response = await this.generateObject([{ role: 'user' as const, content }], schema, this.getAgenticModel(generateOptions.agentName), generateOptions).catch(() => null);
+    if (!response) return null;
+    return response.object?.holds === true;
   }
 
   getAgenticModel(agentName?: string): any {

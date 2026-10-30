@@ -543,6 +543,15 @@ describe('Provider', () => {
       provider.setJudge(null);
       expect(await provider.oracle('The tab is active', {})).toBe(true);
     });
+
+    it('answers null instead of false when the model call fails', async () => {
+      provider.setJudge(null);
+      provider.generateObject = async () => {
+        throw new Error('rate limited');
+      };
+
+      expect(await provider.oracle('The tab is active', {})).toBeNull();
+    });
   });
 
   describe('generateObject', () => {

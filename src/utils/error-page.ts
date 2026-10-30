@@ -67,3 +67,13 @@ export class ErrorPageError extends Error {
     this.name = 'ErrorPageError';
   }
 }
+
+export class PlanningBlockedError extends Error {
+  constructor(
+    public readonly url: string,
+    public readonly prerequisite: string
+  ) {
+    super(`Planner could not plan ${url}: ${prerequisite}`);
+    this.name = 'PlanningBlockedError';
+  }
+}
