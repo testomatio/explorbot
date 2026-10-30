@@ -404,6 +404,10 @@ export class Researcher extends ResearcherBase implements Agent {
   private async hasHiddenContent(): Promise<boolean> {
     const captured = await this.explorer.capture({ screenshot: true });
     const hidden = await this.provider.oracle(HIDDEN_CONTENT_STATEMENT, pageEvidence(captured), { agentName: 'researcher', screenshot: captured.screenshot, telemetry: { functionId: 'researcher.hasHiddenContent' } });
+    if (hidden === null) {
+      tag('warning').log('Could not check the page for hidden content, running deep analysis');
+      return true;
+    }
     if (!hidden) tag('step').log('Nothing to expand on this page, skipping deep analysis');
     return hidden;
   }

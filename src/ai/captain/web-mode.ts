@@ -44,7 +44,7 @@ export function WithWebMode<T extends Constructor>(Base: T) {
           execute: async ({ question }) => {
             const captured = await ctx.explorBot.getExplorer().capture({ screenshot: true });
             const holds = await ctx.explorBot.getProvider().oracle(question, pageEvidence(captured), { agentName: 'captain', screenshot: captured.screenshot, telemetry: { functionId: 'captain.oracle' } });
-            return { success: true, question, answer: holds };
+            return { success: holds !== null, question, answer: holds };
           },
         }),
 

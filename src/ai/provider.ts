@@ -155,7 +155,7 @@ export class Provider {
     this.judge = judge;
   }
 
-  async oracle(statement: string, state: unknown, options: any = {}): Promise<boolean> {
+  async oracle(statement: string, state: unknown, options: any = {}): Promise<boolean | null> {
     const { screenshot, ...generateOptions } = options;
     let judgeState = state;
     if (screenshot) judgeState = { ...(state as object), screenshot: `data:image/png;base64,${screenshot.toString('base64')}` };
@@ -170,7 +170,8 @@ export class Provider {
         { type: 'file', mediaType: 'image/png', data: screenshot },
       ];
     const response = await this.generateObject([{ role: 'user' as const, content }], schema, this.getAgenticModel(generateOptions.agentName), generateOptions).catch(() => null);
-    return response?.object?.holds === true;
+    if (!response) return null;
+    return response.object?.holds === true;
   }
 
   getAgenticModel(agentName?: string): any {

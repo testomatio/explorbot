@@ -267,6 +267,23 @@ describe('Researcher with aimock', () => {
     expect(deepRuns).toBe(1);
   });
 
+  it('runs deep analysis when the oracle could not answer', async () => {
+    const researcher = new Researcher({ ...createMockDeps(), ai: provider } as any);
+    let deepRuns = 0;
+    (researcher as any).performDeepAnalysis = async () => {
+      deepRuns++;
+    };
+    const oracle = provider.oracle;
+    provider.oracle = async () => null;
+    mock.clearFixtures();
+    mock.on({}, { content: taskBoardResearch });
+
+    await researcher.research(fakeState, { force: true, fix: false, deep: true });
+    provider.oracle = oracle;
+
+    expect(deepRuns).toBe(1);
+  });
+
   it('light research accepts a page without locators instead of retrying', async () => {
     mock.clearFixtures();
     mock.on({}, { content: '# Informational page\n\nStatic text without interactive elements.' });
