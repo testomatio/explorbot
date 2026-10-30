@@ -1,4 +1,5 @@
 import { clearActivity, setActivity } from '../activity.ts';
+import type { ActionResult } from '../action-result.ts';
 import type { AIConfig } from '../config.ts';
 import { Observability } from '../observability.ts';
 import { createDebug } from '../utils/logger.ts';
@@ -99,4 +100,8 @@ export class Judge {
     span?.setAttribute('langfuse.observation.status_message', String(error));
     return null;
   }
+}
+
+export function pageEvidence(actionResult: ActionResult) {
+  return { url: actionResult.url, title: actionResult.title, page: actionResult.getCompactARIA().slice(0, JUDGE_PAGE_CAP) };
 }

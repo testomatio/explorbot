@@ -3,6 +3,7 @@ import { ExploreCommand } from '../../src/commands/explore-command.ts';
 import { ConfigParser } from '../../src/config.ts';
 import type { ExplorBot } from '../../src/explorbot.ts';
 import { Plan, Test } from '../../src/test-plan.ts';
+import { PlanningBlockedError } from '../../src/utils/error-page.ts';
 
 beforeEach(() => {
   ConfigParser.resetForTesting();
@@ -484,5 +485,43 @@ describe('ExploreCommand max duration', () => {
     await cmd.execute('--configure "new:0%"');
 
     expect(testerCalled).toBe(1);
+  });
+});
+
+describe('ExploreCommand on a page the planner reports blocked', () => {
+  function setupBlockedBot(unblocked: boolean) {
+    const calls: string[] = [];
+    const plan = new Plan('Workspace');
+    const explorBot: any = {
+      lastPlanError: null,
+      plan: async () => {
+        calls.push('plan');
+        explorBot.lastPlanError = null;
+        if (calls.filter((c) => c === 'plan').length === 1 || !unblocked) explorBot.lastPlanError = new PlanningBlockedError('/workspace', 'Sign in');
+      },
+      agentCaptain: () => ({
+        handle: async (input: string) => {
+          calls.push(`captain: ${input}`);
+          return null;
+        },
+      }),
+      visit: async (url: string) => {
+        calls.push(`visit ${url}`);
+      },
+      getCurrentPlan: () => plan,
+    };
+    return { cmd: new ExploreCommand(explorBot as ExplorBot), calls };
+  }
+
+  test('hands the report to Captain, returns to the page and plans it again', async () => {
+    const { cmd, calls } = setupBlockedBot(true);
+    await (cmd as any).planWithRetry(undefined, { fresh: true, style: 'normal' }, '/workspace');
+    expect(calls).toEqual(['plan', 'captain: Planner could not plan /workspace: Sign in', 'visit /workspace', 'plan']);
+  });
+
+  test('skips the page without a generic retry when it is still blocked', async () => {
+    const { cmd, calls } = setupBlockedBot(false);
+    await (cmd as any).planWithRetry(undefined, { fresh: true, style: 'normal' }, '/workspace');
+    expect(calls).toEqual(['plan', 'captain: Planner could not plan /workspace: Sign in', 'visit /workspace', 'plan']);
   });
 });

@@ -6,7 +6,7 @@ export const MIN_KEYWORD_HITS = 3;
 export const MIN_FEATURE_GROUPS = 3;
 
 const RESEARCH_KEYWORDS = ['issue', 'label', 'priority', 'assignee', 'status', 'search', 'new issue'];
-const POST_LOGIN_ROUTES = ['/issues', '/settings'];
+const POST_LOGIN_ROUTES = ['/issues', '/settings', '/workspace'];
 const FEATURE_GROUPS = [['create', 'new issue', 'add'], ['label'], ['assign'], ['status', 'close', 'progress'], ['filter', 'search'], ['comment'], ['delete', 'remove']];
 
 export function assertBasicRun(runDir: string, stdout: string): AssertResult {

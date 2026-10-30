@@ -18,7 +18,7 @@ import { sleep, waitForNetworkIdle } from '../utils/page-readiness.ts';
 import { RulesLoader } from '../utils/rules-loader.ts';
 import { annotatePageElements } from '../utils/web-annotate.ts';
 import type { Agent, AgentDeps } from './agent.js';
-import { JUDGE_PAGE_CAP } from './judge.ts';
+import { pageEvidence } from './judge.ts';
 import type { Navigator } from './navigator.ts';
 import { ContextLengthError, type Provider } from './provider.js';
 import { findSimilarResearch, getCachedResearch, getPreviousResearch, reportResearch, saveResearch } from './researcher/cache.ts';
@@ -39,6 +39,7 @@ const debugLog = createDebug('explorbot:researcher');
 const SETTLE_POLL_MS = 1000;
 const SETTLE_POLLS_BEFORE_ORACLE = 3;
 const PAGE_LOADED_STATEMENT = 'The page has finished loading: its main content is rendered, not a blank page, splash screen, skeleton or loading placeholder.';
+const HIDDEN_CONTENT_STATEMENT = 'The page has collapsed or hidden content behind controls that open or expand it.';
 
 export const POSSIBLE_SECTIONS = {
   overlay: 'dialog, modal, drawer, popup, or active form overlay',
@@ -296,7 +297,7 @@ export class Researcher extends ResearcherBase implements Agent {
         if (fallback) markSectionAsFocused(result, fallback);
       }
 
-      if (!interrupted() && deep) {
+      if (!interrupted() && deep && (await this.hasHiddenContent())) {
         try {
           await this.performDeepAnalysis(researchState, result);
         } catch (err) {
@@ -399,12 +400,7 @@ export class Researcher extends ResearcherBase implements Agent {
   }
 
   private async isFullyLoaded(networkIdle: boolean): Promise<boolean> {
-    const state = {
-      url: this.actionResult!.url,
-      title: this.actionResult!.title,
-      networkRequestsInProgress: !networkIdle,
-      ariaSnapshot: (this.actionResult!.ariaSnapshot || '').slice(0, JUDGE_PAGE_CAP),
-    };
+    const state = { ...pageEvidence(this.actionResult!), networkRequestsInProgress: !networkIdle };
     const loaded = await this.provider.oracle(PAGE_LOADED_STATEMENT, state, { agentName: 'researcher', telemetry: { functionId: 'researcher.isFullyLoaded' } });
     debugLog('Oracle judged page loaded:', loaded);
     if (!loaded) {
@@ -413,6 +409,13 @@ export class Researcher extends ResearcherBase implements Agent {
     }
     this.loadedStateHash = this.actionResult!.getStateHash();
     return true;
+  }
+
+  private async hasHiddenContent(): Promise<boolean> {
+    const captured = await this.explorer.capture({ screenshot: true });
+    const hidden = await this.provider.oracle(HIDDEN_CONTENT_STATEMENT, pageEvidence(captured), { agentName: 'researcher', screenshot: captured.screenshot, telemetry: { functionId: 'researcher.hasHiddenContent' } });
+    if (!hidden) tag('step').log('Nothing to expand on this page, skipping deep analysis');
+    return hidden;
   }
 
   private getConfiguredSections(): Record<string, string> {

@@ -244,6 +244,29 @@ describe('Researcher with aimock', () => {
     expect(locatorCalls.filter((selector) => selector !== 'body').length).toBeGreaterThan(0);
   });
 
+  it('runs deep analysis only when the oracle sees hidden content on the page', async () => {
+    const isHiddenContentQuestion = (req: any) => JSON.stringify(req.messages || []).includes('collapsed or hidden content');
+    const deps = createMockDeps();
+    deps.explorer.capture = async () => new ActionResult({ ...fakeState, screenshot: Buffer.from('fake-png') });
+    const researcher = new Researcher({ ...deps, ai: provider } as any);
+    let deepRuns = 0;
+    (researcher as any).performDeepAnalysis = async () => {
+      deepRuns++;
+    };
+
+    for (const holds of [false, true]) {
+      mock.clearFixtures();
+      mock.on({ predicate: isHiddenContentQuestion }, { content: JSON.stringify({ holds }) });
+      mock.on({}, { content: taskBoardResearch });
+      await researcher.research(fakeState, { force: true, fix: false, deep: true });
+    }
+
+    const oracleRequests = mock.getRequests().filter((r: any) => isHiddenContentQuestion(r.body));
+    expect(oracleRequests).toHaveLength(2);
+    expect(JSON.stringify(oracleRequests[0].body)).toContain(Buffer.from('fake-png').toString('base64'));
+    expect(deepRuns).toBe(1);
+  });
+
   it('light research accepts a page without locators instead of retrying', async () => {
     mock.clearFixtures();
     mock.on({}, { content: '# Informational page\n\nStatic text without interactive elements.' });

@@ -10,6 +10,7 @@ import type { StateManager } from '../state-manager.js';
 import { Stats } from '../stats.ts';
 import { Suite } from '../suite.ts';
 import { Plan, Test } from '../test-plan.ts';
+import { PlanningBlockedError } from '../utils/error-page.ts';
 import { createDebug, tag } from '../utils/logger.js';
 import { jsonToTable } from '../utils/markdown-parser.ts';
 import { mdq } from '../utils/markdown-query.js';
@@ -46,6 +47,7 @@ const TasksSchema = z.object({
     )
     .describe('List of testing scenarios'),
   blockedBy: z.string().nullable().describe('When scenarios is empty, one sentence saying why this page has nothing to test; otherwise null.'),
+  prerequisite: z.string().nullable().describe('Set when the page shows a sign-in form, or another step that must be done first, instead of the content its URL is for: name that step. Otherwise null.'),
 });
 
 const PlannerBase = WithSessionDedup(WithSubPages(Object as unknown as new (...args: any[]) => object));
@@ -214,6 +216,9 @@ export class Planner extends PlannerBase implements Agent {
 
       if (!this.currentPlan && aiResult.object.scenarios.length === 0 && aiResult.object.blockedBy) {
         tag('warning').log(`Page is not plannable: ${aiResult.object.blockedBy}`);
+      }
+      if (!this.currentPlan && aiResult.object.scenarios.length === 0 && aiResult.object.prerequisite) {
+        throw new PlanningBlockedError(state.url, aiResult.object.prerequisite);
       }
 
       const defaultStartUrl = this.getDefaultStartUrl(state);

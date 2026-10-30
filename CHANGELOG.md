@@ -5,6 +5,9 @@
 ### Changes
 - [Researcher] A page that is still blank or barely rendered when it opens is no longer researched as an empty page. Explorbot keeps waiting, up to `ai.agents.researcher.errorPageTimeout` seconds (default 10), and every few seconds the AI judges whether the page has finished loading, so a genuinely small page doesn't wait the full time.
 - Page readiness: a page counts as rendered only when it shows visible text or a visible control or media element. An app shell holding only scripts or an empty root element no longer counts as loaded.
+- [Planner] [Captain] `explore` on a page that shows a sign-in form at the URL you asked for, instead of redirecting to a login page, now gets past it. The planner reports that the page is blocked and names the step needed first. Captain decides which agent completes it, using your knowledge or `--auth` details, then the page is reopened and planned. If it is still blocked, the page is skipped with the planner's reason.
+- [Researcher] Deep research, which opens every menu, dropdown and panel on the page, now runs only when the AI, looking at the page and a screenshot, sees hidden content to expand. A bare form is researched without it.
+- [Captain] Answers quick yes/no questions about the page with one lightweight AI check of the page and a screenshot, instead of a full visual analysis or page snapshot.
 
 ## 2026-10-26
 
