@@ -14,11 +14,10 @@ import { ErrorPageError, detectPageCondition } from '../utils/error-page.ts';
 import { isBodyEmpty } from '../utils/html.ts';
 import { createDebug, tag } from '../utils/logger.js';
 import { mdq } from '../utils/markdown-query.ts';
-import { sleep, waitForNetworkIdle } from '../utils/page-readiness.ts';
+import { waitForPageReadiness } from '../utils/page-readiness.ts';
 import { RulesLoader } from '../utils/rules-loader.ts';
 import { annotatePageElements } from '../utils/web-annotate.ts';
 import type { Agent, AgentDeps } from './agent.js';
-import { JUDGE_PAGE_CAP } from './judge.ts';
 import type { Navigator } from './navigator.ts';
 import { ContextLengthError, type Provider } from './provider.js';
 import { findSimilarResearch, getCachedResearch, getPreviousResearch, reportResearch, saveResearch } from './researcher/cache.ts';
@@ -36,9 +35,6 @@ import { TaskAgent } from './task-agent.ts';
 export type { Locator } from './researcher/locators.ts';
 
 const debugLog = createDebug('explorbot:researcher');
-const SETTLE_POLL_MS = 1000;
-const SETTLE_POLLS_BEFORE_ORACLE = 3;
-const PAGE_LOADED_STATEMENT = 'The page has finished loading: its main content is rendered, not a blank page, splash screen, skeleton or loading placeholder.';
 
 export const POSSIBLE_SECTIONS = {
   overlay: 'dialog, modal, drawer, popup, or active form overlay',
@@ -63,7 +59,6 @@ export class Researcher extends ResearcherBase implements Agent {
   declare config: ExplorbotConfig;
   private experienceTracker!: ExperienceTracker;
   private hasScreenshotToAnalyze = false;
-  private loadedStateHash: string | null = null;
   declare actionResult: ActionResult | undefined;
 
   constructor(deps: AgentDeps) {
@@ -373,46 +368,13 @@ export class Researcher extends ResearcherBase implements Agent {
     const errorPageTimeout = this.settings.errorPageTimeout ?? 10;
     if (errorPageTimeout <= 0) return false;
 
-    const includeScreenshot = screenshot && this.provider.hasVision();
-    let networkIdle = await this.explorer.withPage((page) => waitForNetworkIdle(page, errorPageTimeout * 1000));
-
-    for (let poll = 0; poll <= errorPageTimeout; poll++) {
-      if (poll > 0) networkIdle = await this.waitForSettlePoll();
-      await this.explorer.withPage(annotatePageElements);
-      this.actionResult = await this.explorer.capture({ screenshot: includeScreenshot });
-      const condition = detectPageCondition(this.actionResult!);
-      if (condition === 'error') {
-        throw new ErrorPageError(this.actionResult!.url, this.actionResult!.title, this.actionResult!.httpStatus);
-      }
-      if (condition === 'ok') return true;
-      if (this.actionResult!.getStateHash() === this.loadedStateHash) return true;
-      if (poll === 0 || poll % SETTLE_POLLS_BEFORE_ORACLE) continue;
-      if (await this.isFullyLoaded(networkIdle)) return true;
+    const rendered = await this.explorer.withPage((page) => waitForPageReadiness(page, { timeout: errorPageTimeout * 1000, spinnerSelectors: this.config.playwright.spinnerSelectors }));
+    await this.explorer.withPage(annotatePageElements);
+    this.actionResult = await this.explorer.capture({ screenshot: screenshot && this.provider.hasVision() });
+    if (detectPageCondition(this.actionResult!) === 'error') {
+      throw new ErrorPageError(this.actionResult!.url, this.actionResult!.title, this.actionResult!.httpStatus);
     }
-
-    return false;
-  }
-
-  private async waitForSettlePoll(): Promise<boolean> {
-    const [networkIdle] = await Promise.all([this.explorer.withPage((page) => waitForNetworkIdle(page, SETTLE_POLL_MS)), sleep(SETTLE_POLL_MS)]);
-    return networkIdle;
-  }
-
-  private async isFullyLoaded(networkIdle: boolean): Promise<boolean> {
-    const state = {
-      url: this.actionResult!.url,
-      title: this.actionResult!.title,
-      networkRequestsInProgress: !networkIdle,
-      ariaSnapshot: (this.actionResult!.ariaSnapshot || '').slice(0, JUDGE_PAGE_CAP),
-    };
-    const loaded = await this.provider.oracle(PAGE_LOADED_STATEMENT, state, { agentName: 'researcher', telemetry: { functionId: 'researcher.isFullyLoaded' } });
-    debugLog('Oracle judged page loaded:', loaded);
-    if (!loaded) {
-      tag('step').log('Page is still loading, waiting for content...');
-      return false;
-    }
-    this.loadedStateHash = this.actionResult!.getStateHash();
-    return true;
+    return rendered;
   }
 
   private getConfiguredSections(): Record<string, string> {

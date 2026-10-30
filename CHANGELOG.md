@@ -3,7 +3,7 @@
 ## 2026-10-28
 
 ### Changes
-- [Researcher] A page that is still blank or barely rendered when it opens is no longer researched as an empty page. Explorbot keeps waiting, up to `ai.agents.researcher.errorPageTimeout` seconds (default 10), and every few seconds the AI judges whether the page has finished loading, so a genuinely small page doesn't wait the full time.
+- [Researcher] A page that is still blank or barely rendered when it opens is no longer researched as an empty page. Explorbot keeps waiting, up to `ai.agents.researcher.errorPageTimeout` seconds (default 10), with the same readiness checks it runs after every action: network requests settle, the DOM stops changing, `playwright.spinnerSelectors` disappear, and the page shows visible text or a control. A small page that has rendered doesn't wait the full time.
 - Page readiness: a page counts as rendered only when it shows visible text or a visible control or media element. An app shell holding only scripts or an empty root element no longer counts as loaded.
 
 ## 2026-10-26

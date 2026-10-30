@@ -60,14 +60,6 @@ describe('Researcher waits for a page that renders late', () => {
     } as any);
   }
 
-  function isLoadedQuestion(req: any) {
-    return JSON.stringify(req.messages || []).includes('The page has finished loading');
-  }
-
-  function loadedQuestions() {
-    return mock.getRequests().filter((r: any) => isLoadedQuestion(r.body));
-  }
-
   beforeAll(async () => {
     browser = await chromium.launch();
     page = await browser.newPage();
@@ -91,28 +83,25 @@ describe('Researcher waits for a page that renders late', () => {
     await mock.stop();
   });
 
-  it('keeps waiting while the oracle sees an unloaded page, then researches the rendered content', async () => {
+  it('keeps waiting while the page is blank, then researches the rendered content', async () => {
     await page.setContent(`<html><body><div id="app"></div><script>setTimeout(() => { document.open(); document.write(${JSON.stringify(TASK_BOARD_HTML)}); document.close(); }, 4500);</script></body></html>`);
-    mock.on({ predicate: isLoadedQuestion }, { content: JSON.stringify({ holds: false }) });
     mock.on({}, { content: research });
 
     const result = await createResearcher().research(await captureRealState());
 
-    expect(loadedQuestions().length).toBeGreaterThanOrEqual(1);
+    expect(mock.getRequests().length).toBe(1);
     const researchPrompt = JSON.stringify(mock.getRequests().at(-1)?.body);
     expect(researchPrompt).toContain('Create Task');
     expect(result).toContain('Create Task');
   }, 30000);
 
-  it('stops waiting when the oracle judges a small page fully loaded', async () => {
+  it('does not wait out the timeout on a small page that has rendered', async () => {
     await page.setContent('<html><body><h1>Welcome</h1><button>Continue</button></body></html>');
-    mock.on({ predicate: isLoadedQuestion }, { content: JSON.stringify({ holds: true }) });
     mock.on({}, { content: research });
 
     const started = Date.now();
     await createResearcher().research(await captureRealState());
 
-    expect(loadedQuestions().length).toBe(1);
     expect(Date.now() - started).toBeLessThan(8000);
   }, 30000);
 });
