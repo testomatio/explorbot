@@ -1,9 +1,3 @@
-import { createOpenRouter } from '@openrouter/ai-sdk-provider';
-
-const openrouter = createOpenRouter({
-  apiKey: process.env.OPENROUTER_API_KEY,
-});
-
 const config = {
   web: {
     url: process.env.APP_URL,
@@ -26,9 +20,10 @@ const config = {
   },
 
   ai: {
-    model: openrouter('openai/gpt-oss-20b:nitro'),
-    visionModel: openrouter('openai/gpt-5.6-luna'),
-    agenticModel: openrouter('openai/gpt-5.6-luna'),
+    recommendedModels: 'openrouter',
+    model: process.env.BENCH_MODEL,
+    visionModel: process.env.BENCH_VISION_MODEL,
+    agenticModel: process.env.BENCH_AGENTIC_MODEL,
 
     config: {
       maxOutputTokens: 8000,
