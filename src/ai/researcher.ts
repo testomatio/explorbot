@@ -10,13 +10,15 @@ import type { StateManager } from '../state-manager.js';
 import { WebPageState } from '../state-manager.js';
 import { Stats } from '../stats.ts';
 import { diffAriaSnapshots } from '../utils/aria.ts';
-import { ErrorPageError, detectPageCondition } from '../utils/error-page.ts';
+import { ErrorPageError, type PageCondition, detectPageCondition } from '../utils/error-page.ts';
 import { isBodyEmpty } from '../utils/html.ts';
 import { createDebug, tag } from '../utils/logger.js';
 import { mdq } from '../utils/markdown-query.ts';
+import { waitForDomChange, waitForPageReadiness } from '../utils/page-readiness.ts';
 import { RulesLoader } from '../utils/rules-loader.ts';
 import { annotatePageElements } from '../utils/web-annotate.ts';
 import type { Agent, AgentDeps } from './agent.js';
+import { JUDGE_PAGE_CAP, UNDECIDED } from './judge.ts';
 import type { Navigator } from './navigator.ts';
 import { ContextLengthError, type Provider } from './provider.js';
 import { findSimilarResearch, getCachedResearch, getPreviousResearch, reportResearch, saveResearch } from './researcher/cache.ts';
@@ -136,7 +138,8 @@ export class Researcher extends ResearcherBase implements Agent {
       if (light) tag('info').log('Light research: single pass, locator verification skipped');
       setActivity(`${this.emoji} Researching...`, 'action');
 
-      await this.ensureNavigated(displayUrl, screenshot && this.provider.hasVision());
+      const retrying = opts._retriesLeft !== undefined;
+      if (!retrying) await this.ensureNavigated(displayUrl, screenshot && this.provider.hasVision());
       await this.hooksRunner.runBeforeHook('researcher', state.url);
 
       const { elements: annotatedElements } = await this.explorer.withPage(annotatePageElements);
@@ -148,7 +151,7 @@ export class Researcher extends ResearcherBase implements Agent {
         tag('warning').log(`Detected error page at ${state.url}`);
         throw new ErrorPageError(state.url, this.actionResult!.title, this.actionResult!.httpStatus);
       }
-      if (condition === 'loading') {
+      if (condition === 'loading' && !retrying) {
         const settled = await this.waitUntilSettled(screenshot);
         if (!settled) {
           tag('warning').log(`Page at ${state.url} did not finish loading within timeout, continuing with best-effort research`);
@@ -365,35 +368,40 @@ export class Researcher extends ResearcherBase implements Agent {
 
   private async waitUntilSettled(screenshot: boolean): Promise<boolean> {
     const errorPageTimeout = this.settings.errorPageTimeout ?? 10;
-    if (errorPageTimeout <= 0) return false;
+    const deadline = Date.now() + errorPageTimeout * 1000;
 
-    const includeScreenshot = screenshot && this.provider.hasVision();
-
-    try {
-      await this.explorer.withPage((page) => page.waitForLoadState('networkidle', { timeout: errorPageTimeout * 1000 }));
-    } catch {}
-
-    await this.explorer.withPage(annotatePageElements);
-    this.actionResult = await this.explorer.capture({ screenshot: includeScreenshot });
-
-    let condition = detectPageCondition(this.actionResult!);
-    if (condition === 'error') {
-      throw new ErrorPageError(this.actionResult!.url, this.actionResult!.title, this.actionResult!.httpStatus);
-    }
-    if (condition === 'ok') return true;
-
-    for (let i = 0; i < 3; i++) {
-      await new Promise((r) => setTimeout(r, 1000));
+    for (let remaining = errorPageTimeout * 1000; remaining > 0; remaining = deadline - Date.now()) {
+      const rendered = await this.explorer.withPage((page) => waitForPageReadiness(page, { timeout: remaining, spinnerSelectors: this.config.playwright.spinnerSelectors }));
       await this.explorer.withPage(annotatePageElements);
-      this.actionResult = await this.explorer.capture({ screenshot: includeScreenshot });
-      condition = detectPageCondition(this.actionResult!);
-      if (condition === 'error') {
-        throw new ErrorPageError(this.actionResult!.url, this.actionResult!.title, this.actionResult!.httpStatus);
-      }
+      this.actionResult = await this.explorer.capture({ screenshot: screenshot && this.provider.hasVision() });
+      const condition = await this.pageCondition(rendered);
+      if (condition === 'error') throw new ErrorPageError(this.actionResult!.url, this.actionResult!.title, this.actionResult!.httpStatus);
       if (condition === 'ok') return true;
+
+      tag('step').log('Page is still loading, waiting for content...');
+      if (!(await this.explorer.withPage((page) => waitForDomChange(page, deadline - Date.now())))) return false;
     }
 
     return false;
+  }
+
+  private async pageCondition(rendered: boolean): Promise<PageCondition> {
+    const condition = detectPageCondition(this.actionResult!);
+    if (condition !== 'loading') return condition;
+    if (!this.judge && rendered) return 'ok';
+    if (!this.judge) return condition;
+
+    const conditions: Record<string, PageCondition> = {
+      'still loading: blank, splash screen, skeleton or loading placeholder': 'loading',
+      'error page: shows an error instead of the requested content': 'error',
+      'loaded: the main content is rendered': 'ok',
+    };
+    const decision = await this.judge.decide('The page was blank or barely rendered when it opened. What state is it in now?', [...Object.keys(conditions), UNDECIDED], {
+      url: this.actionResult!.url,
+      title: this.actionResult!.title,
+      page: this.actionResult!.getCompactARIA().slice(0, JUDGE_PAGE_CAP),
+    });
+    return conditions[decision.value ?? ''] || 'ok';
   }
 
   private getConfiguredSections(): Record<string, string> {

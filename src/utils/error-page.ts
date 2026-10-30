@@ -1,6 +1,6 @@
 import { ActionResult } from '../action-result.js';
 import type { WebPageState } from '../state-manager.js';
-import { isBodyEmpty } from './html.js';
+import { isBodyEmpty, sanitizeHtmlString } from './html.js';
 import { extractStatePath } from './url-matcher.js';
 
 const HTTP_ERRORS = ['400 Bad Request', '401 Unauthorized', '403 Forbidden', '404 Not Found', '405 Method Not Allowed', '408 Request Timeout', '500 Internal Server Error', '502 Bad Gateway', '503 Service Unavailable', '504 Gateway Timeout'];
@@ -33,7 +33,7 @@ export function detectPageCondition(actionResult: ActionResult): PageCondition {
 
   if (!actionResult.html || isBodyEmpty(actionResult.html)) return 'loading';
 
-  const bodyMatch = actionResult.html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+  const bodyMatch = sanitizeHtmlString(actionResult.html).match(/<body[^>]*>([\s\S]*?)<\/body>/i);
   if (bodyMatch && bodyMatch[1].trim().length < SMALL_PAGE_THRESHOLD) return 'loading';
 
   return 'ok';
