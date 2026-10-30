@@ -21,6 +21,15 @@ const research = `## Content
 | 'Create Task' | button | { role: 'button', text: 'Create Task' } | '.create-task-btn' | (240, 30) |
 `;
 
+const welcomeResearch = `## Content
+
+> Container: \`body\`
+
+| Element | Type | ARIA | CSS | Coordinates |
+|------|------|------|------|------|
+| 'Continue' | button | { role: 'button', text: 'Continue' } | 'button' | (40, 60) |
+`;
+
 describe('Researcher waits for a page that renders late', () => {
   let browser: Browser;
   let page: Page;
@@ -36,7 +45,7 @@ describe('Researcher waits for a page that renders late', () => {
     });
   }
 
-  function createResearcher() {
+  function createResearcher(judge?: any) {
     const explorer = {
       visit: captureRealState,
       capture: captureRealState,
@@ -55,6 +64,7 @@ describe('Researcher waits for a page that renders late', () => {
         getExperienceTracker: () => ({ getSuccessfulExperience: () => [], updateSummary: () => {} }),
       },
       knowledgeTracker: { getRelevantKnowledge: () => [], renderRelevantKnowledge: () => '', renderRelevantContext: () => '' },
+      judge,
       requestStore: {},
       playwrightRecorder: {},
     } as any);
@@ -102,6 +112,39 @@ describe('Researcher waits for a page that renders late', () => {
     const started = Date.now();
     await createResearcher().research(await captureRealState());
 
+    expect(Date.now() - started).toBeLessThan(8000);
+  }, 30000);
+
+  it('asks the judge about a small page and keeps waiting while it is still loading', async () => {
+    await page.setContent(`<html><body><p>Starting</p><script>setTimeout(() => { document.open(); document.write(${JSON.stringify(TASK_BOARD_HTML)}); document.close(); }, 2000);</script></body></html>`);
+    mock.on({}, { content: research });
+    const questions: string[] = [];
+    const judge = { pick: async (question: string) => questions.push(question) && 1 };
+
+    const result = await createResearcher(judge).research(await captureRealState());
+
+    expect(questions.length).toBe(1);
+    expect(result).toContain('Create Task');
+  }, 30000);
+
+  it('stops research when the judge sees an error page', async () => {
+    await page.setContent('<html><body><p>Something went wrong</p></body></html>');
+    mock.on({}, { content: research });
+    const judge = { pick: async () => 2 };
+
+    await expect(createResearcher(judge).research(await captureRealState())).rejects.toThrow('Error page detected');
+  }, 30000);
+
+  it('continues right away when the judge sees a loaded small page', async () => {
+    await page.setContent('<html><body><h1>Welcome</h1><button>Continue</button></body></html>');
+    mock.on({}, { content: welcomeResearch });
+    let asked = 0;
+    const judge = { pick: async () => ++asked && 3 };
+
+    const started = Date.now();
+    await createResearcher(judge).research(await captureRealState());
+
+    expect(asked).toBe(1);
     expect(Date.now() - started).toBeLessThan(8000);
   }, 30000);
 });

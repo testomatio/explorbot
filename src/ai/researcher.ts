@@ -14,10 +14,11 @@ import { ErrorPageError, detectPageCondition } from '../utils/error-page.ts';
 import { isBodyEmpty } from '../utils/html.ts';
 import { createDebug, tag } from '../utils/logger.js';
 import { mdq } from '../utils/markdown-query.ts';
-import { waitForPageReadiness } from '../utils/page-readiness.ts';
+import { waitForDomChange, waitForPageReadiness } from '../utils/page-readiness.ts';
 import { RulesLoader } from '../utils/rules-loader.ts';
 import { annotatePageElements } from '../utils/web-annotate.ts';
 import type { Agent, AgentDeps } from './agent.js';
+import { JUDGE_PAGE_CAP } from './judge.ts';
 import type { Navigator } from './navigator.ts';
 import { ContextLengthError, type Provider } from './provider.js';
 import { findSimilarResearch, getCachedResearch, getPreviousResearch, reportResearch, saveResearch } from './researcher/cache.ts';
@@ -366,15 +367,34 @@ export class Researcher extends ResearcherBase implements Agent {
 
   private async waitUntilSettled(screenshot: boolean): Promise<boolean> {
     const errorPageTimeout = this.settings.errorPageTimeout ?? 10;
-    if (errorPageTimeout <= 0) return false;
+    const deadline = Date.now() + errorPageTimeout * 1000;
 
-    const rendered = await this.explorer.withPage((page) => waitForPageReadiness(page, { timeout: errorPageTimeout * 1000, spinnerSelectors: this.config.playwright.spinnerSelectors }));
-    await this.explorer.withPage(annotatePageElements);
-    this.actionResult = await this.explorer.capture({ screenshot: screenshot && this.provider.hasVision() });
-    if (detectPageCondition(this.actionResult!) === 'error') {
-      throw new ErrorPageError(this.actionResult!.url, this.actionResult!.title, this.actionResult!.httpStatus);
+    for (let remaining = errorPageTimeout * 1000; remaining > 0; remaining = deadline - Date.now()) {
+      const rendered = await this.explorer.withPage((page) => waitForPageReadiness(page, { timeout: remaining, spinnerSelectors: this.config.playwright.spinnerSelectors }));
+      await this.explorer.withPage(annotatePageElements);
+      this.actionResult = await this.explorer.capture({ screenshot: screenshot && this.provider.hasVision() });
+      const condition = detectPageCondition(this.actionResult!);
+      if (condition === 'error') {
+        throw new ErrorPageError(this.actionResult!.url, this.actionResult!.title, this.actionResult!.httpStatus);
+      }
+      if (condition === 'ok') return true;
+      if (!this.judge) return rendered;
+
+      const verdict = await this.judge.pick(
+        'The page was blank or barely rendered when it opened. What state is it in now?',
+        ['still loading: blank, splash screen, skeleton or loading placeholder', 'error page: shows an error instead of the requested content', 'loaded: the main content is rendered'],
+        { url: this.actionResult!.url, title: this.actionResult!.title, page: this.actionResult!.getCompactARIA().slice(0, JUDGE_PAGE_CAP) }
+      );
+      if (verdict === 2) {
+        throw new ErrorPageError(this.actionResult!.url, this.actionResult!.title, this.actionResult!.httpStatus);
+      }
+      if (verdict !== 1) return true;
+
+      tag('step').log('Page is still loading, waiting for content...');
+      if (!(await this.explorer.withPage((page) => waitForDomChange(page, deadline - Date.now())))) return false;
     }
-    return rendered;
+
+    return false;
   }
 
   private getConfiguredSections(): Record<string, string> {

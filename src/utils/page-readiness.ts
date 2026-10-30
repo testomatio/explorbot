@@ -8,6 +8,28 @@ export async function waitForPageReadiness(page: any, options: PageReadinessOpti
   return waitForPageBodyContent(page, timeout);
 }
 
+export function waitForDomChange(page: any, timeout: number): Promise<boolean> {
+  if (!page?.evaluate) return Promise.resolve(false);
+
+  return page
+    .evaluate(
+      (ms: number) =>
+        new Promise<boolean>((resolve) => {
+          const observer = new MutationObserver(() => {
+            observer.disconnect();
+            resolve(true);
+          });
+          observer.observe(document, { subtree: true, childList: true, attributes: true, characterData: true });
+          setTimeout(() => {
+            observer.disconnect();
+            resolve(false);
+          }, ms);
+        }),
+      timeout
+    )
+    .catch(() => true);
+}
+
 const DOM_QUIET_MS = 350;
 
 function waitForDomQuiet(page: any, timeout: number): Promise<void> {
