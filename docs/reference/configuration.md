@@ -218,7 +218,7 @@ The Researcher takes all standard agent options plus options that control intera
 | Option | Type | Description |
 |--------|------|-------------|
 | `maxExpandableClicks` | `number` | Maximum expandable elements clicked during deep analysis (default: 10) |
-| `errorPageTimeout` | `number` | Seconds to wait for a blank or barely rendered page to finish loading before research; the AI judges along the way whether the page is fully loaded (default: 10, `0` disables the wait) |
+| `errorPageTimeout` | `number` | Seconds to wait for a blank or barely rendered page to finish loading before research; uses the same readiness checks as every action, and the judge when `ai.decisionModel` is set (default: 10, `0` disables the wait) |
 | `focusSections` | `string[]` | CSS selectors that narrow research to a matching element when present (e.g. an open modal or drawer). First match wins. Applies only to the per-section fallback used after a truncated research response. |
 
 ```javascript

@@ -1,11 +1,33 @@
-export async function waitForPageReadiness(page: any, options: PageReadinessOptions = {}): Promise<void> {
-  if (!page) return;
+export async function waitForPageReadiness(page: any, options: PageReadinessOptions = {}): Promise<boolean> {
+  if (!page) return false;
 
   const timeout = options.timeout ?? 6000;
   await page.waitForLoadState?.('domcontentloaded', { timeout })?.catch(() => {});
 
   await Promise.race([waitForNetworkIdle(page, timeout), waitForDomQuiet(page, timeout), waitForVisibleSpinnersHidden(page, options.spinnerSelectors || [], timeout), sleep(timeout)]).catch(() => {});
-  await waitForPageBodyContent(page, timeout);
+  return waitForPageBodyContent(page, timeout);
+}
+
+export function waitForDomChange(page: any, timeout: number): Promise<boolean> {
+  if (!page?.evaluate) return Promise.resolve(false);
+
+  return page
+    .evaluate(
+      (ms: number) =>
+        new Promise<boolean>((resolve) => {
+          const observer = new MutationObserver(() => {
+            observer.disconnect();
+            resolve(true);
+          });
+          observer.observe(document, { subtree: true, childList: true, attributes: true, characterData: true });
+          setTimeout(() => {
+            observer.disconnect();
+            resolve(false);
+          }, ms);
+        }),
+      timeout
+    )
+    .catch(() => true);
 }
 
 const DOM_QUIET_MS = 350;
@@ -31,12 +53,9 @@ function waitForDomQuiet(page: any, timeout: number): Promise<void> {
     .catch(() => {});
 }
 
-export function waitForNetworkIdle(page: any, timeout: number): Promise<boolean> {
-  if (!page?.waitForLoadState) return Promise.resolve(true);
-  return page.waitForLoadState('networkidle', { timeout }).then(
-    () => true,
-    () => false
-  );
+function waitForNetworkIdle(page: any, timeout: number): Promise<void> {
+  if (!page?.waitForLoadState) return Promise.resolve();
+  return page.waitForLoadState('networkidle', { timeout }).catch(() => {});
 }
 
 async function waitForVisibleSpinnersHidden(page: any, selectors: string[], timeout: number): Promise<void> {
@@ -59,8 +78,8 @@ async function waitForVisibleSpinnersHidden(page: any, selectors: string[], time
   return Promise.all(visibleSpinners.map((locator) => locator.waitFor({ state: 'hidden', timeout }).catch(() => {}))).then(() => {});
 }
 
-function waitForPageBodyContent(page: any, timeout: number): Promise<void> {
-  if (!page?.waitForFunction) return Promise.resolve();
+function waitForPageBodyContent(page: any, timeout: number): Promise<boolean> {
+  if (!page?.waitForFunction) return Promise.resolve(true);
 
   return page
     .waitForFunction(
@@ -73,7 +92,10 @@ function waitForPageBodyContent(page: any, timeout: number): Promise<void> {
       undefined,
       { timeout }
     )
-    .catch(() => {});
+    .then(
+      () => true,
+      () => false
+    );
 }
 
 export function sleep(ms: number): Promise<void> {

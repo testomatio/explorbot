@@ -39,7 +39,7 @@ ai: {
 | `sections` | `string[]` | all sections | Page sections to identify (order = priority) |
 | `focusSections` | `string[]` | `[]` | CSS selectors used in the truncated-response fallback, when research is split into per-section requests (first match wins). The matching element becomes the container for the focused section — see [Handling Truncated Responses](#handling-truncated-responses). |
 | `maxExpandableClicks` | `number` | `10` | Max expandable elements clicked during deep research |
-| `errorPageTimeout` | `number` | `10` | Seconds to wait for a blank or barely rendered page to settle before research. Every few seconds the AI judges whether the page is fully loaded, so a genuinely small page stops the wait early. Error pages detected during this wait abort research. Set `0` to skip the wait |
+| `errorPageTimeout` | `number` | `10` | Seconds to wait for a blank or barely rendered page to settle before research. Uses the same readiness checks as every action (network idle, quiet DOM, `playwright.spinnerSelectors`, visible content), so a small page that has rendered stops the wait early. With `ai.decisionModel` set, the judge decides whether a page that still looks unfinished is loading, an error page or loaded, and Explorbot waits for the page to change before asking again. Error pages detected during this wait abort research. Set `0` to skip the wait |
 | `retries` | `number` | `2` | Retries when most locators are broken in Stage 2 |
 | `reasoning` | `string` | `'low'` | AI SDK v7 reasoning effort: `'none'`, `'minimal'`, `'low'`, `'medium'`, `'high'`, `'xhigh'`, `'provider-default'` |
 | `providerOptions` | `object` | - | Provider-specific options. Reasoning keys here take precedence over `reasoning`. |

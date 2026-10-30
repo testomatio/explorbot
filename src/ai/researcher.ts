@@ -10,15 +10,15 @@ import type { StateManager } from '../state-manager.js';
 import { WebPageState } from '../state-manager.js';
 import { Stats } from '../stats.ts';
 import { diffAriaSnapshots } from '../utils/aria.ts';
-import { ErrorPageError, detectPageCondition } from '../utils/error-page.ts';
+import { ErrorPageError, type PageCondition, detectPageCondition } from '../utils/error-page.ts';
 import { isBodyEmpty } from '../utils/html.ts';
 import { createDebug, tag } from '../utils/logger.js';
 import { mdq } from '../utils/markdown-query.ts';
-import { sleep, waitForNetworkIdle } from '../utils/page-readiness.ts';
+import { waitForDomChange, waitForPageReadiness } from '../utils/page-readiness.ts';
 import { RulesLoader } from '../utils/rules-loader.ts';
 import { annotatePageElements } from '../utils/web-annotate.ts';
 import type { Agent, AgentDeps } from './agent.js';
-import { pageEvidence } from './judge.ts';
+import { UNDECIDED, pageEvidence } from './judge.ts';
 import type { Navigator } from './navigator.ts';
 import { ContextLengthError, type Provider } from './provider.js';
 import { findSimilarResearch, getCachedResearch, getPreviousResearch, reportResearch, saveResearch } from './researcher/cache.ts';
@@ -36,9 +36,6 @@ import { TaskAgent } from './task-agent.ts';
 export type { Locator } from './researcher/locators.ts';
 
 const debugLog = createDebug('explorbot:researcher');
-const SETTLE_POLL_MS = 1000;
-const SETTLE_POLLS_BEFORE_ORACLE = 3;
-const PAGE_LOADED_STATEMENT = 'The page has finished loading: its main content is rendered, not a blank page, splash screen, skeleton or loading placeholder.';
 const HIDDEN_CONTENT_STATEMENT = 'The page has collapsed or hidden content behind controls that open or expand it.';
 
 export const POSSIBLE_SECTIONS = {
@@ -64,7 +61,6 @@ export class Researcher extends ResearcherBase implements Agent {
   declare config: ExplorbotConfig;
   private experienceTracker!: ExperienceTracker;
   private hasScreenshotToAnalyze = false;
-  private loadedStateHash: string | null = null;
   declare actionResult: ActionResult | undefined;
 
   constructor(deps: AgentDeps) {
@@ -143,7 +139,8 @@ export class Researcher extends ResearcherBase implements Agent {
       if (light) tag('info').log('Light research: single pass, locator verification skipped');
       setActivity(`${this.emoji} Researching...`, 'action');
 
-      await this.ensureNavigated(displayUrl, screenshot && this.provider.hasVision());
+      const retrying = opts._retriesLeft !== undefined;
+      if (!retrying) await this.ensureNavigated(displayUrl, screenshot && this.provider.hasVision());
       await this.hooksRunner.runBeforeHook('researcher', state.url);
 
       const { elements: annotatedElements } = await this.explorer.withPage(annotatePageElements);
@@ -155,7 +152,7 @@ export class Researcher extends ResearcherBase implements Agent {
         tag('warning').log(`Detected error page at ${state.url}`);
         throw new ErrorPageError(state.url, this.actionResult!.title, this.actionResult!.httpStatus);
       }
-      if (condition === 'loading') {
+      if (condition === 'loading' && !retrying) {
         const settled = await this.waitUntilSettled(screenshot);
         if (!settled) {
           tag('warning').log(`Page at ${state.url} did not finish loading within timeout, continuing with best-effort research`);
@@ -372,43 +369,36 @@ export class Researcher extends ResearcherBase implements Agent {
 
   private async waitUntilSettled(screenshot: boolean): Promise<boolean> {
     const errorPageTimeout = this.settings.errorPageTimeout ?? 10;
-    if (errorPageTimeout <= 0) return false;
+    const deadline = Date.now() + errorPageTimeout * 1000;
 
-    const includeScreenshot = screenshot && this.provider.hasVision();
-    let networkIdle = await this.explorer.withPage((page) => waitForNetworkIdle(page, errorPageTimeout * 1000));
-
-    for (let poll = 0; poll <= errorPageTimeout; poll++) {
-      if (poll > 0) networkIdle = await this.waitForSettlePoll();
+    for (let remaining = errorPageTimeout * 1000; remaining > 0; remaining = deadline - Date.now()) {
+      const rendered = await this.explorer.withPage((page) => waitForPageReadiness(page, { timeout: remaining, spinnerSelectors: this.config.playwright.spinnerSelectors }));
       await this.explorer.withPage(annotatePageElements);
-      this.actionResult = await this.explorer.capture({ screenshot: includeScreenshot });
-      const condition = detectPageCondition(this.actionResult!);
-      if (condition === 'error') {
-        throw new ErrorPageError(this.actionResult!.url, this.actionResult!.title, this.actionResult!.httpStatus);
-      }
+      this.actionResult = await this.explorer.capture({ screenshot: screenshot && this.provider.hasVision() });
+      const condition = await this.pageCondition(rendered);
+      if (condition === 'error') throw new ErrorPageError(this.actionResult!.url, this.actionResult!.title, this.actionResult!.httpStatus);
       if (condition === 'ok') return true;
-      if (this.actionResult!.getStateHash() === this.loadedStateHash) return true;
-      if (poll === 0 || poll % SETTLE_POLLS_BEFORE_ORACLE) continue;
-      if (await this.isFullyLoaded(networkIdle)) return true;
+
+      tag('step').log('Page is still loading, waiting for content...');
+      if (!(await this.explorer.withPage((page) => waitForDomChange(page, deadline - Date.now())))) return false;
     }
 
     return false;
   }
 
-  private async waitForSettlePoll(): Promise<boolean> {
-    const [networkIdle] = await Promise.all([this.explorer.withPage((page) => waitForNetworkIdle(page, SETTLE_POLL_MS)), sleep(SETTLE_POLL_MS)]);
-    return networkIdle;
-  }
+  private async pageCondition(rendered: boolean): Promise<PageCondition> {
+    const condition = detectPageCondition(this.actionResult!);
+    if (condition !== 'loading') return condition;
+    if (!this.judge && rendered) return 'ok';
+    if (!this.judge) return condition;
 
-  private async isFullyLoaded(networkIdle: boolean): Promise<boolean> {
-    const state = { ...pageEvidence(this.actionResult!), networkRequestsInProgress: !networkIdle };
-    const loaded = await this.provider.oracle(PAGE_LOADED_STATEMENT, state, { agentName: 'researcher', telemetry: { functionId: 'researcher.isFullyLoaded' } });
-    debugLog('Oracle judged page loaded:', loaded);
-    if (!loaded) {
-      tag('step').log('Page is still loading, waiting for content...');
-      return false;
-    }
-    this.loadedStateHash = this.actionResult!.getStateHash();
-    return true;
+    const conditions: Record<string, PageCondition> = {
+      'still loading: blank, splash screen, skeleton or loading placeholder': 'loading',
+      'error page: shows an error instead of the requested content': 'error',
+      'loaded: the main content is rendered': 'ok',
+    };
+    const decision = await this.judge.decide('The page was blank or barely rendered when it opened. What state is it in now?', [...Object.keys(conditions), UNDECIDED], pageEvidence(this.actionResult!));
+    return conditions[decision.value ?? ''] || 'ok';
   }
 
   private async hasHiddenContent(): Promise<boolean> {

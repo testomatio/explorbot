@@ -36,7 +36,7 @@ describe('Researcher waits for a page that renders late', () => {
     });
   }
 
-  function createResearcher() {
+  function createResearcher(judge?: any) {
     const explorer = {
       visit: captureRealState,
       capture: captureRealState,
@@ -55,17 +55,14 @@ describe('Researcher waits for a page that renders late', () => {
         getExperienceTracker: () => ({ getSuccessfulExperience: () => [], updateSummary: () => {} }),
       },
       knowledgeTracker: { getRelevantKnowledge: () => [], renderRelevantKnowledge: () => '', renderRelevantContext: () => '' },
+      judge,
       requestStore: {},
       playwrightRecorder: {},
     } as any);
   }
 
-  function isLoadedQuestion(req: any) {
-    return JSON.stringify(req.messages || []).includes('The page has finished loading');
-  }
-
-  function loadedQuestions() {
-    return mock.getRequests().filter((r: any) => isLoadedQuestion(r.body));
+  function verdict(options: string[], prefix: string) {
+    return { value: options.find((option) => option.startsWith(prefix)) || null };
   }
 
   beforeAll(async () => {
@@ -91,28 +88,58 @@ describe('Researcher waits for a page that renders late', () => {
     await mock.stop();
   });
 
-  it('keeps waiting while the oracle sees an unloaded page, then researches the rendered content', async () => {
+  it('keeps waiting while the page is blank, then researches the rendered content', async () => {
     await page.setContent(`<html><body><div id="app"></div><script>setTimeout(() => { document.open(); document.write(${JSON.stringify(TASK_BOARD_HTML)}); document.close(); }, 4500);</script></body></html>`);
-    mock.on({ predicate: isLoadedQuestion }, { content: JSON.stringify({ holds: false }) });
     mock.on({}, { content: research });
 
     const result = await createResearcher().research(await captureRealState());
 
-    expect(loadedQuestions().length).toBeGreaterThanOrEqual(1);
+    expect(mock.getRequests().length).toBe(1);
     const researchPrompt = JSON.stringify(mock.getRequests().at(-1)?.body);
     expect(researchPrompt).toContain('Create Task');
     expect(result).toContain('Create Task');
   }, 30000);
 
-  it('stops waiting when the oracle judges a small page fully loaded', async () => {
+  it('does not wait out the timeout on a small page that has rendered', async () => {
     await page.setContent('<html><body><h1>Welcome</h1><button>Continue</button></body></html>');
-    mock.on({ predicate: isLoadedQuestion }, { content: JSON.stringify({ holds: true }) });
     mock.on({}, { content: research });
 
     const started = Date.now();
     await createResearcher().research(await captureRealState());
 
-    expect(loadedQuestions().length).toBe(1);
+    expect(Date.now() - started).toBeLessThan(8000);
+  }, 30000);
+
+  it('asks the judge about a small page and keeps waiting while it is still loading', async () => {
+    await page.setContent(`<html><body><p>Starting</p><script>setTimeout(() => { document.open(); document.write(${JSON.stringify(TASK_BOARD_HTML)}); document.close(); }, 2000);</script></body></html>`);
+    mock.on({}, { content: research });
+    const questions: string[] = [];
+    const judge = { decide: async (question: string, options: string[]) => questions.push(question) && verdict(options, 'still loading') };
+
+    const result = await createResearcher(judge).research(await captureRealState());
+
+    expect(questions.length).toBe(1);
+    expect(result).toContain('Create Task');
+  }, 30000);
+
+  it('stops research when the judge sees an error page', async () => {
+    await page.setContent('<html><body><p>Something went wrong</p></body></html>');
+    mock.on({}, { content: research });
+    const judge = { decide: async (_: string, options: string[]) => verdict(options, 'error page') };
+
+    await expect(createResearcher(judge).research(await captureRealState())).rejects.toThrow('Error page detected');
+  }, 30000);
+
+  it('asks the judge once even when research retries on the same page', async () => {
+    await page.setContent('<html><body><h1>Welcome</h1><button>Continue</button></body></html>');
+    mock.on({}, { content: research });
+    let asked = 0;
+    const judge = { decide: async (_: string, options: string[]) => ++asked && verdict(options, 'loaded') };
+
+    const started = Date.now();
+    await createResearcher(judge).research(await captureRealState());
+
+    expect(asked).toBe(1);
     expect(Date.now() - started).toBeLessThan(8000);
   }, 30000);
 });
