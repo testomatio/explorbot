@@ -61,6 +61,10 @@ describe('Researcher waits for a page that renders late', () => {
     } as any);
   }
 
+  function verdict(options: string[], prefix: string) {
+    return { value: options.find((option) => option.startsWith(prefix)) || null };
+  }
+
   beforeAll(async () => {
     browser = await chromium.launch();
     page = await browser.newPage();
@@ -110,7 +114,7 @@ describe('Researcher waits for a page that renders late', () => {
     await page.setContent(`<html><body><p>Starting</p><script>setTimeout(() => { document.open(); document.write(${JSON.stringify(TASK_BOARD_HTML)}); document.close(); }, 2000);</script></body></html>`);
     mock.on({}, { content: research });
     const questions: string[] = [];
-    const judge = { pick: async (question: string) => questions.push(question) && 1 };
+    const judge = { decide: async (question: string, options: string[]) => questions.push(question) && verdict(options, 'still loading') };
 
     const result = await createResearcher(judge).research(await captureRealState());
 
@@ -121,7 +125,7 @@ describe('Researcher waits for a page that renders late', () => {
   it('stops research when the judge sees an error page', async () => {
     await page.setContent('<html><body><p>Something went wrong</p></body></html>');
     mock.on({}, { content: research });
-    const judge = { pick: async () => 2 };
+    const judge = { decide: async (_: string, options: string[]) => verdict(options, 'error page') };
 
     await expect(createResearcher(judge).research(await captureRealState())).rejects.toThrow('Error page detected');
   }, 30000);
@@ -130,7 +134,7 @@ describe('Researcher waits for a page that renders late', () => {
     await page.setContent('<html><body><h1>Welcome</h1><button>Continue</button></body></html>');
     mock.on({}, { content: research });
     let asked = 0;
-    const judge = { pick: async () => ++asked && 3 };
+    const judge = { decide: async (_: string, options: string[]) => ++asked && verdict(options, 'loaded') };
 
     const started = Date.now();
     await createResearcher(judge).research(await captureRealState());
