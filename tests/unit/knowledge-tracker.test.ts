@@ -5,7 +5,7 @@ import { Command } from 'commander';
 import matter from 'gray-matter';
 import { ActionResult } from '../../src/action-result.js';
 import { APPLICATION_SPEC_FORMAT, APPLICATION_SPEC_VERSION } from '../../src/application-spec-contract.ts';
-import { knowledgeOption } from '../../src/commands/options/index';
+import { authOption, knowledgeOption } from '../../src/commands/options/index';
 import { ConfigParser } from '../../src/config';
 import { KnowledgeTracker } from '../../src/knowledge-tracker';
 import { clearRegisteredSecrets, redactSecrets } from '../../src/utils/secrets';
@@ -385,6 +385,25 @@ describe('KnowledgeTracker', () => {
 
       expect(rendered[0]).toContain('Use the sandbox card');
       expect(rendered[1]).toBe('');
+    });
+
+    it('reaches the tracker from --auth or EXPLORBOT_AUTH on every page without touching disk', () => {
+      const program = new Command();
+      authOption.register(program);
+      const rendered: string[] = [];
+      program.command('explore <path>').action(() => {
+        rendered.push(new KnowledgeTracker().renderRelevantKnowledge(new ActionResult({ url: '/settings' })));
+      });
+
+      program.parse(['explore', '/', '--auth', 'login: admin password: secret123'], { from: 'user' });
+      KnowledgeTracker.resetSessionKnowledge();
+      process.env.EXPLORBOT_AUTH = 'Bearer: abc123';
+      program.parse(['explore', '/'], { from: 'user' });
+      Reflect.deleteProperty(process.env, 'EXPLORBOT_AUTH');
+
+      expect(rendered[0]).toContain('login: admin password: secret123');
+      expect(rendered[1]).toContain('Bearer: abc123');
+      expect(readdirSync(knowledgeDir)).toHaveLength(0);
     });
 
     it('never writes session knowledge to the knowledge directory', () => {
