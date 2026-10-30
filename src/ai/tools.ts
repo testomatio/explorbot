@@ -33,7 +33,7 @@ interface AgentToolDeps extends ToolDeps {
 
 export const ASSERTION_TOOLS = ['verify'] as const;
 
-export function createCodeceptJSTools({ explorer, stateManager, judge }: ToolDeps, task: Task) {
+export function createCodeceptJSTools({ explorer, stateManager, judge, researcher }: ToolDeps & { researcher?: Researcher }, task: Task) {
   return {
     click: tool({
       description: dedent`
@@ -254,6 +254,113 @@ export function createCodeceptJSTools({ explorer, stateManager, judge }: ToolDep
           judge,
           explanation
         );
+      },
+    }),
+
+    dragAndDrop: tool({
+      description: dedent`
+        Drag something on the page and drop it somewhere else: reorder list or tree items, move cards
+        between columns, drop into folders or zones, drag slider handles, draw on a canvas.
+
+        Give visual descriptions of what to grab and where to drop it — the tool locates both points
+        on the screenshot and drags between them with a real mouse. When items look alike, describe
+        the position (e.g. "the second card in the first column"). For a copy-drag that duplicates
+        the item, pass modifier.
+      `,
+      inputSchema: z.object({
+        from: z.string().describe('What to drag, by visible appearance and position (e.g. "card labeled Bug 5 in the first column", "round handle of the volume slider")'),
+        to: z.string().describe('Where to drop it, by visible appearance and position (e.g. "column labeled Done", "right end of the volume slider track")'),
+        modifier: z.enum(['Control', 'Shift', 'Alt', 'Meta', 'CommandOrControl']).optional().describe('Modifier key held during the whole drag, e.g. Control for a copy-drag that duplicates the item.'),
+        explanation: z.string().describe('Why you are dragging this element'),
+      }),
+      execute: async ({ from, to, modifier, explanation }) => {
+        const activeNote = task.startNote(explanation);
+
+        if (!researcher || Stats.visionDisabled) {
+          activeNote.commit(TestResult.FAILED);
+          return failedToolResult('dragAndDrop', 'Drag points cannot be located in this session. Use form() with I.dragAndDrop(source, target) instead.');
+        }
+
+        try {
+          const captured = await explorer.capture({ screenshot: true });
+
+          if (!captured.screenshot) {
+            activeNote.commit(TestResult.FAILED);
+            return failedToolResult('dragAndDrop', 'Failed to capture screenshot for locating the drag points');
+          }
+
+          const analysis = await researcher.checkDragPoints(captured, from, to);
+
+          if (!analysis) {
+            activeNote.commit(TestResult.FAILED);
+            return failedToolResult('dragAndDrop', 'Visual analysis failed to process the screenshot');
+          }
+
+          const points = dragPoints(analysis);
+
+          if (!points) {
+            activeNote.commit(TestResult.FAILED);
+            return failedToolResult('dragAndDrop', `Drag points not found: ${analysis}`, {
+              analysis,
+              suggestion: 'Describe what to drag and where to drop it more precisely, or scroll the target into view and retry.',
+            });
+          }
+
+          const previousState = ActionResult.fromState(stateManager.getCurrentState()!);
+          const action = explorer.action();
+          const dragCode = mouseDragCode(from, to, points);
+          const block = withModifier(dragCode, modifier);
+          const attempts: Array<{ command: string; success: boolean; error?: string }> = [];
+
+          const mouseSuccess = await action.attempt(block, explanation);
+          const attempt: { command: string; success: boolean; error?: string } = { command: dragCode, success: mouseSuccess };
+          if (!mouseSuccess && action.lastError) attempt.error = errorText(action.lastError);
+          attempts.push(attempt);
+
+          if (mouseSuccess) {
+            const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, dragCode);
+
+            if (hasObservablePageChange(toolResult)) {
+              await commitNote(activeNote, TestResult.PASSED, toolResult, action);
+              return successToolResult('dragAndDrop', { ...toolResult, points, analysis, attempts, code: block }, action);
+            }
+          }
+          await releaseModifier(action, modifier);
+
+          const dragged = await syntheticDragDrop(explorer, points, modifier);
+          attempts.push({ command: `${dragCode} (HTML5 drag events)`, success: dragged });
+
+          if (dragged) {
+            await explorer.capture();
+            const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, dragCode);
+
+            if (hasObservablePageChange(toolResult)) {
+              await commitNote(activeNote, TestResult.PASSED, toolResult, action);
+              return successToolResult('dragAndDrop', { ...toolResult, points, analysis, attempts, code: block, message: 'The drop landed only after HTML5 drag events were dispatched at the located points; the recorded mouse drag replays through the tool, which runs the same escalation.' }, action);
+            }
+          }
+
+          const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, dragCode);
+          await commitNote(activeNote, TestResult.FAILED, toolResult, action);
+          return failedToolResult(
+            'dragAndDrop',
+            'The drag changed nothing on the page',
+            {
+              ...toolResult,
+              points,
+              analysis,
+              attempts,
+              suggestion: 'Check that what you described is draggable and the target is a valid drop zone. When a drag starts from a handle, describe the handle as the grab point, not the whole card.',
+            },
+            action.lastError,
+            judge,
+            explanation
+          );
+        } catch (error) {
+          throwIfFatalBrowserError(error);
+          activeNote.commit(TestResult.FAILED);
+          return failedToolResult('dragAndDrop', `dragAndDrop tool failed: ${errorText(error)}`);
+        }
       },
     }),
 
@@ -1243,6 +1350,62 @@ function errorText(error: unknown): string {
   return 'Unknown error occurred';
 }
 
+function withModifier(command: string, modifier?: string): string {
+  if (!modifier) return command;
+  return `I.pressKeyDown(${JSON.stringify(modifier)})\n${command}\nI.pressKeyUp(${JSON.stringify(modifier)})`;
+}
+
+async function releaseModifier(action: any, modifier?: string): Promise<void> {
+  if (!modifier) return;
+  await action.attempt(`I.pressKeyUp(${JSON.stringify(modifier)})`, `Release the ${modifier} key left held by a failed drag`);
+}
+
+const SYNTHETIC_MODIFIER_KEYS: Record<string, string> = { Control: 'ctrlKey', Shift: 'shiftKey', Alt: 'altKey', Meta: 'metaKey', CommandOrControl: 'auto' };
+
+export function dragPoints(analysis: string): DragPoints | null {
+  const match = analysis.match(/grab\s+(\d+)X,\s*(\d+)Y.*?drop\s+(\d+)X,\s*(\d+)Y/is);
+  if (!match) return null;
+  return {
+    from: { x: Number.parseInt(match[1], 10), y: Number.parseInt(match[2], 10) },
+    to: { x: Number.parseInt(match[3], 10), y: Number.parseInt(match[4], 10) },
+  };
+}
+
+function mouseDragCode(from: string, to: string, points: DragPoints): string {
+  const { x: fx, y: fy } = points.from;
+  const { x: tx, y: ty } = points.to;
+  return `I.usePlaywrightTo(${JSON.stringify(`drag ${from} to ${to}`)}, async ({ page }) => { await page.mouse.move(${fx}, ${fy}); await page.mouse.down(); await page.waitForTimeout(200); await page.mouse.move(${tx}, ${ty}, { steps: 10 }); await page.waitForTimeout(200); await page.mouse.up(); })`;
+}
+
+export async function syntheticDragDrop(explorer: any, points: DragPoints, modifier?: string): Promise<boolean> {
+  const modifierKey = modifier ? SYNTHETIC_MODIFIER_KEYS[modifier] : undefined;
+  return explorer
+    .withPage(async (page: any) =>
+      page.evaluate(
+        ({ from, to, modifierKey }) => {
+          const startEl = document.elementFromPoint(from.x, from.y);
+          const endEl = document.elementFromPoint(to.x, to.y);
+          if (!startEl || !endEl) return false;
+          const key = modifierKey === 'auto' ? (navigator.platform.includes('Mac') ? 'metaKey' : 'ctrlKey') : modifierKey;
+          const dataTransfer = new DataTransfer();
+          const fire = (el: Element, type: string, at: { x: number; y: number }) => {
+            const init: any = { bubbles: true, cancelable: true, dataTransfer, clientX: at.x, clientY: at.y };
+            if (key) init[key] = true;
+            el.dispatchEvent(new DragEvent(type, init));
+          };
+          fire(startEl, 'dragstart', from);
+          fire(endEl, 'dragenter', to);
+          fire(endEl, 'dragover', to);
+          fire(endEl, 'drop', to);
+          fire(startEl, 'dragend', from);
+          return true;
+        },
+        { from: points.from, to: points.to, modifierKey }
+      )
+    )
+    .catch(() => false);
+}
+
 export async function commitNote(activeNote: any, result: TestResult, toolResult: any, action: any): Promise<void> {
   if (toolResult?.pageDiff?.ariaChanges || toolResult?.pageDiff?.urlChanged) {
     activeNote.screenshot = await action.saveScreenshot();
@@ -1359,6 +1522,7 @@ export function withdrawVisionTools(tools: Record<string, any>): void {
   if (!Stats.visionDisabled) return;
   Reflect.deleteProperty(tools, 'see');
   Reflect.deleteProperty(tools, 'visualClick');
+  Reflect.deleteProperty(tools, 'dragAndDrop');
 }
 
 export function clickFailureSuggestion(attempts: Array<{ error?: string }>): string {
@@ -1464,4 +1628,9 @@ interface MatchedElement {
   text: string;
   label: string;
   visible?: boolean;
+}
+
+export interface DragPoints {
+  from: { x: number; y: number };
+  to: { x: number; y: number };
 }

@@ -10,7 +10,7 @@ export function WithWebMode<T extends Constructor>(Base: T) {
     webModeTools(ctx: ModeContext): Record<string, any> {
       const explorer = ctx.explorBot.getExplorer();
       const toolDeps = { explorer, stateManager: ctx.explorBot.stateManager(), ai: ctx.explorBot.getProvider() };
-      const codeceptTools = createCodeceptJSTools(toolDeps, ctx.task);
+      const codeceptTools = createCodeceptJSTools({ ...toolDeps, researcher: ctx.explorBot.agentResearcher() }, ctx.task);
       const agentTools = createAgentTools({
         ...toolDeps,
         researcher: ctx.explorBot.agentResearcher(),
@@ -135,7 +135,7 @@ export function WithWebMode<T extends Constructor>(Base: T) {
     webModePrompt(): string {
       return dedent`
         <web_capabilities>
-        - Page actions: click, pressKey, form (CodeceptJS tools)
+        - Page actions: click, dragAndDrop, pressKey, form (CodeceptJS tools)
         - Navigation: navigate() — AI-powered navigation to URLs or page descriptions
         - Browser diagnostics: browser() — inspect status, evaluate JS, close tabs, screenshot, reload, recover closed/crashed pages, restart browser, open a fresh tab
         - Visual analysis: see() — screenshot-based page verification

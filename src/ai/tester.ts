@@ -40,7 +40,7 @@ const SAMPLE_FILES: Record<string, string> = {
 };
 
 export class Tester extends TaskAgent implements Agent {
-  protected readonly ACTION_TOOLS = ['click', 'hover', 'pressKey', 'form'];
+  protected readonly ACTION_TOOLS = ['click', 'hover', 'dragAndDrop', 'pressKey', 'form'];
   protected readonly DELEGATED_ACTION_TOOLS = ['interact', 'visualClick'];
   protected readonly SPECIAL_CONTEXT_ACTION_TOOLS = ['exitIframe'];
   emoji = '🧪';
@@ -249,7 +249,7 @@ export class Tester extends TaskAgent implements Agent {
       task.states.push(event.toState);
     });
 
-    const codeceptjsTools = createCodeceptJSTools(this.toolDeps, task);
+    const codeceptjsTools = createCodeceptJSTools({ ...this.toolDeps, researcher: this.researcher }, task);
     let assertionPerformed = false;
     let extensions = 0;
     let deadlineReached = false;

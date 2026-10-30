@@ -588,11 +588,7 @@ export const attachStepLogger = (target: ExecutedStep[], assertionsTarget?: Arra
     }
     if (batchFailed) return;
 
-    const executed: ExecutedStep = { command: step.toCode(), success: !error };
-    if (Object.keys(step.opts || {}).length) {
-      const args = [step.humanizeArgs(), `step.opts(${JSON.stringify(step.opts)})`].filter(Boolean).join(', ');
-      executed.command = `${step.prefix}${step.actor}.${step.title}(${args})${step.suffix}`;
-    }
+    const executed: ExecutedStep = { command: stepCode(step), success: !error };
     if (error) {
       executed.error = errorToString(error);
       batchFailed = true;
@@ -616,6 +612,24 @@ export const attachStepLogger = (target: ExecutedStep[], assertionsTarget?: Arra
     codeceptjs.event.dispatcher.off(codeceptjs.event.step.failed, listener);
   };
 };
+
+function stepCode(step: any): string {
+  const needsEscaping = (step.args || []).some((arg: any) => typeof arg === 'string' && arg.includes('"'));
+  if (!needsEscaping) {
+    if (!Object.keys(step.opts || {}).length) return step.toCode();
+    const args = [step.humanizeArgs(), `step.opts(${JSON.stringify(step.opts)})`].filter(Boolean).join(', ');
+    return `${step.prefix}${step.actor}.${step.title}(${args})${step.suffix}`;
+  }
+  const args = (step.args || [])
+    .filter((arg: any) => arg !== undefined)
+    .map((arg: any) => {
+      if (typeof arg === 'function') return arg.toString();
+      if (arg && typeof arg.getMasked === 'function') return JSON.stringify(arg.getMasked());
+      return JSON.stringify(arg);
+    });
+  if (Object.keys(step.opts || {}).length) args.push(`step.opts(${JSON.stringify(step.opts)})`);
+  return `${step.prefix}${step.actor}.${step.name}(${args.join(', ')})${step.suffix}`;
+}
 
 const readFocusedElement = () => {
   const el = document.activeElement as any;

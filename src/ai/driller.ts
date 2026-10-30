@@ -16,6 +16,7 @@ import { WebElement } from '../utils/web-element.ts';
 import type { Agent, AgentDeps } from './agent.ts';
 import type { Navigator } from './navigator.ts';
 import type { Provider } from './provider.ts';
+import type { Researcher } from './researcher.ts';
 import { drillLocatorRule } from './rules.ts';
 import { TaskAgent, isInteractive } from './task-agent.ts';
 import { createCodeceptJSTools, createLearnExperienceTool } from './tools.ts';
@@ -63,7 +64,7 @@ interface DrillOptions {
 }
 
 export class Driller extends TaskAgent implements Agent {
-  protected readonly ACTION_TOOLS = ['click', 'pressKey', 'form'];
+  protected readonly ACTION_TOOLS = ['click', 'dragAndDrop', 'pressKey', 'form'];
   emoji = 'D';
   private navigator: Navigator;
   private currentPlan?: Plan;
@@ -73,7 +74,11 @@ export class Driller extends TaskAgent implements Agent {
 
   MAX_COMPONENT_ITERATIONS = 12;
 
-  constructor(deps: AgentDeps, navigator: Navigator) {
+  constructor(
+    deps: AgentDeps,
+    navigator: Navigator,
+    private researcher?: Researcher
+  ) {
     super(deps);
     this.navigator = navigator;
   }
@@ -293,7 +298,7 @@ export class Driller extends TaskAgent implements Agent {
     conversation.addUserText(await this.buildComponentPrompt(originalState, component));
 
     let finished = false;
-    const actionTools = this.createVerifiedActionTools(createCodeceptJSTools(this.toolDeps, test), component);
+    const actionTools = this.createVerifiedActionTools(createCodeceptJSTools({ ...this.toolDeps, researcher: this.researcher }, test), component);
     const learnExperience = createLearnExperienceTool({
       getExperienceTracker: () => this.getExperienceTracker(),
       getState: () => ActionResult.fromState(this.stateManager.getCurrentState() || originalState),
