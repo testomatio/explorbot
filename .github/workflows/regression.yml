@@ -1,21 +1,19 @@
 # Self-regression: runs Explorbot end-to-end with real AI against a local fixture app.
 #
-# Cost: every run burns real LLM tokens. Each scenario runs as its own job (up to 60 minutes
-# of runner time each), so the run takes as long as its slowest scenario. It never
-# runs unapproved. Each push to a non-draft PR that changes src/ai/ queues a run whose scenario jobs
-# wait at the `regression` environment gate; a reviewer starts them with "Review
+# Cost: every run burns real LLM tokens and up to 60 minutes of runner time, so it never
+# runs unapproved. Each push to a non-draft PR that changes src/ai/ queues a run that
+# waits at the `regression` environment gate; a reviewer starts it with "Review
 # deployments → Approve and deploy" on the PR. Every push waits for its own approval, including the PR author's own pushes.
 # It can also be dispatched manually.
 #
+# The scenarios run in parallel inside one job, so a single approval starts all of them.
+# Each scenario job would wait at the gate separately.
+#
 # Security: the `regression` GitHub environment holds the OPENROUTER_API_KEY secret behind
-# a required reviewer. On `pull_request` (including forks) the jobs pause at the gate
-# BEFORE any secret is exposed. The jobs then run the PR's own code, so the reviewer MUST
+# a required reviewer. On `pull_request` (including forks) the job pauses at the gate
+# BEFORE any secret is exposed. The job then runs the PR's own code, so the reviewer MUST
 # read the PR diff before approving — that review is the security boundary. Do not switch
 # this to `pull_request_target` or check out PR head with secrets available.
-#
-# The report job holds no secret and skips the gate: it merges every scenario's records,
-# compares their durations with the last runs' `regression-summary` artifacts, posts the
-# report and uploads this run's summary for the next run to compare against.
 name: Regression
 
 on:
@@ -49,15 +47,11 @@ permissions:
   discussions: write
 
 jobs:
-  scenario:
+  regression:
     if: github.event_name == 'workflow_dispatch' || !github.event.pull_request.draft
     runs-on: ubuntu-latest
     environment: regression
     timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      matrix:
-        scenario: ${{ fromJSON((github.event.inputs.scenario || 'all') == 'all' && '["basic","experience","slow","gated"]' || format('["{0}"]', github.event.inputs.scenario)) }}
 
     steps:
       - name: Checkout code
@@ -74,51 +68,28 @@ jobs:
       - name: Install Playwright browsers
         run: bunx playwright install --with-deps chromium
 
-      - name: Run regression scenario
-        run: bunx bunosh regression:${{ matrix.scenario }} --retries ${{ github.event.inputs.retries || '2' }} --variant ${{ github.event.inputs.variant || 'native' }} --seed ${{ github.event.inputs.seed || '42' }}
+      - name: Run regression scenarios
+        run: bunx bunosh regression:${{ github.event.inputs.scenario || 'all' }} --retries ${{ github.event.inputs.retries || '2' }} --variant ${{ github.event.inputs.variant || 'native' }} --seed ${{ github.event.inputs.seed || '42' }}
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
 
-      - name: Upload run artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: regression-runs-${{ matrix.scenario }}
-          path: tests/regression/.runs
-          if-no-files-found: ignore
-
-  report:
-    needs: scenario
-    if: always() && needs.scenario.result != 'skipped'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v1
-        with:
-          bun-version: latest
-
-      - name: Install dependencies
-        run: bun install
-
-      - name: Download scenario runs
-        uses: actions/download-artifact@v4
-        with:
-          pattern: regression-runs-*
-          path: tests/regression/.runs
-          merge-multiple: true
-
       - name: Post report
+        if: always()
         continue-on-error: true
         run: bunx bunosh regression:report
         env:
           GH_TOKEN: ${{ github.token }}
 
+      - name: Upload run artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: regression-runs
+          path: tests/regression/.runs
+          if-no-files-found: ignore
+
       - name: Upload summary
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: regression-summary

@@ -710,7 +710,7 @@ bunosh worktree:delete [branch]   # remove a worktree by branch name or path, pr
 
 ## CI
 
-`.github/workflows/regression.yml` runs Explorbot end-to-end against real AI models. It costs real tokens and up to an hour of runner time per scenario job, so it is gated behind a deliberate human action: every push to a non-draft PR that changes `src/ai/` queues a run that waits at the `regression` environment gate until a reviewer clicks "Approve and deploy" on the PR, or a manual dispatch.
+`.github/workflows/regression.yml` runs Explorbot end-to-end against real AI models. It costs real tokens and up to 60 minutes of runner time per run, so it is gated behind a deliberate human action: every push to a non-draft PR that changes `src/ai/` queues a run that waits at the `regression` environment gate until a reviewer clicks "Approve and deploy" on the PR, or a manual dispatch.
 
 **Never start a regression run.** Do not approve the `regression` environment gate, do not `gh workflow run regression.yml`, and do not re-run its jobs. Only the user decides when it runs.
 

@@ -370,17 +370,14 @@ export async function regressionExperience(options = { retries: 2, variant: 'nat
 }
 
 /**
- * Run all regression scenarios.
+ * Run all regression scenarios in parallel.
  * @param {object} options
  * @param {number} [options.retries=2]
  * @param {string} [options.variant=native]
  * @param {number} [options.seed=42]
  */
 export async function regressionAll(options = { retries: 2, variant: 'native', seed: 42 }) {
-  await regressionBasic(options);
-  await regressionExperience(options);
-  await regressionSlow(options);
-  await regressionGated(options);
+  await Promise.all([regressionBasic(options), regressionExperience(options), regressionSlow(options), regressionGated(options)]);
 }
 
 /**
