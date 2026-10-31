@@ -376,18 +376,15 @@ export class ExploreCommand extends BaseCommand {
     const before = new Set(this.explorBot.getCurrentPlan()?.tests ?? []);
 
     await this.explorBot.plan(feature, opts);
-    if (this.explorBot.lastPlanError instanceof PlanningBlockedError && !this.dryRun) {
-      await this.explorBot.agentCaptain().handle(this.explorBot.lastPlanError.message, { reset: true });
-      if (pageUrl) await this.explorBot.visit(pageUrl);
-      await this.explorBot.plan(feature, opts);
+    const blocked = this.explorBot.lastPlanError;
+    if (blocked instanceof PlanningBlockedError) {
+      if (!this.dryRun) await this.explorBot.agentCaptain().handle(blocked.message, { reset: true });
+      if (this.printAddedTests(before, opts.style, pageUrl) === 0) tag('warning').log(`Skipping page ${blocked.url}: ${blocked.prerequisite}`);
+      return;
     }
     if (this.explorBot.lastPlanError) {
       if (this.explorBot.lastPlanError instanceof ErrorPageError) {
         throw this.explorBot.lastPlanError;
-      }
-      if (this.explorBot.lastPlanError instanceof PlanningBlockedError) {
-        tag('warning').log(`Skipping page: ${this.explorBot.lastPlanError.message}`);
-        return;
       }
       tag('info').log(`Retrying planning style '${opts.style}'...`);
       if (pageUrl && !this.dryRun) await this.explorBot.visit(pageUrl);
@@ -398,12 +395,15 @@ export class ExploreCommand extends BaseCommand {
       }
     }
 
-    const planAfter = this.explorBot.getCurrentPlan();
-    if (!planAfter) return;
-    const added = planAfter.tests.filter((t) => !before.has(t));
-    if (added.length === 0) return;
+    this.printAddedTests(before, opts.style, pageUrl);
+  }
+
+  private printAddedTests(before: Set<Test>, style: string, pageUrl?: string): number {
+    const added = this.explorBot.getCurrentPlan()?.tests.filter((t) => !before.has(t)) ?? [];
+    if (added.length === 0) return 0;
     const urlNote = pageUrl ? ` for ${pageUrl}` : '';
-    this.printPreview(`Planner added ${added.length} new test(s) [style=${opts.style}]${urlNote}:`, added);
+    this.printPreview(`Planner added ${added.length} new test(s) [style=${style}]${urlNote}:`, added);
+    return added.length;
   }
 
   private parseConfigure(raw: string | undefined): ConfigureSpec {

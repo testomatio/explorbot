@@ -1,3 +1,4 @@
+import dedent from 'dedent';
 import { ActionResult } from '../action-result.js';
 import type { WebPageState } from '../state-manager.js';
 import { isBodyEmpty, sanitizeHtmlString } from './html.js';
@@ -71,9 +72,18 @@ export class ErrorPageError extends Error {
 export class PlanningBlockedError extends Error {
   constructor(
     public readonly url: string,
-    public readonly prerequisite: string
+    public readonly prerequisite: string,
+    public readonly feature?: string,
+    public readonly style?: string
   ) {
-    super(`Planner could not plan ${url}: ${prerequisite}`);
+    let focus = '';
+    if (feature) focus = ` focused on "${feature}"`;
+    let styleNote = '';
+    if (style) styleNote = ` in ${style} style`;
+    super(dedent`
+      Planner was asked to plan tests for ${url}${focus}${styleNote} but stopped: ${prerequisite}.
+      Look at the current page to find out what blocks planning, resolve it, then call plan() to re-plan this page. If it cannot be resolved, finish without planning.
+    `);
     this.name = 'PlanningBlockedError';
   }
 }

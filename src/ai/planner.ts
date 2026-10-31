@@ -235,7 +235,7 @@ export class Planner extends PlannerBase implements Agent {
         tag('warning').log(`Page is not plannable: ${blockedBy}`);
       }
       if (!this.currentPlan && fromPlanning.length === 0 && prerequisite) {
-        throw new PlanningBlockedError(state.url, prerequisite);
+        throw new PlanningBlockedError(state.url, prerequisite, feature, style);
       }
 
       return { tests: fromPlanning, planName: parsedPlan?.title };

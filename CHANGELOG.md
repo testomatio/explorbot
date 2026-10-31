@@ -58,6 +58,8 @@
 - Console output: documents and digests are printed in a framed block, long step lines wrap to the terminal width and are cut after 10 lines. "Next steps" lists the recommended command first, highlighted.
 - CLI help: commands are grouped (Explore, Steps, Results, Knowledge & rules, Setup, More tools, Help), shared flags appear under global options, and the help ends with usage examples.
 - `plans`: suggests `explorbot test <plan> 1` instead of `--from-plan`.
+- [Captain] Can run the planner on the current page with a new `plan()` tool. It adds tests to the current plan when that plan is for this page, and starts a new plan otherwise.
+- [Planner] [Captain] When `explore` hits a page the planner can't plan, such as a sign-in form at the URL you asked for, Captain gets the planner's report: the page, the focus, the planning style and what blocks it. Captain works out from the browser session how to get past it, then re-plans the page itself. If Captain adds no tests, the page is skipped.
 
 ## 2026-10-28
 
