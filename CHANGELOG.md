@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-10-31
+
+### Configuration
+- **`ai.decisionModel`** — The OpenRouter recommendation is now `~typesafe/jev-latest`. The previous one, `typesafe/jev-latest`, does not exist on OpenRouter, so with `recommendedModels: 'openrouter'` every decision quietly failed and Explorbot ran as if no decision model were set. To pin it yourself: `decisionModel: { provider: 'openrouter', model: '~typesafe/jev-latest' }`.
+
+### Changes
+- A decision model that fails now prints one warning per session (`Decision model … failed …; continuing without it`) instead of failing silently.
+- `explorbot config` and the models table shown at startup now list the decision model.
+
 ## 2026-10-28
 
 ### Changes
