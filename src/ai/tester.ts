@@ -154,7 +154,8 @@ export class Tester extends TaskAgent implements Agent {
       offFailedRequest?.();
       return await this.abortStartedTestOnErrorPage(task, initialState);
     }
-    if (task.startUrl && (await this.judge?.assert(`This is the right page to start the test: ${task.scenario}`, pageEvidence(initialState))) === false) {
+    const startEvidence = { ...pageEvidence(initialState), scenario: task.scenario, expected: task.expected, plannedSteps: task.plannedSteps, notes: task.notesToString() };
+    if ((await this.judge?.assert('This is the right page to start the test', startEvidence)) === false) {
       offFailedRequest?.();
       throw new TestStartBlockedError(task.scenario, task.startUrl, initialState.url || '');
     }

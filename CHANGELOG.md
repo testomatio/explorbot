@@ -8,7 +8,7 @@
 - [Captain] Captain takes over when another agent is blocked, then the work continues. This applies wherever Explorbot opens a page, plans a page or starts a test, including `explore` and `freesail`. Captain is told what the agent was asked to do, where it stopped, why, and what was already tried. If Captain can't resolve a blocker, the page or test is skipped, and that blocker isn't handed to Captain again in the same run.
 - [Captain] When Captain re-plans a page the planner reported blocked, the plan keeps the focus and planning style the planner was originally asked for. Before, the text describing the blocker, such as the sign-in step, could become the plan's focus.
 - [Navigator] A page the Navigator can't reach after all its attempts goes to Captain before the page is skipped.
-- [Tester] With `ai.decisionModel` set, the judge checks before each test that the open page is where the test can start, for example that the session hasn't expired. If it isn't, the test doesn't start. In `explore` and `freesail`, Captain resolves it and the test runs again; otherwise, and in `test`, the test is skipped.
+- [Tester] With `ai.decisionModel` set, the judge checks before each test that the open page is where the test can start, given the scenario, its expected outcomes, planned steps and notes, for example that the session hasn't expired. If it isn't, the test doesn't start. In `explore` and `freesail`, Captain resolves it and the test runs again; otherwise, and in `test`, the test is skipped.
 
 ## 2026-10-28
 
