@@ -22,7 +22,6 @@ import { normalizeInlineText } from '../utils/strings.ts';
 import { extractStatePath, isSameHostFamily, matchesNavigationUrl } from '../utils/url-matcher.js';
 import type { UrlFilter } from '../utils/url-filter.ts';
 import type { Agent, AgentDeps } from './agent.js';
-import type { Conversation } from './conversation.js';
 import { type Decision, JUDGE_PAGE_CAP, type Judge, UNDECIDED } from './judge.ts';
 import type { Provider } from './provider.js';
 import { Researcher } from './researcher.ts';
@@ -402,7 +401,7 @@ class Navigator implements Agent {
         Propose different solutions to achieve the result.
         Solution should be valid CodeceptJS code.
         Use only data from the <page> context to plan the solution.
-        The page is given as an ARIA snapshot only: use ARIA and text locators from it.
+        The page is given as an ARIA snapshot only: use ARIA and text locators from it; propose CSS/XPath only once <page_html> is provided.
         Full HTML is provided if these solutions fail.
         Try various ways to achieve the result
       </task>
@@ -772,7 +771,7 @@ class Navigator implements Agent {
         Do not generate assertions that would pass even if the specific claim is false.
       </task>
 
-      ${RulesLoader.loadRules('navigator', ['verification-actions'], actionResult.url || '')}
+      ${RulesLoader.loadRules('navigator', ['verification-actions', 'verification-output'], actionResult.url || '').replace('{{maxAttempts}}', String(this.verifyAttempts))}
 
       ${experience}
 

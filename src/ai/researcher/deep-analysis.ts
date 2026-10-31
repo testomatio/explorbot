@@ -55,7 +55,7 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
         }
       }
 
-      let expandables = await this._discoverExpandables(result.text, missing, verifiedCodes);
+      let expandables = await this._discoverExpandables(result.text, missing);
       if (expandables.length > maxClicks) {
         expandables = await this._selectExpandables(expandables, state.fullUrl || state.url, maxClicks);
         tag('substep').log(`Selected ${expandables.length} expandables to click (max: ${maxClicks})`);
@@ -204,7 +204,7 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
       }
     }
 
-    private async _discoverExpandables(researchText: string, missing: PreviousSection[] = [], verifiedCodes: string[] = []): Promise<ExpandableElement[]> {
+    private async _discoverExpandables(researchText: string, missing: PreviousSection[] = []): Promise<ExpandableElement[]> {
       const allElements = new Map<string, ExpandableElement>();
       for (const section of parseResearchSections(researchText)) {
         for (const el of section.elements) {

@@ -529,7 +529,7 @@ export class Provider {
       // Log tool usage summary
       if (response.toolCalls && response.toolCalls.length > 0) {
         responseLog(response.toolCalls);
-        response.toolCalls.forEach((call: any, index: number) => {
+        response.toolCalls.forEach((call: any) => {
           tag('debug').log(`${call.toolName} > ${Object.values(call?.input || []).join(', ')}`);
         });
       }

@@ -245,8 +245,8 @@ describe('Navigator resolveState', () => {
 
     await harness.navigator.resolveState('reach /defects', fakeActionResult(), { expectedUrl: '/defects' });
 
-    expect(harness.sent[0]).not.toContain('<page_html>');
-    expect(harness.sent[1]).toContain('<page_html>');
+    expect(harness.sent[0]).not.toContain('Full HTML context:');
+    expect(harness.sent[1]).toContain('Full HTML context:');
   });
 
   it('gives the retry the HTML of the page as it is now, not as it was at the start', async () => {

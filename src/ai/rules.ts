@@ -45,7 +45,7 @@ const locatorStrategyRule = dedent`
   3. Use ARIA snapshot to identify element state (focused, visible, selected, expanded, etc.)
   4. Match semantic proximity - elements near fields you just interacted with
 
-  Once the correct element is identified pick the best unique locator following priority: ARIA → CSS → XPath
+  Once the correct element is identified pick the best unique locator following priority: ARIA → text → CSS → XPath
   </disambiguation>
 
   ARIA locators must specify role. Specify locator type as JSON string with role and text keys.
@@ -101,7 +101,7 @@ const locatorStrategyRule = dedent`
   <xpath_rules>
   XPath locators must start with //.
   XPath may use positional indices [1], [2] and contains(., "text") as a last-resort disambiguator when attribute/text strategies are exhausted.
-  XPath should rely less on class names — prefer element hierarchy, position, and text content.
+  XPath should rely less on class names — prefer element hierarchy, attributes, and text content.
   XPath and CSS MUST provide different strategies for finding the same element.
   </xpath_rules>
 
@@ -118,7 +118,7 @@ const locatorStrategyRule = dedent`
 
   <bad locator example>
     'a.filter-tab:nth-of-type(1)' // WRONG: positional in CSS, use :has-text("Active") instead
-    '//a[contains(@class,"filter-tab") and contains(@class,"active")]' // WRONG: XPath repeats CSS approach, provide a different strategy e.g. //a[contains(@class,"filter-tab")][1]
+    '//a[contains(@class,"filter-tab") and contains(@class,"active")]' // WRONG: XPath repeats CSS approach, provide a different strategy e.g. //a[normalize-space()="Active"]
     '//table//tbody/tr[1]//button[contains(@onclick,'fn()')]' // onclick is not semantic attribute
     '//html/body/vue-button-123' // vue-framework specific locator
     'link "New Item"'  // WRONG: malformed string, use {"role":"link","text":"New Item"}
@@ -225,7 +225,7 @@ export const focusedElementRule = dedent`
   When a text input element is focused (textbox, combobox, contenteditable):
 
   To CLEAR the field before typing:
-  - I.pressKey(['Meta', 'a']);  // Select all (use 'Control' on Windows/Linux)
+  - I.pressKey(['CommandOrControl', 'a']);  // Select all
   - I.pressKey('Backspace');    // Delete selection
 
   To TYPE into the focused element:
@@ -420,8 +420,7 @@ export const actionRule = dedent`
     I.pressKey('Escape');          // Press Escape key
     I.pressKey('Tab');             // Press Tab key
     I.pressKey('Backspace');       // Press Backspace key
-    I.pressKey(['Control', 'a']); // Select all (Ctrl+A)
-    I.pressKey(['Meta', 'a']);    // Select all on Mac (Cmd+A)
+    I.pressKey(['CommandOrControl', 'a']); // Select all
     I.pressKey(['Shift', 'Tab']); // Shift+Tab to go back
     I.pressKey('ArrowDown');      // Navigate dropdown options
   </example>
@@ -518,7 +517,7 @@ export const actionRule = dedent`
     I.seeClipboardEquals('ABC-123');
   </example>
 
-  [DO NEVER USE OTHER CODECEPTJS COMMANDS THAN PROPOSED HERE]
+  [Prefer the commands listed here; use other CodeceptJS I.* commands when none of these fits]
   [INTERACT ONLY WITH ELEMENTS THAT ARE ON THE PAGE HTML]
   [DO NOT USE WAIT FUNCTIONS]
 

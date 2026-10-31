@@ -3,14 +3,13 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { CommandHandler } from '../command-handler.js';
 import type { ExplorbotConfig } from '../config.js';
 import { executionController } from '../execution-controller.ts';
-import type { ExplorBot, ExplorBotOptions } from '../explorbot.ts';
+import type { ExplorBot } from '../explorbot.ts';
 import type { KnowledgeTracker } from '../knowledge-tracker.js';
 import type { StateTransition, WebPageState } from '../state-manager.js';
 import { Test } from '../test-plan.ts';
 import { tag } from '../utils/logger.js';
 import ActivityPane from './ActivityPane.js';
 import Autocomplete from './Autocomplete.js';
-import InputPane from './InputPane.js';
 import InputReadline from './InputReadline.js';
 import LogPane from './LogPane.js';
 import PlanEditor from './PlanEditor.js';
@@ -23,17 +22,15 @@ import WelcomeCommands from './WelcomeCommands.js';
 interface AppProps {
   explorBot: ExplorBot;
   initialShowInput?: boolean;
-  exitOnEmptyInput?: boolean;
 }
 
-export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = false }: AppProps) {
+export function App({ explorBot, initialShowInput = false }: AppProps) {
   const sessionStartedAtRef = useRef<number>(Date.now());
   const InputComponent = InputReadline;
   const [showSessionTimer, setShowSessionTimer] = useState(false);
   const [showInput, setShowInput] = useState(initialShowInput);
   const [interruptPrompt, setInterruptPrompt] = useState<string | null>(null);
   const [currentState, setCurrentState] = useState<WebPageState | null>(null);
-  const [lastTransition, setLastTransition] = useState<StateTransition | null>(null);
   const [tasks, setTasks] = useState<Test[]>([]);
   const tasksRef = useRef<Test[]>([]);
   const [showPlanEditor, setShowPlanEditor] = useState(false);
@@ -72,7 +69,6 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
 
     unsubscribe = manager.onStateChange((transition: StateTransition) => {
       if (mounted) {
-        setLastTransition(transition);
         setCurrentState(transition.toState);
       }
     });

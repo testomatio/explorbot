@@ -20,7 +20,7 @@ export function createApiCommands(name = 'api'): Command {
     .option('--style <style>', 'Planning style: basename of a file in rules/chief/styles/')
     .option('--fresh', 'Start planning from scratch')
     .action(async (endpoint, options) => {
-      await run(name, options, endpoint, async (bot) => {
+      await run(options, endpoint, async (bot) => {
         const command = new PlanCommand(bot);
         command.prefix = name;
         command.style = options.style;
@@ -50,7 +50,7 @@ export function createApiCommands(name = 'api'): Command {
   RecommendedModelsCommand.register(cmd);
 
   addCommonOptions(cmd.command('test <planfile> [index]').description('Execute tests from a plan file. Index: 1, 1-3, *')).action(async (planfile, index, options) => {
-    await run(name, options, undefined, async (bot) => {
+    await run(options, undefined, async (bot) => {
       const command = new TestCommand(bot);
       command.index = index;
       await command.execute(planfile);
@@ -60,7 +60,7 @@ export function createApiCommands(name = 'api'): Command {
   });
 
   addCommonOptions(cmd.command('explore <endpoint>').description('Full cycle: plan, execute tests, re-plan. Use * to cover many endpoints, or the base endpoint for all of them')).action(async (endpoint, options) => {
-    await run(name, options, endpoint, async (bot) => {
+    await run(options, endpoint, async (bot) => {
       const command = new ExploreCommand(bot);
       await command.execute(endpoint);
       if (command.result.failed) return 1;
@@ -101,7 +101,7 @@ export function createApiCommands(name = 'api'): Command {
   return cmd;
 }
 
-async function run(name: string, options: any, endpoint: string | undefined, body: (bot: ApiBot) => Promise<number>): Promise<void> {
+async function run(options: any, endpoint: string | undefined, body: (bot: ApiBot) => Promise<number>): Promise<void> {
   setPreserveConsoleLogs(true);
   try {
     if (endpoint && URL.canParse(endpoint)) options.endpoint ||= endpoint;

@@ -17,7 +17,7 @@ import type { KnowledgeTracker } from './knowledge-tracker.js';
 import type { PlaywrightRecorder } from './playwright-recorder.ts';
 import type { Reporter } from './reporter.ts';
 import type { StateManager } from './state-manager.js';
-import { Test, TestResult } from './test-plan.ts';
+import { Test } from './test-plan.ts';
 import { BrowserRecoveryError, browserErrorMessage, isFatalBrowserError, isNavigationTransitionError } from './utils/browser-errors.ts';
 import { createDebug, log, tag } from './utils/logger.js';
 import { sleep, waitForPageReadiness } from './utils/page-readiness.ts';
@@ -201,7 +201,7 @@ class Explorer {
 
     this._activeTest = test;
     test.start();
-    await this.reporter.reportTestStart(test);
+    await this.reporter.reportTestStart();
     await this.closeOtherTabs();
     this.stateManager.otherTabs = [];
 

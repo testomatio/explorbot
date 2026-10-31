@@ -34,7 +34,7 @@ Inside the TUI, use the matching slash command: `/explore`, `/research`, `/plan`
 | List saved plans | `npx explorbot plans [plan]` | `/plans [plan]` | Show plans and their tests |
 | Navigate to a URL | `npx explorbot navigate <url>` | `/navigate <target>` | Reachability probe + session capture |
 | Drill page components | `npx explorbot drill <url>` | `/drill [--save-knowledge <path>] [--max-components <n>]` | Learn interactions |
-| Execute plan tests | `npx explorbot test <planfile> [index]` | `/test [scenario\|number\|*]` | Run scenarios |
+| Execute plan tests | `npx explorbot test <planfile> [index]` | `/test [planfile] [scenario\|number\|*]` | Run scenarios |
 | Re-run generated tests | `npx explorbot rerun <file> [index]` | `/rerun <file> [index]` | With AI auto-healing |
 | List generated tests | `npx explorbot runs [file]` | `/runs [file]` | Index + dry-run |
 | Store domain knowledge | `npx explorbot learn [url] [note]` | `/learn [note]` | Persisted to `knowledge/` |
@@ -454,6 +454,8 @@ Execute test scenarios using the Tester agent.
 ```bash
 # CLI
 npx explorbot test output/plans/login.md          # run all enabled tests
+npx explorbot test login                          # same, plan looked up in output/plans
+npx explorbot test login --path example           # plan looked up in example/output/plans
 npx explorbot test output/plans/login.md 3        # run test #3
 npx explorbot test output/plans/login.md 1-5      # range
 npx explorbot test output/plans/login.md 1,3,7    # selection
@@ -463,9 +465,11 @@ npx explorbot test 3 --from-plan output/plans/login.md   # index first, plan via
 
 ```
 # TUI
-/test              # Run next pending test
+/test              # Run next pending test of the current plan
 /test *            # Run all pending tests
 /test 2            # Run test #2 from plan
+/test login.md     # Load plan file and run all its tests
+/test login.md 2   # Load plan file and run test #2
 /test login        # Run tests matching "login"
 /test User can logout successfully   # Create and run ad-hoc test
 ```

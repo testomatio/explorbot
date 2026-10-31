@@ -6,7 +6,6 @@ import { type Store, createStore } from './store.ts';
 export const VAULT_CODE = 'K7-9284-XRAY-TANGO';
 const VAULT_DOCS = ['Quarterly report', 'Design archive', 'Payroll ledger'];
 const SIGN_IN_TARGETS: Record<string, string> = { '/login': '/issues', '/workspace': '/workspace' };
-const PUBLIC_PATHS = ['/login', '/logout', '/vault', '/vault/unlock', '/assets/client.js'];
 
 const CLIENT_JS = await Bun.file(`${import.meta.dir}/client.js`).text();
 
@@ -137,7 +136,7 @@ async function handle(req: Request, store: Store, defaultVariant: VariantMode, d
 
   if (path === '/settings' && method === 'GET') {
     const saved = url.searchParams.get('saved') === '1';
-    return html(settingsPage(reg, store, user, url.searchParams.get('tab') || 'profile', saved));
+    return html(settingsPage(reg, user, url.searchParams.get('tab') || 'profile', saved));
   }
   if (path === '/settings' && method === 'POST') {
     const form = await req.formData();

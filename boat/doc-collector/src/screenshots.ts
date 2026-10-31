@@ -10,7 +10,7 @@ import { safeFilename, sanitizeFilename } from '../../../src/utils/strings.ts';
 import type { PageDocumentation } from './ai/documentarian.ts';
 import type { DocStateTransition } from './ai/tools.ts';
 import type { DocbotConfig } from './config.ts';
-import { addPadding, captureInteractionAfter, captureInteractionBefore, regionAround, saveRegion } from './interaction-screenshots.ts';
+import { captureInteractionAfter, captureInteractionBefore, regionAround, saveRegion } from './interaction-screenshots.ts';
 
 const DEFAULT_MAX_SECTION_SCREENSHOTS = 8;
 const EVIDENCE_PADDING = 250;

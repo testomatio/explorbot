@@ -39,7 +39,6 @@ export interface VerificationStep {
 }
 
 export class PlaywrightRecorder {
-  private context: any = null;
   private tracing: any = null;
   private active = false;
   private nextGroupId = 0;
@@ -68,7 +67,6 @@ export class PlaywrightRecorder {
       debugLog('start: no tracing on browserContext, recorder inactive');
       return;
     }
-    this.context = browserContext;
     this.tracing = browserContext.tracing;
     try {
       await this.tracing.start({});

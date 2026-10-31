@@ -1,5 +1,6 @@
-import { getCliName } from '../utils/cli-name.ts';
-import { type NextStepSection, printNextSteps, relativeToCwd } from '../utils/next-steps.ts';
+import path from 'node:path';
+import { printNextSteps } from '../utils/next-steps.ts';
+import { PlanCommand } from './plan-command.js';
 import { BaseCommand, type Suggestion } from './base-command.js';
 
 export class PlanSaveCommand extends BaseCommand {
@@ -17,20 +18,8 @@ export class PlanSaveCommand extends BaseCommand {
     const savedPath = this.explorBot.savePlan(filename);
     if (!savedPath) return;
 
-    const cli = getCliName();
-    const relPlan = relativeToCwd(savedPath);
-    const sections: NextStepSection[] = [
-      {
-        label: 'Plan',
-        path: savedPath,
-        commands: [
-          { label: 'Re-run', command: `${cli} test ${relPlan} 1` },
-          { label: 'Run all', command: `${cli} test ${relPlan} *` },
-          { label: 'Run range', command: `${cli} test ${relPlan} 1-3` },
-          { label: 'Reload', command: `/plan:load ${relPlan}` },
-        ],
-      },
-    ];
-    printNextSteps(sections);
+    const section = PlanCommand.planSection(savedPath);
+    section.commands?.push({ label: 'Reload', command: `/plan:load ${path.basename(savedPath, '.md')}` });
+    printNextSteps([section]);
   }
 }
