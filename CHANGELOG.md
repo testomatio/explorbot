@@ -5,6 +5,8 @@
 ### Changes
 - [Captain] Can run the planner on the current page with a new `plan()` tool. It adds tests to the current plan when that plan is for this page, and starts a new plan otherwise.
 - [Planner] [Captain] When `explore` hits a page the planner can't plan, such as a sign-in form at the URL you asked for, Captain gets the planner's report: the page, the focus, the planning style and what blocks it. Captain works out from the browser session how to get past it, then re-plans the page itself. If Captain adds no tests, the page is skipped.
+- [Researcher] A dialog or drawer left open while a test runs is researched once per page, not again on every step. Before, a dialog that showed nothing new was re-researched on each attempt, which made tests that submit the same form repeatedly much slower.
+- [Pilot] A search, filter or other change that only alters the URL's query string (`/issues` → `/issues?q=login`) no longer counts as moving to a new page, so Pilot doesn't review the page again. A different path or a different `#/route` still gets a review.
 
 ## 2026-10-28
 
