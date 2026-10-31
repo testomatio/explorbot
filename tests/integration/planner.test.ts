@@ -371,7 +371,7 @@ describe('Planner with aimock', () => {
 
     expect(error).toBeInstanceOf(PlanningBlockedError);
     expect(error.url).toBe('/tasks/board');
-    expect(error.prerequisite).toBe('Sign in');
+    expect(error.blocker).toBe('Sign in');
     expect(error.feature).toBe('task filters');
     expect(getRegisteredPlan('/tasks/board')).toBeFalsy();
   });

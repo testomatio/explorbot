@@ -2,8 +2,8 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import { ExploreCommand } from '../../src/commands/explore-command.ts';
 import { ConfigParser } from '../../src/config.ts';
 import type { ExplorBot } from '../../src/explorbot.ts';
-import { Plan, Test } from '../../src/test-plan.ts';
-import { PlanningBlockedError } from '../../src/utils/error-page.ts';
+import { Plan, Test, TestResult } from '../../src/test-plan.ts';
+import { PlanningBlockedError, TestStartBlockedError } from '../../src/utils/error-page.ts';
 
 beforeEach(() => {
   ConfigParser.resetForTesting();
@@ -488,49 +488,64 @@ describe('ExploreCommand max duration', () => {
   });
 });
 
-describe('ExploreCommand on a page the planner reports blocked', () => {
-  function setupBlockedBot(captainPlans: boolean) {
+describe('ExploreCommand on a page that stays blocked', () => {
+  test('skips the page without a generic retry', async () => {
     const calls: string[] = [];
-    const plan = new Plan('Workspace');
-    const blocked = new PlanningBlockedError('/workspace', 'Sign in', undefined, 'normal');
     const explorBot: any = {
       lastPlanError: null,
       plan: async () => {
         calls.push('plan');
-        explorBot.lastPlanError = blocked;
+        explorBot.lastPlanError = new PlanningBlockedError('/workspace', 'Sign in', undefined, 'normal');
       },
-      agentCaptain: () => ({
-        handle: async (input: string) => {
-          calls.push(`captain: ${input}`);
-          if (captainPlans) plan.addTest(new Test('Open a workspace project', 'high', [], '/workspace'));
-          return null;
-        },
-      }),
       visit: async (url: string) => {
         calls.push(`visit ${url}`);
       },
-      getCurrentPlan: () => plan,
+      getCurrentPlan: () => new Plan('Workspace'),
     };
-    return { cmd: new ExploreCommand(explorBot as ExplorBot), calls, plan, blocked };
+    const cmd = new ExploreCommand(explorBot as ExplorBot);
+    await (cmd as any).planWithRetry(undefined, { fresh: true, style: 'normal' }, '/workspace');
+    expect(calls).toEqual(['plan']);
+  });
+});
+
+describe('ExploreCommand on a test that cannot start', () => {
+  function setupBot(captainFixes: boolean) {
+    const calls: string[] = [];
+    let fixed = false;
+    const explorBot: any = {
+      agentCaptain: () => ({
+        resolveBlocker: async (err: unknown, resolved: () => boolean) => {
+          calls.push(`captain ${(err as Error).name}`);
+          fixed = captainFixes;
+          return resolved();
+        },
+      }),
+      agentNavigator: () => ({ isOn: () => fixed }),
+      agentTester: () => ({
+        test: async (test: Test) => {
+          calls.push('test');
+          if (!fixed) throw new TestStartBlockedError(test.scenario, '/workspace', '/login');
+          test.start();
+          test.finish(TestResult.PASSED);
+        },
+      }),
+    };
+    return { cmd: new ExploreCommand(explorBot as ExplorBot), calls };
   }
 
-  test('hands the planner report to Captain and keeps the tests Captain planned', async () => {
-    const { cmd, calls, plan, blocked } = setupBlockedBot(true);
-    await (cmd as any).planWithRetry(undefined, { fresh: true, style: 'normal' }, '/workspace');
-    expect(calls).toEqual(['plan', `captain: ${blocked.message}`]);
-    expect(plan.tests).toHaveLength(1);
+  test('runs the test again after Captain resolves what kept it from starting', async () => {
+    const { cmd, calls } = setupBot(true);
+    const test = new Test('Open a workspace project', 'high', [], '/workspace');
+    await (cmd as any).runOneTest(test);
+    expect(calls).toEqual(['test', 'captain TestStartBlockedError', 'test']);
+    expect(test.isSuccessful).toBe(true);
   });
 
-  test('skips the page without a generic retry when Captain plans nothing', async () => {
-    const { cmd, calls, plan, blocked } = setupBlockedBot(false);
-    await (cmd as any).planWithRetry(undefined, { fresh: true, style: 'normal' }, '/workspace');
-    expect(calls).toEqual(['plan', `captain: ${blocked.message}`]);
-    expect(plan.tests).toHaveLength(0);
-  });
-
-  test('tells Captain what the planner was asked and how to re-plan', () => {
-    const blocked = new PlanningBlockedError('/workspace', 'Sign in', 'projects', 'normal');
-    expect(blocked.message).toContain('/workspace focused on "projects" in normal style but stopped: Sign in');
-    expect(blocked.message).toContain('call plan()');
+  test('skips the test when Captain cannot get it started', async () => {
+    const { cmd, calls } = setupBot(false);
+    const test = new Test('Open a workspace project', 'high', [], '/workspace');
+    await (cmd as any).runOneTest(test);
+    expect(calls).toEqual(['test', 'captain TestStartBlockedError']);
+    expect(test.isSkipped).toBe(true);
   });
 });

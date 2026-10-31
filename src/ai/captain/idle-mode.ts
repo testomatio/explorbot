@@ -3,7 +3,9 @@ import { createBashTool } from 'bash-tool';
 import dedent from 'dedent';
 import { z } from 'zod';
 import { ConfigParser } from '../../config.ts';
-import { Test } from '../../test-plan.ts';
+import { Plan, Test } from '../../test-plan.ts';
+import { getStyles } from '../planner/styles.ts';
+import { PlanningBlockedError } from '../../utils/error-page.ts';
 import { listRecentArtifacts, readCaptainFile } from './file-tools.ts';
 import { type Constructor, type ModeContext, resolveProjectRoot } from './mixin.ts';
 
@@ -37,24 +39,17 @@ export function WithIdleMode<T extends Constructor>(Base: T) {
 
       const tools: Record<string, any> = {
         plan: tool({
-          description: 'Run the Planner on the current page. Adds tests to the current plan when it is for this page, otherwise starts a new plan. Returns how many tests were added, or why planning failed.',
+          description: dedent`
+            Plan tests for the current page. Adds them to the current plan when it is for this page, otherwise starts a new plan.
+            Without tests, the Planner writes the tests. With tests, exactly those tests are added and the Planner does not run: use it for tests the user dictates.
+            Returns how many tests were added, or why planning failed.
+          `,
           inputSchema: z.object({
-            feature: z.string().optional().describe('Focus area to plan, if any'),
-            style: z.string().optional().describe('Planning style'),
-          }),
-          execute: async ({ feature, style }) => {
-            const before = new Set(ctx.explorBot.getCurrentPlan()?.tests ?? []);
-            const plan = await ctx.explorBot.plan(feature, { style });
-            const error = ctx.explorBot.lastPlanError;
-            if (error) return { success: false, message: error.message };
-            return { success: true, testsAdded: plan?.tests.filter((t) => !before.has(t)).length ?? 0 };
-          },
-        }),
-        updatePlan: tool({
-          description: 'Update the current plan by replacing or appending tests',
-          inputSchema: z.object({
-            action: z.enum(['replace', 'append']).optional().describe('replace clears existing tests, append keeps them'),
-            title: z.string().optional().describe('New plan title'),
+            feature: z.string().optional().describe('Focus area for the Planner'),
+            style: z
+              .enum(Object.keys(getStyles()) as [string, ...string[]])
+              .optional()
+              .describe('Planning style for the Planner; omit to let it choose'),
             tests: z
               .array(
                 z.object({
@@ -63,33 +58,36 @@ export function WithIdleMode<T extends Constructor>(Base: T) {
                   expected: z.array(z.string()).optional(),
                 })
               )
-              .optional(),
+              .optional()
+              .describe('Tests to add as written, without running the Planner'),
+            replace: z.boolean().optional().describe('Remove the tests already in this page plan first'),
+            title: z.string().optional().describe('New plan title'),
           }),
-          execute: async ({ action, title, tests }) => {
+          execute: async ({ feature, style, tests, replace, title }) => {
+            if (ctx.blocker instanceof PlanningBlockedError) {
+              feature = ctx.blocker.feature;
+              style = ctx.blocker.style;
+            }
+            const url = ctx.explorBot.stateManager().getCurrentState()?.url || '';
             let plan = ctx.explorBot.getCurrentPlan();
-            if (!plan) {
-              plan = await ctx.explorBot.plan();
+            if (plan?.url && plan.url !== url) plan = undefined;
+            if (replace) plan?.tests.splice(0);
+            const before = new Set(plan?.tests ?? []);
+            if (!tests?.length) {
+              plan = await ctx.explorBot.plan(feature, { style });
+              const error = ctx.explorBot.lastPlanError;
+              if (error) return { success: false, message: error.message };
             }
             if (!plan) {
-              return { success: false, message: 'Plan unavailable' };
+              plan = new Plan(url);
+              ctx.explorBot.setCurrentPlan(plan);
             }
-            if (title) {
-              plan.title = title;
+            for (const t of tests ?? []) {
+              plan.addTest(new Test(t.scenario, t.priority || 'normal', t.expected ?? [], url));
             }
-            if (tests?.length) {
-              if (!action || action === 'replace') {
-                plan.tests.length = 0;
-              }
-              const currentUrl = ctx.explorBot.stateManager().getCurrentState()?.url || '';
-              for (const testInput of tests) {
-                const priority = testInput.priority || 'normal';
-                const expected = testInput.expected?.length ? testInput.expected : [];
-                const test = new Test(testInput.scenario, priority, expected, currentUrl);
-                plan.addTest(test);
-              }
-            }
+            if (title) plan.title = title;
             plan.updateStatus();
-            return { success: true, tests: plan.tests.length };
+            return { success: true, testsAdded: plan.tests.filter((t) => !before.has(t)).length, tests: plan.tests.length };
           },
         }),
         project: tool({
@@ -158,7 +156,7 @@ export function WithIdleMode<T extends Constructor>(Base: T) {
 
       return dedent`
         <idle_capabilities>
-        - Plan management: updatePlan() — replace or append tests in the current plan
+        - Plan management: plan() — run the Planner on the current page, or add tests you write yourself
         - readFile() — read specific report, plan, log, generated test, knowledge, or experience file content
         - bash() — discover files and inspect file metadata
           - READ from: ${knowledgeDir}/, ${experienceDir}/, ${outputDir}/

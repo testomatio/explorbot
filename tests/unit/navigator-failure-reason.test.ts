@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'bun:test';
 import { Navigator } from '../../src/ai/navigator.ts';
+import { NavigationBlockedError } from '../../src/utils/error-page.ts';
 
 describe('Navigator failure reason', () => {
   function createNavigator(reason: string | null) {
     const navigator = Object.create(Navigator.prototype) as Navigator;
     (navigator as any).lastFailureReason = reason;
+    (navigator as any).executedSteps = [];
+    (navigator as any).stateManager = { getCurrentState: () => ({ url: '/users/sign_in' }) };
     return navigator;
   }
 
@@ -20,6 +23,19 @@ describe('Navigator failure reason', () => {
     const error = (navigator as any).navigationError('/defects', 'redirected to /users/sign_in and could not resolve');
 
     expect(error.message).toBe('Navigation to /defects failed: redirected to /users/sign_in and could not resolve');
+  });
+
+  it('tells Captain where navigation stopped, why, and what was already tried', () => {
+    const navigator = createNavigator('the login form rejected the credentials');
+    (navigator as any).executedSteps = [
+      { command: 'I.fillField("Email", "a@b.c")', success: true },
+      { command: 'I.click("Sign in")', success: true },
+    ];
+    const error = (navigator as any).navigationError('/defects', 'redirected to /users/sign_in and could not resolve');
+
+    expect(error).toBeInstanceOf(NavigationBlockedError);
+    expect(error.request).toContain('Navigator was asked to open /defects but stopped on /users/sign_in: the login form rejected the credentials.');
+    expect(error.request).toContain('Already tried: I.fillField("Email", "a@b.c"); I.click("Sign in").');
   });
 
   it('names the page a run has nothing to go on, without its query', () => {

@@ -6,7 +6,7 @@ import { Stats } from '../stats.js';
 import { type Plan, type Test, TestResult } from '../test-plan.js';
 import { browserErrorMessage } from '../utils/browser-errors.ts';
 import { getCliName } from '../utils/cli-name.ts';
-import { ErrorPageError, PlanningBlockedError, getStateErrorPageError } from '../utils/error-page.ts';
+import { BlockedError, ErrorPageError, getStateErrorPageError } from '../utils/error-page.ts';
 import { tag } from '../utils/logger.js';
 import { type NextStepSection, printNextSteps, relativeToCwd } from '../utils/next-steps.ts';
 import { keepSiteUrls, readSitemap } from '../utils/sitemap.ts';
@@ -376,10 +376,8 @@ export class ExploreCommand extends BaseCommand {
     const before = new Set(this.explorBot.getCurrentPlan()?.tests ?? []);
 
     await this.explorBot.plan(feature, opts);
-    const blocked = this.explorBot.lastPlanError;
-    if (blocked instanceof PlanningBlockedError) {
-      if (!this.dryRun) await this.explorBot.agentCaptain().handle(blocked.message, { reset: true });
-      if (this.printAddedTests(before, opts.style, pageUrl) === 0) tag('warning').log(`Skipping page ${blocked.url}: ${blocked.prerequisite}`);
+    if (this.explorBot.lastPlanError instanceof BlockedError) {
+      tag('warning').log(`Skipping page: ${this.explorBot.lastPlanError.message}`);
       return;
     }
     if (this.explorBot.lastPlanError) {
@@ -595,6 +593,14 @@ export class ExploreCommand extends BaseCommand {
     printNextSteps(sections);
   }
 
+  private skipBlockedTest(test: Test, error: unknown): void {
+    if (!(error instanceof BlockedError)) throw error;
+    tag('warning').log(`Skipping test: ${error.message}`);
+    test.start();
+    test.addNote(error.message, TestResult.SKIPPED);
+    test.finish(TestResult.SKIPPED);
+  }
+
   private isLimitReached(): boolean {
     if (this.maxTests != null && this.testsRun >= this.maxTests) return true;
     return this.isDeadlineReached();
@@ -629,7 +635,13 @@ export class ExploreCommand extends BaseCommand {
       test.start();
       test.finish(TestResult.SKIPPED);
     } else {
-      await this.explorBot.agentTester().test(test, { deadline: this.hardDeadlineAt });
+      const run = () => this.explorBot.agentTester().test(test, { deadline: this.hardDeadlineAt });
+      await run()
+        .catch(async (err) => {
+          if (!(await this.explorBot.agentCaptain().resolveBlocker(err, () => this.explorBot.agentNavigator().isOn(test.startUrl)))) throw err;
+          return run();
+        })
+        .catch((err) => this.skipBlockedTest(test, err));
     }
     this.testsRun++;
   }

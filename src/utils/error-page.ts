@@ -69,10 +69,22 @@ export class ErrorPageError extends Error {
   }
 }
 
-export class PlanningBlockedError extends Error {
+export class BlockedError extends Error {
   constructor(
+    message: string,
     public readonly url: string,
-    public readonly prerequisite: string,
+    public readonly blocker: string,
+    public readonly request: string
+  ) {
+    super(message);
+    this.name = 'BlockedError';
+  }
+}
+
+export class PlanningBlockedError extends BlockedError {
+  constructor(
+    url: string,
+    prerequisite: string,
     public readonly feature?: string,
     public readonly style?: string
   ) {
@@ -80,10 +92,40 @@ export class PlanningBlockedError extends Error {
     if (feature) focus = ` focused on "${feature}"`;
     let styleNote = '';
     if (style) styleNote = ` in ${style} style`;
-    super(dedent`
-      Planner was asked to plan tests for ${url}${focus}${styleNote} but stopped: ${prerequisite}.
-      Look at the current page to find out what blocks planning, resolve it, then call plan() to re-plan this page. If it cannot be resolved, finish without planning.
-    `);
+    super(
+      `Planner could not plan ${url}: ${prerequisite}`,
+      url,
+      prerequisite,
+      dedent`
+        Planner was asked to plan tests for ${url}${focus}${styleNote} but stopped: ${prerequisite}.
+        Look at the current page to find out what blocks planning, resolve it, then call plan() to re-plan this page. If it cannot be resolved, finish without planning.
+      `
+    );
     this.name = 'PlanningBlockedError';
+  }
+}
+
+export class NavigationBlockedError extends BlockedError {
+  constructor(url: string, currentUrl: string, reason: string, tried: string[]) {
+    const lines = [`Navigator was asked to open ${url} but stopped on ${currentUrl}: ${reason}.`];
+    if (tried.length) lines.push(`Already tried: ${tried.join('; ')}.`);
+    lines.push(`Look at the current page to find out what keeps it from ${url}, resolve it, then open ${url}. If it cannot be resolved, finish without opening it.`);
+    super(`Navigation to ${url} failed: ${reason}`, url, reason, lines.join('\n'));
+    this.name = 'NavigationBlockedError';
+  }
+}
+
+export class TestStartBlockedError extends BlockedError {
+  constructor(scenario: string, url: string, currentUrl: string) {
+    super(
+      `Test "${scenario}" could not start: ${currentUrl} is not the page it starts on`,
+      url,
+      'not the start page of this test',
+      dedent`
+        Tester was asked to start the test "${scenario}" at ${url}, but the page open at ${currentUrl} is not where this test can start.
+        Look at the current page to find out what keeps the test from starting, resolve it, then open ${url}. When you finish, the test runs again from ${url}. If it cannot be resolved, finish and the test is skipped.
+      `
+    );
+    this.name = 'TestStartBlockedError';
   }
 }
