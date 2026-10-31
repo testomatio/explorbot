@@ -879,6 +879,7 @@ export function configuredModels(ai?: AIConfig): Record<string, ConfiguredModel>
   const models: Record<string, ConfiguredModel> = { model: describe(ai.model) };
   if (ai.agenticModel) models.agenticModel = describe(ai.agenticModel);
   if (ai.visionModel) models.visionModel = describe(ai.visionModel);
+  if (ai.decisionModel) models.decisionModel = { name: ai.decisionModel.model, provider: ai.decisionModel.provider };
   for (const [agent, agentConfig] of Object.entries(ai.agents || {})) {
     if (agentConfig?.model) models[agent] = describe(agentConfig.model);
   }

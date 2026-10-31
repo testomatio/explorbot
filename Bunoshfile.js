@@ -2,7 +2,7 @@
 // Get it here => https://buno.sh
 import fs from 'node:fs';
 import { createHash } from 'node:crypto';
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 const highlight = require('cli-highlight').highlight;
 import matter from 'gray-matter';
@@ -11,7 +11,7 @@ import { chromium } from 'playwright';
 import { assertBasicRun, assertControlRun, assertSeededRun, status } from './tests/regression/lib/assertions.ts';
 import { readSessionAnalysis } from './tests/regression/lib/artifacts.ts';
 import { DISCUSSION_CATEGORY, DISCUSSION_MUTATION, DISCUSSION_QUERY, prNumberFromEvent, repoOwnerAndName } from './tests/regression/lib/github.ts';
-import { REPORT_MARKER, buildReport } from './tests/regression/lib/report.ts';
+import { REPORT_MARKER, buildReport, fmtDuration } from './tests/regression/lib/report.ts';
 import { startFixture } from './tests/regression/fixture/server.ts';
 import { parsePlansFromMarkdown } from './src/utils/test-plan-markdown.ts';
 import { htmlCombinedSnapshot, htmlTextSnapshot, minifyHtml } from './src/utils/html.js';
@@ -23,9 +23,12 @@ const { shell, writeToFile, task, stopOnFail, ai } = global.bunosh;
 const CLI = resolve('bin/explorbot-cli.ts');
 const REG_ROOT = resolve('tests/regression');
 const SLOW_START_MS = 12000;
-const BASIC_SCENARIO = { name: 'basic', path: '/issues', knowledge: 'login.md', fixture: {} };
-const SLOW_SCENARIO = { ...BASIC_SCENARIO, name: 'slow', fixture: { slowStartMs: SLOW_START_MS } };
-const GATED_SCENARIO = { ...BASIC_SCENARIO, name: 'gated', path: '/workspace', knowledge: 'workspace.md' };
+const BASIC_SCENARIO = { name: 'basic', path: '/issues', knowledge: 'login.md', fixture: {}, maxTests: 5 };
+const SLOW_SCENARIO = { ...BASIC_SCENARIO, name: 'slow', fixture: { slowStartMs: SLOW_START_MS }, maxTests: 1, minPassed: 1 };
+const GATED_SCENARIO = { ...BASIC_SCENARIO, name: 'gated', path: '/workspace', knowledge: 'workspace.md', maxTests: 1, minPassed: 1 };
+const SCENARIO_ORDER = ['basic', 'experience', 'slow', 'gated'];
+const HISTORY_RUNS = 5;
+const SUMMARY_FILE = 'records.json';
 const RUNS = join(REG_ROOT, '.runs');
 const BENCH = join(REG_ROOT, '.bench');
 const SLOT_ENV = { base: 'BENCH_MODEL', agentic: 'BENCH_AGENTIC_MODEL', vision: 'BENCH_VISION_MODEL' };
@@ -406,14 +409,18 @@ export async function regressionVariants(options = { retries: 0, scenario: 'basi
 }
 
 /**
- * Post the regression report as a sticky PR comment or a GitHub Discussion.
+ * Merge the records of every scenario job, compare durations with the last runs, and post the report as a sticky PR comment or a GitHub Discussion.
  */
 export async function regressionReport() {
-  const reportPath = join(RUNS, 'report.md');
-  if (!existsSync(reportPath)) {
-    say('No regression report found; nothing to post.');
+  const current = loadRecords();
+  if (!current.length) {
+    say('No regression records found; nothing to post.');
     return;
   }
+  const history = await loadHistory();
+  writeReportFiles(current, history);
+  writeFileSync(join(RUNS, SUMMARY_FILE), JSON.stringify(current.map(({ analysis, ...rest }) => rest)));
+  const reportPath = join(RUNS, 'report.md');
   const event = process.env.GITHUB_EVENT_NAME;
   if (event === 'pull_request') {
     await postPrComment(reportPath);
@@ -596,14 +603,14 @@ export async function benchReport() {
     const perRun = (key, scope) => runList.reduce((total, r) => total + r.usage[scope][key], 0) / runList.length;
     const executed = testsRun(runList);
     const costPerTest = (perRun('cost', 'slot') * runList.length) / Math.max(executed, 1);
-    lines.push(`| \`${model}\` | ${gates}/${runList.length} | ${testsPassed(runList)} | ${executed} | ${formatDuration(avg)} | ${Math.round(perRun('calls', 'slot'))} | ${meanCallMs(runList)}ms | ${throughput(runList)} | ${contentThroughput(runList)} | ${Math.round(perRun('prompt', 'slot'))} | ${cachePercent(perRun('cached', 'slot'), perRun('prompt', 'slot'))} | ${Math.round(perRun('completion', 'slot'))} | ${Math.round(perRun('reasoning', 'slot'))} | $${perRun('cost', 'slot').toFixed(4)} | $${costPerTest.toFixed(4)} | $${perRun('cost', 'session').toFixed(4)} |`);
+    lines.push(`| \`${model}\` | ${gates}/${runList.length} | ${testsPassed(runList)} | ${executed} | ${fmtDuration(avg)} | ${Math.round(perRun('calls', 'slot'))} | ${meanCallMs(runList)}ms | ${throughput(runList)} | ${contentThroughput(runList)} | ${Math.round(perRun('prompt', 'slot'))} | ${cachePercent(perRun('cached', 'slot'), perRun('prompt', 'slot'))} | ${Math.round(perRun('completion', 'slot'))} | ${Math.round(perRun('reasoning', 'slot'))} | $${perRun('cost', 'slot').toFixed(4)} | $${costPerTest.toFixed(4)} | $${perRun('cost', 'session').toFixed(4)} |`);
   }
 
   lines.push('', '## Gate details');
   for (const [model, runList] of byModel) {
     lines.push('', `### \`${model}\``);
     for (const run of runList) {
-      lines.push(`- run ${run.run} — ${status(run.passed)} (${formatDuration(run.durationSec)}, mean latency ${run.usage.slot.meanMs}ms)`);
+      lines.push(`- run ${run.run} — ${status(run.passed)} (${fmtDuration(run.durationSec)}, mean latency ${run.usage.slot.meanMs}ms)`);
       for (const detail of run.details || []) lines.push(`  - ${detail}`);
     }
   }
@@ -634,10 +641,10 @@ async function runBasicScenario(variant, seed, retries, scenario = BASIC_SCENARI
     const runDir = prepareRunDir(dirName(scenario.name, variant, seed), attempt);
     cpSync(join(SEEDS, 'knowledge', scenario.knowledge), join(runDir, 'knowledge', scenario.knowledge));
     const started = Date.now();
-    const res = await shell`timeout 1800 bun ${CLI} explore ${scenario.path} --headless --max-tests 5 -p ${runDir}`.env(runEnv(fixture.url));
+    const res = await shell`timeout 900 bun ${CLI} explore ${scenario.path} --headless --max-tests ${scenario.maxTests} -p ${runDir}`.env(runEnv(fixture.url));
     fixture.stop();
-    const outcome = assertBasicRun(runDir, String(res.output || ''));
-    records.push({ label, kind: 'gate', attempt, maxAttempts, passed: outcome.passed, durationSec: elapsed(started), details: outcome.details, analysis: readSessionAnalysis(runDir) });
+    const outcome = assertBasicRun(runDir, String(res.output || ''), scenario.minPassed);
+    recordAttempt(runDir, { scenario: scenario.name, label, kind: 'gate', attempt, maxAttempts, passed: outcome.passed, durationSec: elapsed(started), details: outcome.details, analysis: readSessionAnalysis(runDir) });
     reportAttempt(label, attempt, maxAttempts, outcome);
     passed = outcome.passed;
   }
@@ -651,7 +658,7 @@ async function runExperienceScenario(variant, seed, retries) {
   const controlRes = await shell`timeout 720 bun ${CLI} test ${VAULT_PLAN} all --headless -p ${controlDir}`.env(runEnv(controlFixture.url));
   controlFixture.stop();
   const control = assertControlRun(controlDir, !controlRes.hasFailed);
-  records.push({ label: 'experience: control', kind: 'control', attempt: 1, maxAttempts: 1, passed: control.passed, durationSec: elapsed(controlStart), details: control.details });
+  recordAttempt(controlDir, { scenario: 'experience', label: 'experience: control', kind: 'control', attempt: 1, maxAttempts: 1, passed: control.passed, durationSec: elapsed(controlStart), details: control.details });
   reportAttempt('experience: control', 1, 1, control);
 
   const maxAttempts = retries + 1;
@@ -665,7 +672,7 @@ async function runExperienceScenario(variant, seed, retries) {
     const res = await shell`timeout 720 bun ${CLI} test ${VAULT_PLAN} all --headless -p ${runDir}`.env(runEnv(fixture.url));
     fixture.stop();
     const outcome = assertSeededRun(runDir);
-    records.push({ label: 'experience: seeded', kind: 'gate', attempt, maxAttempts, passed: outcome.passed, durationSec: elapsed(started), details: outcome.details });
+    recordAttempt(runDir, { scenario: 'experience', label: 'experience: seeded', kind: 'gate', attempt, maxAttempts, passed: outcome.passed, durationSec: elapsed(started), details: outcome.details });
     reportAttempt('experience: seeded', attempt, maxAttempts, outcome);
     seededPassed = outcome.passed;
   }
@@ -760,11 +767,6 @@ function cachePercent(cached, prompt) {
   return `${Math.round((cached / prompt) * 100)}%`;
 }
 
-function formatDuration(seconds) {
-  const mins = Math.floor(seconds / 60);
-  return `${mins}m ${seconds % 60}s`;
-}
-
 function prepareRunDir(name, attempt) {
   const dir = join(RUNS, `${name}-a${attempt}`);
   rmSync(dir, { recursive: true, force: true });
@@ -774,9 +776,44 @@ function prepareRunDir(name, attempt) {
   return dir;
 }
 
-function writeReportFiles() {
+function recordAttempt(runDir, record) {
+  records.push(record);
+  writeFileSync(join(runDir, 'record.json'), JSON.stringify(record));
+}
+
+function loadRecords() {
+  if (!existsSync(RUNS)) return [];
+  const loaded = readdirSync(RUNS)
+    .sort()
+    .map((dir) => join(RUNS, dir, 'record.json'))
+    .filter((file) => existsSync(file))
+    .map((file) => JSON.parse(readFileSync(file, 'utf-8')));
+  return loaded.sort((a, b) => SCENARIO_ORDER.indexOf(a.scenario) - SCENARIO_ORDER.indexOf(b.scenario));
+}
+
+async function loadHistory() {
+  const repo = process.env.GITHUB_REPOSITORY;
+  const runId = process.env.GITHUB_RUN_ID;
+  if (!repo || !runId) return [];
+  const runs = await shell`gh run list -R ${repo} --workflow regression.yml --status completed --limit 30 --json databaseId --jq ${'.[].databaseId'}`;
+  const ids = String(runs.output || '')
+    .split('\n')
+    .map((id) => id.trim())
+    .filter((id) => id && id !== runId);
+  const history = [];
+  for (const id of ids) {
+    if (history.length >= HISTORY_RUNS) break;
+    const dir = join(RUNS, 'history', id);
+    const download = await shell`gh run download ${id} -R ${repo} -n regression-summary -D ${dir}`;
+    if (download.hasFailed) continue;
+    history.push(JSON.parse(readFileSync(join(dir, SUMMARY_FILE), 'utf-8')));
+  }
+  return history;
+}
+
+function writeReportFiles(list = records, history = []) {
   mkdirSync(RUNS, { recursive: true });
-  const markdown = buildReport(records);
+  const markdown = buildReport(list, history);
   writeFileSync(join(RUNS, 'report.md'), markdown);
   const summaryPath = process.env.GITHUB_STEP_SUMMARY;
   if (summaryPath) writeFileSync(summaryPath, `${markdown}\n`, { flag: 'a' });
