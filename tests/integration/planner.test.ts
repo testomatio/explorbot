@@ -345,10 +345,12 @@ describe('Planner with aimock', () => {
     mock.clearFixtures();
     mock.on({}, { content: JSON.stringify({ planName: 'Empty', scenarios: [], blockedBy: 'sign-in form only', prerequisite: 'Sign in' }) });
 
-    const error = await planner.plan().catch((e) => e);
+    const error = await planner.plan('task filters').catch((e) => e);
 
     expect(error).toBeInstanceOf(PlanningBlockedError);
-    expect(error.message).toBe('Planner could not plan /tasks/board: Sign in');
+    expect(error.url).toBe('/tasks/board');
+    expect(error.prerequisite).toBe('Sign in');
+    expect(error.feature).toBe('task filters');
     expect(getRegisteredPlan('/tasks/board')).toBeFalsy();
   });
 

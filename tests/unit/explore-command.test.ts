@@ -489,19 +489,20 @@ describe('ExploreCommand max duration', () => {
 });
 
 describe('ExploreCommand on a page the planner reports blocked', () => {
-  function setupBlockedBot(unblocked: boolean) {
+  function setupBlockedBot(captainPlans: boolean) {
     const calls: string[] = [];
     const plan = new Plan('Workspace');
+    const blocked = new PlanningBlockedError('/workspace', 'Sign in', undefined, 'normal');
     const explorBot: any = {
       lastPlanError: null,
       plan: async () => {
         calls.push('plan');
-        explorBot.lastPlanError = null;
-        if (calls.filter((c) => c === 'plan').length === 1 || !unblocked) explorBot.lastPlanError = new PlanningBlockedError('/workspace', 'Sign in');
+        explorBot.lastPlanError = blocked;
       },
       agentCaptain: () => ({
         handle: async (input: string) => {
           calls.push(`captain: ${input}`);
+          if (captainPlans) plan.addTest(new Test('Open a workspace project', 'high', [], '/workspace'));
           return null;
         },
       }),
@@ -510,18 +511,26 @@ describe('ExploreCommand on a page the planner reports blocked', () => {
       },
       getCurrentPlan: () => plan,
     };
-    return { cmd: new ExploreCommand(explorBot as ExplorBot), calls };
+    return { cmd: new ExploreCommand(explorBot as ExplorBot), calls, plan, blocked };
   }
 
-  test('hands the report to Captain, returns to the page and plans it again', async () => {
-    const { cmd, calls } = setupBlockedBot(true);
+  test('hands the planner report to Captain and keeps the tests Captain planned', async () => {
+    const { cmd, calls, plan, blocked } = setupBlockedBot(true);
     await (cmd as any).planWithRetry(undefined, { fresh: true, style: 'normal' }, '/workspace');
-    expect(calls).toEqual(['plan', 'captain: Planner could not plan /workspace: Sign in', 'visit /workspace', 'plan']);
+    expect(calls).toEqual(['plan', `captain: ${blocked.message}`]);
+    expect(plan.tests).toHaveLength(1);
   });
 
-  test('skips the page without a generic retry when it is still blocked', async () => {
-    const { cmd, calls } = setupBlockedBot(false);
+  test('skips the page without a generic retry when Captain plans nothing', async () => {
+    const { cmd, calls, plan, blocked } = setupBlockedBot(false);
     await (cmd as any).planWithRetry(undefined, { fresh: true, style: 'normal' }, '/workspace');
-    expect(calls).toEqual(['plan', 'captain: Planner could not plan /workspace: Sign in', 'visit /workspace', 'plan']);
+    expect(calls).toEqual(['plan', `captain: ${blocked.message}`]);
+    expect(plan.tests).toHaveLength(0);
+  });
+
+  test('tells Captain what the planner was asked and how to re-plan', () => {
+    const blocked = new PlanningBlockedError('/workspace', 'Sign in', 'projects', 'normal');
+    expect(blocked.message).toContain('/workspace focused on "projects" in normal style but stopped: Sign in');
+    expect(blocked.message).toContain('call plan()');
   });
 });
