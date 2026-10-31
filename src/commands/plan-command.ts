@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import chalk from 'chalk';
 import figureSet from 'figures';
@@ -17,8 +18,12 @@ export class PlanCommand extends BaseCommand {
   options = [
     { flags: '--fresh', description: 'Regenerate plan from scratch' },
     { flags: '--clear', description: 'Clear plan before regenerating' },
+    { flags: '--append', description: 'Add tests to existing plan file' },
     { flags: '--style <name>', description: 'Planning style (normal, curious, psycho, performer)' },
     { flags: '--focus <feature>', description: 'Focus area for test planning' },
+    { flags: '--tests <count>', description: 'Exact number of tests to generate' },
+    { flags: '--min-tests <count>', description: 'Minimum number of tests to generate' },
+    { flags: '--max-tests <count>', description: 'Maximum number of tests to generate' },
   ];
 
   async execute(args: string): Promise<void> {
@@ -30,11 +35,20 @@ export class PlanCommand extends BaseCommand {
       tag('success').log('Plan cleared');
     }
 
+    if (opts.append) {
+      const existingPlanPath = path.join(this.explorBot.getPlansDir(), this.explorBot.generatePlanFilename());
+      if (existsSync(existingPlanPath)) this.explorBot.loadPlan(existingPlanPath);
+    }
+
     if (focus) {
       tag('info').log(`Planning focus: ${focus}`);
     }
 
-    await this.explorBot.plan(focus, { fresh: !!(opts.fresh || opts.clear), style: opts.style as string });
+    const testsCount = opts.tests ? Number.parseInt(opts.tests as string, 10) : undefined;
+    const minTests = testsCount ?? (opts.minTests ? Number.parseInt(opts.minTests as string, 10) : undefined);
+    const maxTests = testsCount ?? (opts.maxTests ? Number.parseInt(opts.maxTests as string, 10) : undefined);
+
+    await this.explorBot.plan(focus, { fresh: !!(opts.fresh || opts.clear), style: opts.style as string, minTests, maxTests });
 
     const plan = this.explorBot.getCurrentPlan();
     if (!plan?.tests.length) {
@@ -46,29 +60,34 @@ export class PlanCommand extends BaseCommand {
     this.printNextSteps();
   }
 
+  static planSection(planPath: string, cliSuffix = ''): NextStepSection {
+    const cli = getCliName();
+    const planName = path.basename(planPath, '.md');
+    return {
+      label: 'Plan',
+      path: planPath,
+      commands: [
+        { label: 'Run all tests', command: `${cli} test ${planName}${cliSuffix}` },
+        { label: 'Run one test', command: `${cli} test ${planName} 1${cliSuffix}` },
+        { label: 'Run a range', command: `${cli} test ${planName} 1-3${cliSuffix}` },
+      ],
+    };
+  }
+
   private printNextSteps(): void {
     const savedPath = this.explorBot.lastSavedPlanPath;
     if (!savedPath) return;
 
     const cli = getCliName();
-    const relPlan = relativeToCwd(savedPath);
-    const sections: NextStepSection[] = [
-      {
-        label: 'Plan',
-        path: savedPath,
-        commands: [
-          { label: 'Re-run', command: `${cli} test ${relPlan} 1` },
-          { label: 'Run all', command: `${cli} test ${relPlan} *` },
-          { label: 'Run range', command: `${cli} test ${relPlan} 1-3` },
-          { label: 'Reload', command: `/plan:load ${relPlan}` },
-        ],
-      },
-    ];
+    const cliSuffix = this.cliSuffix();
+    const section = PlanCommand.planSection(savedPath, cliSuffix);
+    section.commands?.push({ label: 'Reload', command: `/plan:load ${path.basename(savedPath, '.md')}` });
+    const sections: NextStepSection[] = [section];
 
     const suite = this.explorBot.getSuite();
     const files = suite && suite.automatedTestCount > 0 ? suite.getAutomatedTestFiles() : [];
     if (files.length > 0) {
-      const commands = files.map((f) => ({ label: '', command: `${cli} rerun ${relativeToCwd(f)}` }));
+      const commands = files.map((f) => ({ label: '', command: `${cli} rerun ${relativeToCwd(f)}${cliSuffix}` }));
       sections.push({
         label: `Automated tests (${files.length})`,
         commands,
@@ -76,6 +95,14 @@ export class PlanCommand extends BaseCommand {
     }
 
     printNextSteps(sections);
+  }
+
+  private cliSuffix(): string {
+    const options = this.explorBot.getOptions();
+    let suffix = '';
+    if (options.path) suffix += ` --path ${options.path}`;
+    if (options.session) suffix += ' --session';
+    return suffix;
   }
 
   private printPlanSummary(): void {
@@ -91,10 +118,10 @@ export class PlanCommand extends BaseCommand {
     }
 
     if (plan?.tests.length) {
-      console.log(`\n${chalk.bold.cyan(`New test scenarios (${plan.tests.length})`)}`);
+      console.log(`\n${chalk.bold.cyan(`New test scenarios (${plan.tests.length})`)}\n`);
       for (let i = 0; i < plan.tests.length; i++) {
         const t = plan.tests[i];
-        console.log(`  ${chalk.dim(`${i + 1}.`)} ${chalk.green(figureSet.pointer)} ${t.scenario} ${chalk.dim(`[${t.priority}]`)}`);
+        console.log(`  ${chalk.cyan(`${i + 1}.`)} ${t.scenario}`);
       }
     }
   }

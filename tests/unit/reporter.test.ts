@@ -1,11 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import type { ReporterConfig } from '../../src/config.ts';
 import { ConfigParser, setOutputDir } from '../../src/config.ts';
 import { Reporter } from '../../src/reporter.ts';
 import { Stats } from '../../src/stats.ts';
-import { ActiveNote, Plan, Task, Test, TestResult } from '../../src/test-plan.ts';
+import { ActiveNote, Task, Test, TestResult } from '../../src/test-plan.ts';
 
 class TestableReporter extends Reporter {
   public combineStepsAndNotes(test: Test, lastScreenshotFile?: string) {
@@ -40,8 +39,8 @@ describe('Task - ActiveNote', () => {
   test('should auto-commit previous note when starting new one', () => {
     const task = new Task('test task');
 
-    const note1 = task.startNote('First note');
-    const note2 = task.startNote('Second note');
+    task.startNote('First note');
+    task.startNote('Second note');
 
     const notes = Object.values(task.notes);
     expect(notes.length).toBe(1);
@@ -233,7 +232,7 @@ describe('Reporter', () => {
       const reporter = new TestableReporter();
       const test = new Test('Test Scenario', 'high', ['Expected outcome'], 'https://example.com');
 
-      const note1 = test.startNote('First note');
+      test.startNote('First note');
       await new Promise((resolve) => setTimeout(resolve, 10));
       test.addStep('I.click("btn1")', 50, 'passed');
 
@@ -252,7 +251,7 @@ describe('Reporter', () => {
     });
 
     test('should handle notes with zero duration', () => {
-      const reporter = new TestableReporter();
+      new TestableReporter();
       const test = new Test('Test Scenario', 'high', ['Expected outcome'], 'https://example.com');
 
       const note = test.startNote('Instant note');
@@ -456,12 +455,12 @@ describe('Reporter config', () => {
   });
 
   test('enabled: true without html flag does not set HTML env vars', () => {
-    const reporter = new Reporter({ enabled: true });
+    new Reporter({ enabled: true });
     expect(process.env.TESTOMATIO_HTML_REPORT_SAVE).toBeUndefined();
   });
 
   test('html: true without TESTOMATIO sets HTML report env vars', () => {
-    const reporter = new Reporter({ html: true });
+    new Reporter({ html: true });
     expect(process.env.TESTOMATIO_HTML_REPORT_SAVE).toBe('1');
     expect(process.env.TESTOMATIO_HTML_REPORT_FOLDER).toContain('reports');
     expect(process.env.TESTOMATIO_HTML_FILENAME).toBe(`${Stats.sessionLabel()}.html`);
@@ -469,41 +468,41 @@ describe('Reporter config', () => {
 
   test('enabled: true with TESTOMATIO does not set HTML env vars', () => {
     process.env.TESTOMATIO = 'tstmt_test_key';
-    const reporter = new Reporter({ enabled: true });
+    new Reporter({ enabled: true });
     expect(process.env.TESTOMATIO_HTML_REPORT_SAVE).toBeUndefined();
   });
 
   test('enabled: false does not set HTML env vars', () => {
-    const reporter = new Reporter({ enabled: false });
+    new Reporter({ enabled: false });
     expect(process.env.TESTOMATIO_HTML_REPORT_SAVE).toBeUndefined();
   });
 
   test('enabled: false with TESTOMATIO does not set HTML env vars', () => {
     process.env.TESTOMATIO = 'tstmt_test_key';
-    const reporter = new Reporter({ enabled: false });
+    new Reporter({ enabled: false });
     expect(process.env.TESTOMATIO_HTML_REPORT_SAVE).toBeUndefined();
   });
 
   test('undefined config with TESTOMATIO does not set HTML env vars', () => {
     process.env.TESTOMATIO = 'tstmt_test_key';
-    const reporter = new Reporter();
+    new Reporter();
     expect(process.env.TESTOMATIO_HTML_REPORT_SAVE).toBeUndefined();
   });
 
   test('undefined config without TESTOMATIO does not set HTML env vars', () => {
-    const reporter = new Reporter();
+    new Reporter();
     expect(process.env.TESTOMATIO_HTML_REPORT_SAVE).toBeUndefined();
   });
 
   test('html: true with TESTOMATIO also sets HTML env vars', () => {
     process.env.TESTOMATIO = 'tstmt_test_key';
-    const reporter = new Reporter({ enabled: true, html: true });
+    new Reporter({ enabled: true, html: true });
     expect(process.env.TESTOMATIO_HTML_REPORT_SAVE).toBe('1');
     expect(process.env.TESTOMATIO_HTML_REPORT_FOLDER).toContain('reports');
   });
 
   test('markdown: true sets markdown env vars', () => {
-    const reporter = new Reporter({ enabled: true, markdown: true });
+    new Reporter({ enabled: true, markdown: true });
     expect(process.env.TESTOMATIO_MARKDOWN_REPORT_SAVE).toBe('1');
     expect(process.env.TESTOMATIO_MARKDOWN_REPORT_FOLDER).toContain('reports');
     expect(process.env.TESTOMATIO_MARKDOWN_FILENAME).toBe(`${Stats.sessionLabel()}-tests.md`);
@@ -511,7 +510,7 @@ describe('Reporter config', () => {
 
   test('markdown: true with TESTOMATIO also sets markdown env vars', () => {
     process.env.TESTOMATIO = 'tstmt_test_key';
-    const reporter = new Reporter({ enabled: true, markdown: true });
+    new Reporter({ enabled: true, markdown: true });
     expect(process.env.TESTOMATIO_MARKDOWN_REPORT_SAVE).toBe('1');
     expect(process.env.TESTOMATIO_MARKDOWN_REPORT_FOLDER).toContain('reports');
   });
@@ -522,7 +521,7 @@ describe('Reporter config', () => {
     (configParser as any).configPath = null;
     setOutputDir('/tmp/apibot-output');
 
-    const reporter = new Reporter({ html: true, markdown: true });
+    new Reporter({ html: true, markdown: true });
 
     expect(process.env.TESTOMATIO_HTML_REPORT_FOLDER).toBe(join('/tmp/apibot-output', 'reports'));
     expect(process.env.TESTOMATIO_MARKDOWN_REPORT_FOLDER).toBe(join('/tmp/apibot-output', 'reports'));
@@ -530,38 +529,38 @@ describe('Reporter config', () => {
   });
 
   test('markdown unset does not set markdown env vars', () => {
-    const reporter = new Reporter({ enabled: true });
+    new Reporter({ enabled: true });
     expect(process.env.TESTOMATIO_MARKDOWN_REPORT_SAVE).toBeUndefined();
   });
 
   test('enabled: false with markdown: true does not set markdown env vars', () => {
-    const reporter = new Reporter({ enabled: false, markdown: true });
+    new Reporter({ enabled: false, markdown: true });
     expect(process.env.TESTOMATIO_MARKDOWN_REPORT_SAVE).toBeUndefined();
   });
 
   test('runGroup is not set by default when enabled', () => {
-    const reporter = new Reporter({ enabled: true });
+    new Reporter({ enabled: true });
     expect(process.env.TESTOMATIO_RUNGROUP_TITLE).toBeUndefined();
   });
 
   test('runGroup string overrides default', () => {
-    const reporter = new Reporter({ enabled: true, runGroup: 'Smoke Suite' });
+    new Reporter({ enabled: true, runGroup: 'Smoke Suite' });
     expect(process.env.TESTOMATIO_RUNGROUP_TITLE).toBe('Smoke Suite');
   });
 
   test('runGroup: null disables the run group', () => {
-    const reporter = new Reporter({ enabled: true, runGroup: null });
+    new Reporter({ enabled: true, runGroup: null });
     expect(process.env.TESTOMATIO_RUNGROUP_TITLE).toBeUndefined();
   });
 
   test('pre-set TESTOMATIO_RUNGROUP_TITLE env wins over default', () => {
     process.env.TESTOMATIO_RUNGROUP_TITLE = 'Nightly';
-    const reporter = new Reporter({ enabled: true });
+    new Reporter({ enabled: true });
     expect(process.env.TESTOMATIO_RUNGROUP_TITLE).toBe('Nightly');
   });
 
   test('runGroup not set when reporter disabled', () => {
-    const reporter = new Reporter({ enabled: false });
+    new Reporter({ enabled: false });
     expect(process.env.TESTOMATIO_RUNGROUP_TITLE).toBeUndefined();
   });
 
@@ -576,7 +575,7 @@ describe('Reporter config', () => {
     test.addStep('I.see("Sign In", "h2")', 10, 'passed');
     test.finish(TestResult.PASSED);
 
-    await reporter.reportTestStart(test);
+    await reporter.reportTestStart();
     await reporter.reportTest(test);
     await reporter.finishRun();
 

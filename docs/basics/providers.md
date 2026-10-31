@@ -59,7 +59,7 @@ export default {
     model: openrouter('openai/gpt-oss-20b:nitro'),
     visionModel: openrouter('openai/gpt-5.6-luna'),
     agenticModel: openrouter('anthropic/claude-haiku-5.5'),
-    decisionModel: { provider: 'openrouter', model: 'typesafe/jev-latest' },
+    decisionModel: { provider: 'openrouter', model: '~typesafe/jev-latest' },
   },
 };
 ```

@@ -15,12 +15,12 @@ import { ErrorPageError, TestStartBlockedError, isErrorPage } from '../utils/err
 import { createDebug, tag } from '../utils/logger.ts';
 import { loop } from '../utils/loop.ts';
 import { compactErrorMessage } from '../utils/strings.ts';
+import { isSamePageIgnoringQuery } from '../utils/url-matcher.ts';
 import type { Agent, AgentDeps } from './agent.ts';
 import type { Conversation } from './conversation.ts';
 import { pageEvidence } from './judge.ts';
 import { Navigator } from './navigator.ts';
 import type { Pilot } from './pilot.ts';
-import { Provider } from './provider.ts';
 import { Researcher } from './researcher.ts';
 import { actionRule, capabilityGroundingRule, dataProtectionRules, focusedElementRule, formRequirementsRule, locatorRule, multipleTabsRule, sectionContextRule } from './rules.ts';
 import { TaskAgent } from './task-agent.ts';
@@ -264,7 +264,7 @@ export class Tester extends TaskAgent implements Agent {
       shouldContinue = false;
 
       await loop(
-        async ({ stop, pause, iteration, userInput }) => {
+        async ({ stop, iteration, userInput }) => {
           if (opts.deadline != null && Date.now() >= opts.deadline) {
             deadlineReached = true;
             task.addNote('Time budget reached. Stopped');
@@ -282,7 +282,7 @@ export class Tester extends TaskAgent implements Agent {
 
           const tools = {
             ...codeceptjsTools,
-            ...this.createTestFlowTools(task, currentState, conversation),
+            ...this.createTestFlowTools(task, conversation),
             ...this.agentTools,
           };
           if (currentState.isInsideIframe) {
@@ -320,7 +320,7 @@ export class Tester extends TaskAgent implements Agent {
           conversation.compactToolResults(2);
 
           if (iteration > 1) {
-            const isNewPage = this.previousUrl !== null && this.previousUrl !== currentState.url;
+            const isNewPage = this.previousUrl !== null && !isSamePageIgnoringQuery(this.previousUrl, currentState.url);
             let nextStep = '';
             nextStep += await this.reinjectContextIfNeeded(iteration, currentState);
             nextStep += await this.prepareInstructionsForNextStep(task);
@@ -953,9 +953,8 @@ export class Tester extends TaskAgent implements Agent {
     return '';
   }
 
-  private createTestFlowTools(task: Test, currentState: ActionResult, conversation: Conversation) {
+  private createTestFlowTools(task: Test, conversation: Conversation) {
     const resetUrl = task.startUrl;
-    const visitedUrls = task.getVisitedUrls();
     return {
       reset: tool({
         description: dedent`
@@ -1165,9 +1164,6 @@ export class Tester extends TaskAgent implements Agent {
               task.finish(hasPassed ? TestResult.PASSED : TestResult.FAILED);
             }
           }
-
-          const remainingExpectations = task.getRemainingExpectations();
-          // const suggestion = input.status !== null && remainingExpectations.length > 0 ? `Continue testing to check the remaining expected outcomes: ${remainingExpectations.join(', ')}` : 'Continue with your testing strategy based on these findings.';
 
           return {
             success: true,

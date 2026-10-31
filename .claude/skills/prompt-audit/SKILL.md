@@ -1,124 +1,91 @@
 ---
 name: prompt-audit
-description: Audit AI prompts and rules for web navigation and testing. Use when reviewing src/ai/rules.ts, navigator.ts, or tools.ts for contradictions, gaps, locator guidance, or tool/schema consistency.
+description: Audit Explorbot's AI prompts, rules and tool descriptions for contradictions, gaps, example-driven rules and tool/schema mismatches. Use when reviewing system prompts in agent files, src/ai/rules.ts, rules/**/*.md or tool descriptions, or as the periodic prompt half of maintenance (code-audit covers the code half). Report-only.
+user_invocable: true
 ---
 
-# Prompt and rules audit (Explorbot)
+# Prompt audit (Explorbot)
 
-Instructions for auditing navigation and testing prompts in this repository.
+Read every prompt an agent actually receives and find where it contradicts itself, another agent or the project's prompt principles.
 
-## When to apply
+**Report-only.** Never edit prompt text, rules or tool descriptions during the audit. Propose exact replacement wording in the report; the user approves wording before anything is written.
 
-Use this workflow when asked to audit rules, navigation prompts, tool definitions, or when checking consistency across `rules.ts`, `navigator.ts`, and `tools.ts`.
+## Arguments
 
-## Files to read
+- `/prompt-audit` — all agents
+- `/prompt-audit navigator` — one agent (and the rules/tools it receives)
 
-| File | Role |
-|------|------|
-| `src/ai/rules.ts` | Locator, action, and verification rules |
-| `src/ai/navigator.ts` | Prompts that consume those rules |
-| `src/ai/tools.ts` | Tool schemas, locator guidance, failure messages |
+## Prompt sources
 
-## 1. Rules (`rules.ts`)
+| Source | What it holds |
+|---|---|
+| `src/ai/<agent>.ts`, `src/ai/<agent>/*.ts` | System prompts, per-step instructions (`dedent` blocks) |
+| `src/ai/rules.ts` | Shared locator, action, verification rules |
+| `rules/<agent>/*.md`, `rules/*/styles/*.md` | File-based rules and planning styles |
+| `src/ai/tools.ts`, `src/ai/*-tools.ts`, `tool({ ... })` in agent files | Tool `description` and `inputSchema` `.describe()` text, failure `suggestion` text |
+| `boat/*/src/ai/` | Boat agents' prompts and tools |
 
-- **Contradictions**: Conflicting guidance (e.g. ARIA-first vs text-first without ordering).
-- **Ambiguity**: Text that can be read multiple ways; missing definitions.
-- **Gaps**: No explicit priority, disambiguation, or edge cases where the model needs them.
-- **Locator priority**: ARIA → accessible name/text → CSS → XPath should be explicit if all are allowed.
-- **Context parameter**: When it is required or optional; which tools or Codecept calls use it.
-- **Short vs long locators**: What counts as "short" vs "long" and when each is appropriate.
-- **Dead exports**: Rules exported but never imported.
+## Step 1: Assemble per agent
 
-## 2. Navigator (`navigator.ts`)
+For each agent in scope, collect what the model sees in one call: system prompt, injected rules (follow the imports from `rules.ts` and the `rules/` loader), per-step instructions, and descriptions of every tool it is given. Audit that assembled set, not files in isolation — most contradictions sit between a system prompt and a tool description, or between a shared rule and an agent's own wording.
 
-- **Unused imports**: Rule strings imported but not embedded in prompts.
-- **Missing injections**: Prompts that need `locatorRule`, `actionRule`, or verification text but omit them.
-- **Duplication**: Inline guidance that repeats or diverges from `rules.ts`.
-- **Structure**: Comparable sections across similar prompts.
-- **HTML wrapping**: Page HTML wrapped in `<page_html>` (or the project's agreed tag) where required.
+## Step 2: Check
 
-## 3. Tools (`tools.ts`)
+### Contradictions (highest value)
+- Two instructions that cannot both be followed (e.g. "always X" in the system prompt, "never X unless Y" in a tool description).
+- Priority conflicts: two orderings of the same choice (locator kinds, which tool first, when to stop).
+- The same term defined differently across sources.
+- Cross-agent: a supervisor and the agent it supervises (Pilot ↔ Tester, Captain ↔ Historian) disagree on when to stop, retry or finish.
+- Tool description vs tool behavior: description promises a parameter, output or fallback the `execute` does not have.
 
-- **locatorRule**: Present on tools that take locators, aligned with `rules.ts`.
-- **Schema copy**: Descriptions mention locator kinds the stack supports (e.g. ARIA, CSS, XPath) where relevant.
-- **Failures**: Unsuccessful tool results include actionable `suggestion` (or equivalent) text.
-- **Reachability**: No branches that cannot run (e.g. validation that makes a path impossible).
-- **Consistency**: Error and success shapes follow one pattern across tools.
-- **Differentiation**: Descriptions state when to prefer one tool over another (e.g. click vs text-based variants, type with vs without locator).
+### Project principles (CLAUDE.md)
+- Example-driven rules: a rule that names one concrete site, label, class or past failure instead of stating a general principle.
+- Hardcoded locators, CSS class names or framework names in prompt text.
+- Form/field/submit vocabulary assumed where the rule should speak of controls and outcomes.
+- Rules that teach the model to infer data a tool should report.
+- Verbose rules: elaboration where 1–3 telegraph-style lines would do; repeated guidance across sources (one source should own it).
+
+### Structure and gaps
+- Rule exported from `rules.ts` or a file in `rules/` that no prompt includes.
+- Prompt that needs a shared rule but restates it inline (divergence risk).
+- Missing priority, disambiguation or edge case the model visibly needs.
+- Page HTML not wrapped in `<page_html>` where injected; HTML given to an agent outside the HTML access table.
+
+### Locators and tools
+- Locator priority (ARIA → accessible name/text → CSS → XPath) explicit and identical everywhere.
+- Context parameter: when required, which tools use it.
+- Locator-aware tools carry the shared locator rule.
+- Failed tool results give an actionable `suggestion`; success/error shapes consistent.
+- Descriptions say when to prefer one tool over a similar one (click vs visualClick, type with vs without locator).
+- Examples match live conventions (quotes, JSON shapes, CodeceptJS call forms).
 
 ## Severity
 
-| Level | Meaning | Examples |
-|-------|---------|----------|
-| Critical | Wrong or unsafe model behavior | Contradictory rules, unreachable logic, required rules missing from prompts |
-| High | Major confusion or misleading examples | Ambiguous locator order, wrong formats, schema vs prompt mismatch |
-| Medium | Works but weak | Redundant prose, weak failure hints, uneven structure |
-| Minor | Polish | Typos, spacing, heading inconsistency |
+| Level | Meaning |
+|---|---|
+| Critical | Contradiction the model must resolve by guessing; required rule missing; tool description promising behavior that does not exist |
+| High | Ambiguous priority; example-driven or site-specific rule; schema vs prompt mismatch |
+| Medium | Duplicated or diverging guidance; weak failure hints; verbose rules |
+| Minor | Typos, formatting, heading inconsistency |
 
 ## Output format
 
-Use this structure in the audit reply:
-
 ```markdown
-## Audit Results
+## Prompt audit: <scope>
 
-### Critical issues
-1. **[path:line]** Summary
-   - Impact: …
-   - Fix: …
+### Critical
+1. **path:line ↔ path:line** — what conflicts
+   - Model sees: "<quote A>" vs "<quote B>"
+   - Proposed wording: "<exact replacement>" (in which source)
 
-### High priority issues
-1. **[path:line]** Summary
-   - Impact: …
-   - Fix: …
+### High
+...
 
-### Medium priority issues
-1. **[path:line]** Summary
-   - Impact: …
-   - Fix: …
+### Medium / Minor
+...
 
-### Minor issues
-1. **[path:line]** Summary
-   - Fix: …
-
-### Observations
-- Patterns and recommendations
-- Open questions if anything is unclear
+### Unused or duplicated rules
+- `rules.ts: exportName` — not included anywhere / restated in `<file>`
 ```
 
-## Deep checklist
-
-### Locator rules
-
-- [ ] Priority order documented (ARIA → text → CSS → XPath as applicable)
-- [ ] Context parameter explained (when and which tools)
-- [ ] Disambiguation (forms, ARIA state, proximity, multiple matches)
-- [ ] Short vs long locators defined
-- [ ] Examples match live conventions (quotes, JSON shapes)
-
-### Action rules
-
-- [ ] Codecept-style calls referenced where relevant (`I.click`, `I.fillField`, `I.see`, …)
-- [ ] Required parameters called out (including context for `I.see` if used)
-- [ ] Forbidden or discouraged patterns named (e.g. waits, `amOnPage` in wrong layer)
-- [ ] Examples match the documented format
-
-### Verification rules
-
-- [ ] `I.see` (or equivalents) and context requirements
-- [ ] `I.seeElement` (or equivalents) and locator preferences
-- [ ] Strictness to limit false positives
-- [ ] Examples show correct usage
-
-### Tool definitions
-
-- [ ] Each locator-aware tool carries the right rule text
-- [ ] Input schemas describe allowed locator types
-- [ ] Failed paths give useful suggestions
-- [ ] Descriptions distinguish alternatives clearly
-
-## Execution
-
-1. Read the three files above.
-2. Walk sections 1–3 and the deep checklist.
-3. Report findings in the output format, with file and line references.
+Quote both sides of every contradiction. Proposed wording follows the principles above: general, short, no examples from the finding itself.

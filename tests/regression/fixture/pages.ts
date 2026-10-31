@@ -44,7 +44,7 @@ export function issuesPage(reg: Registry, store: Store, filters: { q?: string; s
     </form>
     ${reg.dropdownMenu({ label: 'Filter by label', items: labelItems })}`;
 
-  const rows = issues.map((issue) => issueRow(issue, labels, users)).join('');
+  const rows = issues.map((issue) => issueRow(issue, labels)).join('');
   const table = `
     <table>
       <thead><tr><th>#</th><th>Title</th><th>Status</th><th>Priority</th><th>Labels</th></tr></thead>
@@ -136,7 +136,7 @@ export function issueDetailPage(reg: Registry, store: Store, issue: Issue, user:
   return doc(`${issue.title} · Trackly`, body, user, 'issues');
 }
 
-export function settingsPage(reg: Registry, store: Store, user: PublicUser, activeTab: string, saved?: boolean): string {
+export function settingsPage(reg: Registry, user: PublicUser, activeTab: string, saved?: boolean): string {
   const notice = saved ? '<p role="status" class="notice">Settings saved</p>' : '';
   const profile = `
     ${notice}
@@ -233,7 +233,7 @@ export function slowStartShell(delayMs: number): string {
   </script></body></html>`;
 }
 
-function issueRow(issue: Issue, labels: { id: number; name: string }[], users: { id: number; name: string }[]): string {
+function issueRow(issue: Issue, labels: { id: number; name: string }[]): string {
   const labelNames = issue.labels
     .map((id) => labels.find((l) => l.id === id)?.name)
     .filter(Boolean)

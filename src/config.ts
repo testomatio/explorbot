@@ -132,6 +132,8 @@ interface PlannerAgentConfig extends AgentConfig {
   styles?: string[];
   stylesDir?: string;
   docsWeight?: number;
+  minTests?: number;
+  maxTests?: number;
 }
 
 interface ScoutAgentConfig extends AgentConfig {
@@ -245,7 +247,7 @@ interface ExplorbotConfig {
     knowledge: string;
     experience: string;
     output: string;
-    spec?: string;
+    spec?: string | string[];
   };
   experience?: {
     maxReadLines?: number;
@@ -257,17 +259,6 @@ interface ExplorbotConfig {
   files?: Record<string, string>;
   dynamicPageRegex?: string;
 }
-
-const config: ExplorbotConfig = {
-  playwright: {
-    browser: 'chromium',
-    url: 'http://localhost:3000',
-  },
-
-  ai: {
-    model: null as any,
-  },
-};
 
 type RuleEntry = string | Record<string, string>;
 
@@ -763,10 +754,6 @@ export class ConfigParser {
     }
   }
 
-  private getNestedValue(obj: any, path: string): any {
-    return path.split('.').reduce((current, key) => current?.[key], obj);
-  }
-
   public mergeWithDefaults(config: Partial<ExplorbotConfig>): ExplorbotConfig {
     const defaults = {
       playwright: {
@@ -879,6 +866,7 @@ export function configuredModels(ai?: AIConfig): Record<string, ConfiguredModel>
   const models: Record<string, ConfiguredModel> = { model: describe(ai.model) };
   if (ai.agenticModel) models.agenticModel = describe(ai.agenticModel);
   if (ai.visionModel) models.visionModel = describe(ai.visionModel);
+  if (ai.decisionModel) models.decisionModel = { name: ai.decisionModel.model, provider: ai.decisionModel.provider };
   for (const [agent, agentConfig] of Object.entries(ai.agents || {})) {
     if (agentConfig?.model) models[agent] = describe(agentConfig.model);
   }

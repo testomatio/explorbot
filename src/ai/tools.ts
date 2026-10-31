@@ -1,7 +1,7 @@
 import { tool } from 'ai';
 import dedent from 'dedent';
 import { z } from 'zod';
-import { ActionResult, type PageDiff, type ToolResultMetadata } from '../action-result.ts';
+import { ActionResult, type PageDiff } from '../action-result.ts';
 import type { ExecutedStep } from '../action.ts';
 import { type ExperienceTracker, renderExperienceRecipes } from '../experience-tracker.ts';
 import { Stats } from '../stats.ts';
@@ -65,8 +65,8 @@ export function createCodeceptJSTools({ explorer, stateManager, judge }: ToolDep
           Never mix different elements — use separate click() calls instead.
           REQUIRED: include at least one command WITHOUT a container — a wrong or stale container always fails.
           Order by reliability:
-          1. I.click(text, container) - when the container is verified - e.g. I.click("Save", ".modal")
-          2. I.click(ARIA, container) - e.g. I.click({"role":"button","text":"Save"}, ".modal")
+          1. I.click(ARIA, container) - e.g. I.click({"role":"button","text":"Save"}, ".modal")
+          2. I.click(text, container) - when the container is verified - e.g. I.click("Save", ".modal")
           3. I.click(CSS, container) - e.g. I.click("#btn", ".modal")
           4. I.click(CSS) or I.click(XPath) - when locator already includes context (ID, XPath)
           After a result reporting multiple matches, reuse that locator with step.opts({ elementIndex: N }) as the last argument.
@@ -292,7 +292,7 @@ export function createCodeceptJSTools({ explorer, stateManager, judge }: ToolDep
           const normalizedKey = key.toLowerCase();
           const matchingStandardKey = Array.from(standardKeys).find((sk) => sk.toLowerCase() === normalizedKey);
           const isStandardKey = !!matchingStandardKey;
-          const keyToUse = matchingStandardKey || key;
+          const keyToUse = KEY_ALIASES[matchingStandardKey || ''] || matchingStandardKey || key;
 
           if (!isSingleChar && !isStandardKey) {
             const previousState = ActionResult.fromState(stateManager.getCurrentState()!);
@@ -480,7 +480,7 @@ export function createCodeceptJSTools({ explorer, stateManager, judge }: ToolDep
               commandsExecuted: lines.length,
               attempts: action.executedSteps,
               code: codeBlock,
-              suggestion: 'Verify the form was filled in correctly using see() tool. If needed to submit: try click() tool or form() with I.pressKey("Enter").',
+              suggestion: 'Check the filled values with verify() before submitting, then submit with click().',
             },
             action
           );
@@ -678,7 +678,7 @@ export function createAgentTools({ explorer, stateManager, ai, judge, researcher
       inputSchema: z.object({
         reason: z.string().describe('Why do you need fresh context? Required to prevent overuse.'),
       }),
-      execute: async ({ reason }) => {
+      execute: async () => {
         try {
           const currentState = stateManager.getCurrentState();
 
@@ -760,6 +760,7 @@ export function createAgentTools({ explorer, stateManager, ai, judge, researcher
           }
 
           return failedToolResult('verify', `Verification failed: ${assertion}`, {
+            attempts: result.results.map(({ code, passed, error }) => ({ code, passed, error })),
             suggestion: 'The assertion could not be verified. Check if the condition is actually present on the page or try a different assertion.',
           });
         } catch (error) {
@@ -793,7 +794,7 @@ export function createAgentTools({ explorer, stateManager, ai, judge, researcher
       inputSchema: z.object({
         reason: z.string().describe('Why do you need research? What information is missing from existing context?'),
       }),
-      execute: async ({ reason }) => {
+      execute: async () => {
         try {
           const currentState = stateManager.getCurrentState();
 
@@ -907,7 +908,7 @@ export function createAgentTools({ explorer, stateManager, ai, judge, researcher
         element: z.string().describe('Visual description of element to click (e.g., "blue Submit button in the modal footer", "Settings gear icon in top right")'),
         context: z.string().describe('What you already tried and why it failed - helps with accurate identification'),
       }),
-      execute: async ({ element, context }) => {
+      execute: async ({ element }) => {
         if (Stats.visionDisabled) {
           return failedToolResult('visualClick', 'Vision tools are disabled for this session. Use xpathCheck() to find the element, then click() with the discovered locator.');
         }
@@ -1058,7 +1059,7 @@ export function createAgentTools({ explorer, stateManager, ai, judge, researcher
         xpath: z.string().describe('XPath expression — use broad patterns to avoid missing the element'),
         reason: z.string().describe('What element you are looking for and why'),
       }),
-      execute: async ({ xpath, reason }) => {
+      execute: async ({ xpath }) => {
         const currentState = stateManager.getCurrentState();
 
         if (!currentState) {
@@ -1202,6 +1203,7 @@ const ARIA_OUTPUT_CAP = 4000;
 const HTML_OUTPUT_CAP = 6000;
 const ANALYSIS_OUTPUT_CAP = 2000;
 const JUDGE_RECENT_ACTIONS_LIMIT = 8;
+const KEY_ALIASES: Record<string, string> = { Esc: 'Escape', Del: 'Delete' };
 
 function cap(text: string | undefined | null, max: number): string {
   if (!text) return '';

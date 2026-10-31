@@ -65,14 +65,8 @@ Trying to fill the form on the page
 ```
 
 ```js
-  I.fillField('/html/body/div/div/div/form/input[@name="name"]', 'Value');
+  I.fillField('//html/body//form//input[@name="name"]', 'Value');
 ```
 </example_output>
 
-If you don't know the answer, answer as:
-
-<example_output>
-```js
-  throw new Error('No resolution');
-```
-</example_output>
+If no solution is possible, call stop() with the reason instead of proposing code.

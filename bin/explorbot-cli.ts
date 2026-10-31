@@ -3,13 +3,16 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import chalk from 'chalk';
-import { Command } from 'commander';
-import figureSet from 'figures';
+import { Command, Help } from 'commander';
 import { render } from 'ink';
 import React from 'react';
+import { createApiCommands } from '../boat/api-tester/src/cli.ts';
+import { createDocsCommands } from '../boat/doc-collector/src/cli.ts';
+import { createPrimaCommands } from '../boat/prima/src/cli.ts';
 import { flushTelemetry } from '../src/ai/provider.js';
 import { HelpJsonCommand } from '../src/commands/help-json-command.js';
 import { RecommendedModelsCommand } from '../src/commands/recommended-models-command.js';
+import { PlanCommand } from '../src/commands/plan-command.js';
 import { App } from '../src/components/App.js';
 import { StatusPane } from '../src/components/StatusPane.js';
 import { authOption, decisionModelOption, knowledgeOption, wsOption } from '../src/commands/options/index.js';
@@ -22,7 +25,6 @@ import { getCliName } from '../src/utils/cli-name.ts';
 import { isVerboseMode, log, setPreserveConsoleLogs, setQuietMode, tag } from '../src/utils/logger.js';
 import { jsonToTable } from '../src/utils/markdown-parser.js';
 import { parseMarkdownToTerminal } from '../src/utils/markdown-terminal.js';
-import { type NextStepSection, printNextSteps, relativeToCwd } from '../src/utils/next-steps.ts';
 import { readCliSitemap } from '../src/utils/sitemap.ts';
 import { UrlFilter } from '../src/utils/url-filter.ts';
 
@@ -32,11 +34,40 @@ const cli = getCliName();
 const pkgPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../package.json');
 const pkgVersion = JSON.parse(fs.readFileSync(pkgPath, 'utf-8')).version as string;
 
-program.name(cli).description('AI-powered web exploration tool').version(pkgVersion, '-V, --version');
-wsOption.register(program);
-knowledgeOption.register(program);
-authOption.register(program);
-decisionModelOption.register(program);
+const GROUPS = {
+  explore: 'Explore:',
+  steps: 'Steps:',
+  results: 'Results:',
+  knowledge: 'Knowledge & rules:',
+  setup: 'Setup:',
+  tools: 'More tools:',
+  help: 'Help:',
+};
+
+program
+  .name(cli)
+  .description('AI-powered exploratory testing for web apps')
+  .version(pkgVersion, '-V, --version')
+  .configureHelp({
+    styleTitle: (str) => chalk.yellow.bold(str),
+    styleCommandText: (str) => chalk.bold(str),
+    styleSubcommandText: (str) => chalk.cyan(str),
+    styleOptionText: (str) => chalk.green(str),
+    styleArgumentText: (str) => chalk.magenta(str),
+    showGlobalOptions: true,
+    visibleOptions(cmd) {
+      const options = Help.prototype.visibleOptions.call(this, cmd);
+      if (cmd.parent) return options;
+      return options.filter((option) => !isGlobalOption(option.flags));
+    },
+    visibleGlobalOptions(cmd) {
+      return Help.prototype.visibleGlobalOptions.call(this, cmd).filter((option) => isGlobalOption(option.flags));
+    },
+  });
+
+const globalOptions = [knowledgeOption, authOption, decisionModelOption, wsOption];
+for (const option of globalOptions) option.register(program);
+const isGlobalOption = (flags: string) => globalOptions.some((option) => option.flags === flags);
 
 process.on('uncaughtException', async (error) => {
   tag('error').log(`Uncaught exception: ${error instanceof Error ? `${error.message}\n${error.stack}` : String(error)}`);
@@ -64,10 +95,11 @@ interface CLIOptions {
   headless?: boolean;
   incognito?: boolean;
   session?: string | boolean;
-  spec?: string;
+  spec?: string | string[];
 }
 
 function buildExplorBotOptions(from: string | undefined, options: CLIOptions): ExplorBotOptions {
+  const spec = Array.isArray(options.spec) ? (options.spec.length > 0 ? options.spec : undefined) : options.spec;
   return {
     from,
     baseUrl: options.baseUrl,
@@ -78,7 +110,7 @@ function buildExplorBotOptions(from: string | undefined, options: CLIOptions): E
     headless: options.headless,
     incognito: options.incognito,
     session: options.session,
-    applicationSpec: options.spec,
+    applicationSpec: spec,
   } as ExplorBotOptions;
 }
 
@@ -92,7 +124,7 @@ function addCommonOptions(cmd: Command): Command {
     .option('-s, --show', 'Show browser window')
     .option('--headless', 'Run browser in headless mode')
     .option('--incognito', 'Run without recording experiences')
-    .option('--spec <path>', 'Use a Docbot application spec directory or index.md')
+    .option('--spec <path>', 'Use a Docbot application spec directory or index.md (repeatable)', (val: string, acc: string[]) => [...(acc || []), val])
     .option('--session [file]', 'Save/restore browser session from file');
 }
 
@@ -159,7 +191,9 @@ async function showStatsAndExit(code: number): Promise<never> {
   process.exit(code);
 }
 
-addCommonOptions(program.command('start [path]').description('Start web exploration')).action(async (startPath, options) => {
+program.commandsGroup(GROUPS.explore);
+
+addCommonOptions(program.command('start [path]').description('Open the interactive TUI and explore with commands')).action(async (startPath, options) => {
   setPreserveConsoleLogs(false);
   const explorBot = new ExplorBot(buildExplorBotOptions(startPath, options));
   await explorBot.start();
@@ -169,7 +203,7 @@ addCommonOptions(program.command('start [path]').description('Start web explorat
 addCommonOptions(
   program
     .command('explore [path]')
-    .description('Explore a page autonomously and run invented scenarios')
+    .description('Invent test scenarios for a page and run them')
     .option('--sitemap <source>', 'Explore every page listed in a sitemap: file path, URL, or - for stdin (a piped stdin is read automatically)')
     .option('--url-filter <spec>', 'Pick pages to explore: keys filter|exclude|limit, plus sort:priority|lastmod for a sitemap, e.g. "filter:/admin/*;exclude:/admin/logs/*;limit:20"')
     .option('--max-tests <count>', 'Maximum number of tests to run')
@@ -207,10 +241,65 @@ addCommonOptions(
   }
 });
 
-addCommonOptions(program.command('plan <path>').description('Generate test plan for a page and exit'))
+addCommonOptions(
+  program
+    .command('freesail [startUrl]')
+    .description('Roam the app on its own, moving on to new pages')
+    .option('--deep', 'Depth-first: prioritize newly discovered pages')
+    .option('--shallow', 'Breadth-first: pick globally least-visited page')
+    .option('--scope <prefix>', 'Restrict navigation to URL prefix')
+    .option('--max-tests <count>', 'Maximum number of tests to run')
+    .option('--max-duration <minutes>', 'Wall-clock budget in minutes for the whole run')
+    .option('--url-filter <spec>', 'Pick pages to explore: keys filter|exclude|limit, e.g. "filter:/admin/*;exclude:/admin/logs/*;limit:20"')
+).action(async (startUrl, options) => {
+  const explorBot = new ExplorBot(buildExplorBotOptions(startUrl || '/', options));
+  await explorBot.start();
+  const args = [options.deep && '--deep', options.shallow && '--shallow', options.scope && `--scope ${options.scope}`, options.maxTests && `--max-tests ${options.maxTests}`, options.maxDuration && `--max-duration ${options.maxDuration}`, options.urlFilter && `--url-filter "${options.urlFilter}"`]
+    .filter(Boolean)
+    .join(' ');
+  const { FreesailCommand } = await import('../src/commands/freesail-command.js');
+  const cmd = new FreesailCommand(explorBot);
+  try {
+    await cmd.execute(args);
+  } catch (error) {
+    console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
+    printPageContext(explorBot);
+    await showStatsAndExit(1);
+  }
+});
+
+program.commandsGroup(GROUPS.steps);
+
+addCommonOptions(program.command('research <url>').description('Research a page and print its UI map').option('--data', 'Include data extraction in research').option('--deep', 'Enable deep analysis (expand hidden elements)').option('--no-fix', 'Skip locator fix cycle (for debugging)')).action(
+  async (url, options) => {
+    try {
+      const explorBot = new ExplorBot(buildExplorBotOptions(url, options));
+      await explorBot.start();
+
+      const argParts: string[] = [url];
+      if (options.data) argParts.push('--data');
+      if (options.deep) argParts.push('--deep');
+      if (options.fix === false) argParts.push('--no-fix');
+
+      const { ResearchCommand } = await import('../src/commands/research-command.js');
+      await new ResearchCommand(explorBot).execute(argParts.join(' '));
+
+      await explorBot.stop();
+      await showStatsAndExit(0);
+    } catch (error) {
+      console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
+      await showStatsAndExit(1);
+    }
+  }
+);
+
+addCommonOptions(program.command('plan <path>').description('Write a test plan for a page'))
   .option('-a, --append', 'Add tests to existing plan file')
   .option('--style <style>', 'Planning style: normal, curious, psycho')
   .option('--focus <feature>', 'Focus area for test planning')
+  .option('--tests <count>', 'Exact number of tests to generate')
+  .option('--min-tests <count>', 'Minimum number of tests to generate')
+  .option('--max-tests <count>', 'Maximum number of tests to generate')
   .action(async (planPath, options) => {
     try {
       const explorBot = new ExplorBot(buildExplorBotOptions(planPath, options));
@@ -218,70 +307,14 @@ addCommonOptions(program.command('plan <path>').description('Generate test plan 
 
       await explorBot.visit(planPath);
 
-      if (options.append) {
-        const planFilename = explorBot.generatePlanFilename();
-        const existingPlanPath = path.join(explorBot.getPlansDir(), planFilename);
-        if (fs.existsSync(existingPlanPath)) {
-          explorBot.loadPlan(existingPlanPath);
-        }
-      }
-
-      await explorBot.plan(options.focus || undefined, {
-        fresh: !options.append,
-        style: options.style,
-      });
-
-      const plan = explorBot.getCurrentPlan();
-      if (!plan?.tests.length) {
-        console.error('No test scenarios generated.');
-        await explorBot.stop();
-        await showStatsAndExit(1);
-      }
-
-      const suite = explorBot.getSuite();
-      if (suite && suite.automatedTestCount > 0) {
-        const names = suite.getAutomatedTestNames();
-        console.log(`\n${chalk.bold.cyan(`Already implemented (${names.length} tests)`)}`);
-        for (let i = 0; i < names.length; i++) {
-          console.log(`  ${chalk.dim(`${i + 1}.`)} ${chalk.green(figureSet.pointer)} ${names[i]}`);
-        }
-      }
-
-      if (plan?.tests.length) {
-        console.log(`\n${chalk.bold.cyan(`New test scenarios (${plan.tests.length})`)}`);
-        for (let i = 0; i < plan.tests.length; i++) {
-          const t = plan.tests[i];
-          console.log(`  ${chalk.dim(`${i + 1}.`)} ${chalk.green(figureSet.pointer)} ${t.scenario} ${chalk.dim(`[${t.priority}]`)}`);
-        }
-      }
-
-      const savedPath = explorBot.savePlan();
-
-      const cliFlags = [options.path ? `--path ${options.path}` : '', options.session ? '--session' : ''].filter(Boolean).join(' ');
-      const cliSuffix = cliFlags ? ` ${cliFlags}` : '';
-
-      const sections: NextStepSection[] = [];
-      if (savedPath) {
-        const relPlan = relativeToCwd(savedPath);
-        sections.push({
-          label: 'Plan',
-          path: savedPath,
-          commands: [
-            { label: 'Re-run', command: `${cli} test ${relPlan} 1${cliSuffix}` },
-            { label: 'Run all', command: `${cli} test ${relPlan} *${cliSuffix}` },
-            { label: 'Run range', command: `${cli} test ${relPlan} 1-3${cliSuffix}` },
-          ],
-        });
-      }
-      const automatedFiles = suite && suite.automatedTestCount > 0 ? suite.getAutomatedTestFiles() : [];
-      if (automatedFiles.length > 0) {
-        const commands = automatedFiles.map((f) => ({ label: '', command: `${cli} rerun ${relativeToCwd(f)}${cliSuffix}` }));
-        sections.push({
-          label: `Automated tests (${automatedFiles.length})`,
-          commands,
-        });
-      }
-      printNextSteps(sections);
+      const args = ['--fresh'];
+      if (options.append) args[0] = '--append';
+      if (options.style) args.push(`--style ${options.style}`);
+      if (options.focus) args.push(`--focus "${options.focus}"`);
+      if (options.tests) args.push(`--tests ${options.tests}`);
+      if (options.minTests) args.push(`--min-tests ${options.minTests}`);
+      if (options.maxTests) args.push(`--max-tests ${options.maxTests}`);
+      await new PlanCommand(explorBot).execute(args.join(' '));
 
       await explorBot.stop();
       await showStatsAndExit(0);
@@ -291,7 +324,195 @@ addCommonOptions(program.command('plan <path>').description('Generate test plan 
     }
   });
 
-addCommonOptions(program.command('plan:load <planfile> [index]').description('Load a plan file and display its tests. Pass index to see test details.')).action(async (planfile: string, index: string | undefined) => {
+addCommonOptions(program.command('test <planfile> [index]').description('Run tests from a plan file; index: 1, 1,3, 1-5, *').option('--grep <pattern>', 'Run tests matching pattern').option('--from-plan <file>', 'Load plan file when the first argument is a test index')).action(
+  async (planfile, index, options) => {
+    try {
+      let planfileArg = planfile;
+      let indexArg = index;
+      if (options.fromPlan) {
+        planfileArg = options.fromPlan;
+        indexArg = planfile;
+      }
+
+      const peeked = Plan.loadFromFile(planfileArg);
+
+      const explorBot = new ExplorBot(buildExplorBotOptions(peeked?.startUrl, options));
+      await explorBot.start();
+
+      const plan = explorBot.loadPlan(planfileArg);
+      const pending = plan.getPendingTests();
+      log(`Plan loaded: "${plan.title}" (${plan.tests.length} tests, ${pending.length} pending)`);
+
+      const startUrl = plan.startUrl;
+      if (!startUrl) {
+        throw new Error('No URL found in plan or tests. Cannot determine where to navigate.');
+      }
+
+      log(`Navigating to ${startUrl}`);
+      await explorBot.visit(startUrl);
+
+      let args = '*';
+      if (indexArg) args = indexArg;
+      else if (options.grep) args = options.grep;
+
+      const { TestCommand } = await import('../src/commands/test-command.js');
+      const cmd = new TestCommand(explorBot);
+      await cmd.execute(args);
+
+      await explorBot.printSessionAnalysis();
+      await explorBot.stop();
+      await showStatsAndExit(0);
+    } catch (error) {
+      console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
+      await showStatsAndExit(1);
+    }
+  }
+);
+
+addCommonOptions(program.command('rerun <filename> [index]').description('Re-run generated tests, healing failures with AI')).action(async (filename, index, options) => {
+  try {
+    const explorBot = new ExplorBot(buildExplorBotOptions(undefined, options));
+    await explorBot.start();
+    const { RerunCommand } = await import('../src/commands/rerun-command.js');
+    const cmd = new RerunCommand(explorBot);
+    const args = index ? `${filename} ${index}` : filename;
+    await cmd.execute(args);
+    await explorBot.stop();
+    await showStatsAndExit(0);
+  } catch (error) {
+    console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
+    await showStatsAndExit(1);
+  }
+});
+
+addCommonOptions(program.command('navigate <url>').description('Reach a URL with the AI Navigator; exits 1 if unreachable')).action(async (url, options) => {
+  try {
+    const explorBot = new ExplorBot(buildExplorBotOptions(url, options));
+    await explorBot.start();
+
+    const { NavigateCommand } = await import('../src/commands/navigate-command.js');
+    await new NavigateCommand(explorBot).execute(url);
+
+    await explorBot.stop();
+    await showStatsAndExit(0);
+  } catch (error) {
+    console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
+    await showStatsAndExit(1);
+  }
+});
+
+addCommonOptions(
+  program.command('drill <url>').alias('driller').description('Try every component on a page to learn how it works').option('--save-knowledge <path>', 'Save learned interactions to knowledge file at this URL path').option('--max-components <count>', 'Maximum number of components to drill')
+).action(async (url, options) => {
+  try {
+    const explorBot = new ExplorBot(buildExplorBotOptions(url, options));
+    await explorBot.start();
+
+    await explorBot.visit(url);
+
+    const plan = await explorBot.agentDriller().drill({
+      knowledgePath: options.saveKnowledge,
+      maxComponents: Number.parseInt(options.maxComponents || '30', 10),
+      interactive: false,
+    });
+
+    console.log(`\nDrill completed: ${plan.tests.length} components`);
+    console.log(`Successful: ${plan.tests.filter((t) => t.isSuccessful).length}`);
+    console.log(`Failed: ${plan.tests.filter((t) => t.hasFailed).length}`);
+
+    await explorBot.stop();
+    await showStatsAndExit(0);
+  } catch (error) {
+    console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
+    await showStatsAndExit(1);
+  }
+});
+
+program
+  .command('context <url>')
+  .description('Print what agents see on a page: headings, knowledge, experience, elements')
+  .option('-p, --path <path>', 'Working directory path')
+  .option('-c, --config <path>', 'Path to configuration file')
+  .option('--session [file]', 'Save/restore browser session from file')
+  .option('--full', 'Include HTML and all data')
+  .option('--compact', 'Compact view with summaries')
+  .option('--attached', 'Only auto-attached sections (default)')
+  .option('--visual', 'Annotate elements on screenshot and print screenshot path')
+  .option('--screenshot', 'Alias for --visual')
+  .action(async (url, options) => {
+    try {
+      const mainOptions: ExplorBotOptions = {
+        path: options.path,
+        config: options.config,
+        headless: true,
+        session: options.session,
+      };
+
+      const explorBot = new ExplorBot(mainOptions);
+      await explorBot.start();
+
+      await explorBot.visit(url);
+
+      const { ContextCommand } = await import('../src/commands/context-command.js');
+      const argParts: string[] = [];
+      if (options.full) argParts.push('--full');
+      else if (options.compact) argParts.push('--compact');
+      else argParts.push('--attached');
+      if (options.visual || options.screenshot) argParts.push('--visual');
+      await new ContextCommand(explorBot).execute(argParts.join(' '));
+
+      await explorBot.stop();
+      await showStatsAndExit(0);
+    } catch (error) {
+      console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
+      await showStatsAndExit(1);
+    }
+  });
+
+addCommonOptions(program.command('shell <url> <command>').description('Run one CodeceptJS command on a page')).action(async (url, command, options) => {
+  try {
+    const explorBot = new ExplorBot(buildExplorBotOptions(url, options));
+    await explorBot.start();
+    await explorBot.visit(url);
+
+    const action = explorBot.getExplorer().action();
+    await action.execute(command);
+
+    log('Command executed successfully');
+    const state = explorBot.stateManager().getCurrentState();
+    if (state) log(`URL: ${state.url}`);
+
+    await explorBot.stop();
+    await showStatsAndExit(0);
+  } catch (error) {
+    console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
+    await showStatsAndExit(1);
+  }
+});
+
+program.commandsGroup(GROUPS.results);
+
+program
+  .command('plans [plan]')
+  .description('List saved plans, or the tests of one plan')
+  .option('-p, --path <path>', 'Working directory path')
+  .option('-c, --config <path>', 'Path to configuration file')
+  .action(async (plan, options) => {
+    try {
+      await ConfigParser.getInstance().loadConfig({
+        config: options.config,
+        path: options.path || process.cwd(),
+      });
+      const explorBot = new ExplorBot({ path: options.path });
+      const { PlansCommand } = await import('../src/commands/plans-command.js');
+      await new PlansCommand(explorBot).execute(plan || '');
+    } catch (error) {
+      console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
+      process.exit(1);
+    }
+  });
+
+addCommonOptions(program.command('plan:load <planfile> [index]').description('Show the tests of a plan file, or one test in detail')).action(async (planfile: string, index: string | undefined) => {
   try {
     const plan = Plan.loadFromFile(planfile);
     if (!plan?.filePath) {
@@ -357,56 +578,9 @@ addCommonOptions(program.command('plan:load <planfile> [index]').description('Lo
   }
 });
 
-addCommonOptions(program.command('test <planfile> [index]').description('Execute tests from a plan file. Index: 1, 1,3, 1-5, *, all').option('--grep <pattern>', 'Run tests matching pattern').option('--from-plan <file>', 'Load plan file when the first argument is a test index')).action(
-  async (planfile, index, options) => {
-    try {
-      let planfileArg = planfile;
-      let indexArg = index;
-      if (options.fromPlan) {
-        planfileArg = options.fromPlan;
-        indexArg = planfile;
-      }
-
-      const peeked = Plan.loadFromFile(planfileArg);
-
-      const explorBot = new ExplorBot(buildExplorBotOptions(peeked?.startUrl, options));
-      await explorBot.start();
-
-      let plan = peeked;
-      if (plan) explorBot.setCurrentPlan(plan);
-      if (!plan) plan = explorBot.loadPlan(planfileArg);
-      const pending = plan.getPendingTests();
-      log(`Plan loaded: "${plan.title}" (${plan.tests.length} tests, ${pending.length} pending)`);
-
-      const startUrl = plan.startUrl;
-      if (!startUrl) {
-        throw new Error('No URL found in plan or tests. Cannot determine where to navigate.');
-      }
-
-      log(`Navigating to ${startUrl}`);
-      await explorBot.visit(startUrl);
-
-      let args = '*';
-      if (indexArg) args = indexArg;
-      else if (options.grep) args = options.grep;
-
-      const { TestCommand } = await import('../src/commands/test-command.js');
-      const cmd = new TestCommand(explorBot);
-      await cmd.execute(args);
-
-      await explorBot.printSessionAnalysis();
-      await explorBot.stop();
-      await showStatsAndExit(0);
-    } catch (error) {
-      console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
-      await showStatsAndExit(1);
-    }
-  }
-);
-
 program
   .command('runs [file]')
-  .description('List generated test files, or show steps for a specific file')
+  .description('List generated test files, or the steps of one file')
   .option('-p, --path <path>', 'Working directory path')
   .option('-c, --config <path>', 'Path to configuration file')
   .action(async (file, options) => {
@@ -425,19 +599,27 @@ program
   });
 
 program
-  .command('plans [plan]')
-  .description('List saved plans, or show tests for a specific plan')
+  .command('experience [filter] [index]')
+  .description('List stored experience by URL; pass a tag (A.1) or index to expand one')
   .option('-p, --path <path>', 'Working directory path')
   .option('-c, --config <path>', 'Path to configuration file')
-  .action(async (plan, options) => {
+  .option('--recent', 'Only files modified within the last 30 days')
+  .option('--old', 'Only files modified more than 30 days ago')
+  .action(async (filter, index, options) => {
     try {
       await ConfigParser.getInstance().loadConfig({
         config: options.config,
         path: options.path || process.cwd(),
       });
+      const { ExperienceCommand } = await import('../src/commands/experience-command.js');
       const explorBot = new ExplorBot({ path: options.path });
-      const { PlansCommand } = await import('../src/commands/plans-command.js');
-      await new PlansCommand(explorBot).execute(plan || '');
+      const command = new ExperienceCommand(explorBot);
+      const flags: string[] = [];
+      if (options.recent) flags.push('--recent');
+      if (options.old) flags.push('--old');
+      const args = [...flags, filter, index].filter(Boolean).join(' ');
+      await command.execute(args);
+      command.printSuggestions();
     } catch (error) {
       console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
       process.exit(1);
@@ -445,169 +627,29 @@ program
   });
 
 program
-  .command('sites')
-  .description('List sites registered in the global installation')
-  .action(async () => {
-    const { SitesCommand } = await import('../src/commands/sites-command.js');
-    await new SitesCommand(new ExplorBot()).execute('');
-  });
-
-addCommonOptions(program.command('rerun <filename> [index]').description('Re-run generated tests with AI auto-healing')).action(async (filename, index, options) => {
-  try {
-    const explorBot = new ExplorBot(buildExplorBotOptions(undefined, options));
-    await explorBot.start();
-    const { RerunCommand } = await import('../src/commands/rerun-command.js');
-    const cmd = new RerunCommand(explorBot);
-    const args = index ? `${filename} ${index}` : filename;
-    await cmd.execute(args);
-    await explorBot.stop();
-    await showStatsAndExit(0);
-  } catch (error) {
-    console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
-    await showStatsAndExit(1);
-  }
-});
-
-addCommonOptions(
-  program
-    .command('freesail [startUrl]')
-    .description('Continuously explore and navigate to new pages autonomously')
-    .option('--deep', 'Depth-first: prioritize newly discovered pages')
-    .option('--shallow', 'Breadth-first: pick globally least-visited page')
-    .option('--scope <prefix>', 'Restrict navigation to URL prefix')
-    .option('--max-tests <count>', 'Maximum number of tests to run')
-    .option('--max-duration <minutes>', 'Wall-clock budget in minutes for the whole run')
-    .option('--url-filter <spec>', 'Pick pages to explore: keys filter|exclude|limit, e.g. "filter:/admin/*;exclude:/admin/logs/*;limit:20"')
-).action(async (startUrl, options) => {
-  const explorBot = new ExplorBot(buildExplorBotOptions(startUrl || '/', options));
-  await explorBot.start();
-  const args = [options.deep && '--deep', options.shallow && '--shallow', options.scope && `--scope ${options.scope}`, options.maxTests && `--max-tests ${options.maxTests}`, options.maxDuration && `--max-duration ${options.maxDuration}`, options.urlFilter && `--url-filter "${options.urlFilter}"`]
-    .filter(Boolean)
-    .join(' ');
-  const { FreesailCommand } = await import('../src/commands/freesail-command.js');
-  const cmd = new FreesailCommand(explorBot);
-  try {
-    await cmd.execute(args);
-  } catch (error) {
-    console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
-    printPageContext(explorBot);
-    await showStatsAndExit(1);
-  }
-});
-
-program
-  .command('config [url]')
-  .description('Show models, config file and paths used by this run')
-  .option('-c, --config <path>', 'Path to configuration file')
+  .command('knows [url]')
+  .description('List knowledge URLs, or the knowledge matching a URL')
   .option('-p, --path <path>', 'Working directory path')
-  .option('--json', 'Print the resolved config as JSON')
   .action(async (url, options) => {
-    setQuietMode(!isVerboseMode());
-    const { ConfigCommand } = await import('../src/commands/config-command.js');
     try {
-      console.log(await ConfigCommand.summary({ config: options.config, path: options.path, url, json: options.json }));
-    } catch (error) {
-      console.error(error instanceof Error ? error.message : 'Unknown error');
-      process.exit(1);
-    }
-  });
-
-RecommendedModelsCommand.register(program);
-
-program
-  .command('init')
-  .description('Initialize configuration for a project or for this machine')
-  .option('-c, --config-path <path>', 'Path for the config file')
-  .option('-f, --force', 'Overwrite existing config file')
-  .option('-p, --path <path>', 'Working directory for initialization')
-  .option('-g, --global', 'Configure explorbot in ~/.explorbot to run from anywhere')
-  .option('--provider <name>', `AI provider for the global config: ${Object.keys(PROVIDERS).join(', ')}`)
-  .option('--api-key <key>', 'API key stored in ~/.explorbot/.env')
-  .option('--url <url>', 'Web application URL written to web.url in the local config')
-  .action(async (options) => {
-    try {
-      const { runInit } = await import('../src/commands/init-command.js');
-      await runInit({
-        configPath: options.configPath,
-        force: options.force,
-        path: options.path,
-        global: options.global,
-        provider: options.provider,
-        apiKey: options.apiKey,
-        url: options.url,
+      await ConfigParser.getInstance().loadConfig({
+        path: options.path || process.cwd(),
       });
+      const { KnowsCommand } = await import('../src/commands/knows-command.js');
+      const explorBot = new ExplorBot({ path: options.path });
+      const command = new KnowsCommand(explorBot);
+      await command.execute(url || '');
     } catch (error) {
       console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
       process.exit(1);
     }
   });
 
-program
-  .command('clean [target]')
-  .description('Clean files: states, research, plans, tests, experiences, output (default: output + experiences)')
-  .option('-p, --path <path>', 'Custom path to clean')
-  .action(async (target, options) => {
-    const customPath = options.path;
-    const originalCwd = process.cwd();
-    const basePath = customPath ? path.resolve(originalCwd, customPath) : process.cwd();
-
-    const targets: Record<string, { description: string; dir: string }> = {
-      states: { description: 'page states', dir: path.join(basePath, 'output', 'states') },
-      research: { description: 'research cache', dir: path.join(basePath, 'output', 'research') },
-      plans: { description: 'test plans', dir: path.join(basePath, 'output', 'plans') },
-      tests: { description: 'generated tests', dir: path.join(basePath, 'output', 'tests') },
-      experiences: { description: 'experience files', dir: path.join(basePath, 'experience') },
-      output: { description: 'all output files', dir: path.join(basePath, 'output') },
-    };
-
-    function cleanDirectoryContents(dirPath: string): number {
-      let count = 0;
-      for (const item of fs.readdirSync(dirPath)) {
-        const itemPath = path.join(dirPath, item);
-        if (fs.statSync(itemPath).isDirectory()) {
-          count += cleanDirectoryContents(itemPath);
-          fs.rmSync(itemPath, { recursive: true });
-        } else {
-          fs.unlinkSync(itemPath);
-          count++;
-        }
-      }
-      return count;
-    }
-
-    function cleanTarget(name: string): void {
-      const t = targets[name];
-      if (!fs.existsSync(t.dir)) {
-        console.log(`${name}: nothing to clean (${t.dir} not found)`);
-        return;
-      }
-      const count = cleanDirectoryContents(t.dir);
-      console.log(`Cleaned ${count} ${t.description} files from ${t.dir}`);
-    }
-
-    try {
-      if (target && !targets[target]) {
-        console.error(`Unknown target: ${target}. Available: ${Object.keys(targets).join(', ')}`);
-        process.exit(1);
-      }
-
-      if (!target) {
-        cleanTarget('output');
-        cleanTarget('experiences');
-      } else {
-        cleanTarget(target);
-      }
-
-      console.log('Cleanup completed successfully!');
-    } catch (error) {
-      console.error('Failed to clean:', error);
-      process.exit(1);
-    }
-  });
+program.commandsGroup(GROUPS.knowledge);
 
 program
   .command('learn [url] [description]')
-  .description('Add knowledge for URLs')
+  .description('Add knowledge for a URL')
   .option('-p, --path <path>', 'Working directory path')
   .option('--replace', 'Replace existing knowledge for this URL instead of appending')
   .action(async (url, description, options) => {
@@ -638,27 +680,8 @@ program
   });
 
 program
-  .command('knows [url]')
-  .description('List all knowledge URLs or show matching knowledge for a URL')
-  .option('-p, --path <path>', 'Working directory path')
-  .action(async (url, options) => {
-    try {
-      await ConfigParser.getInstance().loadConfig({
-        path: options.path || process.cwd(),
-      });
-      const { KnowsCommand } = await import('../src/commands/knows-command.js');
-      const explorBot = new ExplorBot({ path: options.path });
-      const command = new KnowsCommand(explorBot);
-      await command.execute(url || '');
-    } catch (error) {
-      console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
-      process.exit(1);
-    }
-  });
-
-program
   .command('compact [target]')
-  .description('Compact stored experience files; pass filename or URL substring to limit scope')
+  .description('Compact experience files; pass a filename or URL substring to narrow')
   .option('--dry-run', 'Preview without running AI or writing files')
   .option('--no-merge', 'Skip the cross-URL merge step when compacting all')
   .option('-p, --path <path>', 'Working directory path')
@@ -687,162 +710,112 @@ program
   });
 
 program
-  .command('experience [filter] [index]')
-  .description('List stored experiences grouped by URL; pass URL substring to filter; pass tag (A.1) or index to expand a section')
+  .command('add-rule [agent] [name]')
+  .description('Create a rule file for an agent')
+  .option('--url <pattern>', 'URL pattern for this rule')
   .option('-p, --path <path>', 'Working directory path')
-  .option('-c, --config <path>', 'Path to configuration file')
-  .option('--recent', 'Only files modified within the last 30 days')
-  .option('--old', 'Only files modified more than 30 days ago')
-  .action(async (filter, index, options) => {
-    try {
-      await ConfigParser.getInstance().loadConfig({
-        config: options.config,
-        path: options.path || process.cwd(),
+  .action(async (agent, name, options) => {
+    if (options.path) process.chdir(path.resolve(options.path));
+
+    if (agent && name) {
+      const { AddRuleCommand } = await import('../src/commands/add-rule-command.js');
+      const result = AddRuleCommand.createRuleFile(agent, name, {
+        urlPattern: options.url,
       });
-      const { ExperienceCommand } = await import('../src/commands/experience-command.js');
-      const explorBot = new ExplorBot({ path: options.path });
-      const command = new ExperienceCommand(explorBot);
-      const flags: string[] = [];
-      if (options.recent) flags.push('--recent');
-      if (options.old) flags.push('--old');
-      const args = [...flags, filter, index].filter(Boolean).join(' ');
-      await command.execute(args);
-      command.printSuggestions();
+      process.exit(result ? 0 : 1);
+    }
+
+    const AddRule = (await import('../src/components/AddRule.js')).default;
+    render(
+      React.createElement(AddRule, {
+        initialAgent: agent || '',
+        initialName: name || '',
+      }),
+      {
+        exitOnCtrlC: false,
+        patchConsole: false,
+      }
+    );
+  });
+
+program
+  .command('extract-rules <agent>')
+  .description("Copy an agent's built-in rules and planning styles out to customize")
+  .option('-d, --dir <path>', 'Target directory (default: ./rules/<agent>)')
+  .action(async (agent, options) => {
+    try {
+      const { RulesLoader } = await import('../src/utils/rules-loader.js');
+      const targetDir = options.dir || path.resolve(`./rules/${agent}`);
+      const extracted = RulesLoader.extractRules(agent, targetDir);
+      if (extracted.length === 0) {
+        console.log('All rule files already exist in target directory.');
+      } else {
+        console.log(`\nExtracted ${extracted.length} rule files to ${targetDir}`);
+      }
     } catch (error) {
       console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
       process.exit(1);
     }
   });
 
-addCommonOptions(program.command('research <url>').description('Research a page and print UI analysis').option('--data', 'Include data extraction in research').option('--deep', 'Enable deep analysis (expand hidden elements)').option('--no-fix', 'Skip locator fix cycle (for debugging)')).action(
-  async (url, options) => {
-    try {
-      const explorBot = new ExplorBot(buildExplorBotOptions(url, options));
-      await explorBot.start();
-
-      const argParts: string[] = [url];
-      if (options.data) argParts.push('--data');
-      if (options.deep) argParts.push('--deep');
-      if (options.fix === false) argParts.push('--no-fix');
-
-      const { ResearchCommand } = await import('../src/commands/research-command.js');
-      await new ResearchCommand(explorBot).execute(argParts.join(' '));
-
-      await explorBot.stop();
-      await showStatsAndExit(0);
-    } catch (error) {
-      console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
-      await showStatsAndExit(1);
-    }
-  }
-);
-
-addCommonOptions(program.command('navigate <url>').description('Navigate to a URL using the AI Navigator. Exits 0 if reachable, 1 otherwise.')).action(async (url, options) => {
-  try {
-    const explorBot = new ExplorBot(buildExplorBotOptions(url, options));
-    await explorBot.start();
-
-    const { NavigateCommand } = await import('../src/commands/navigate-command.js');
-    await new NavigateCommand(explorBot).execute(url);
-
-    await explorBot.stop();
-    await showStatsAndExit(0);
-  } catch (error) {
-    console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
-    await showStatsAndExit(1);
-  }
-});
-
-addCommonOptions(
-  program.command('drill <url>').alias('driller').description('Drill all components on a page to learn interactions').option('--save-knowledge <path>', 'Save learned interactions to knowledge file at this URL path').option('--max-components <count>', 'Maximum number of components to drill')
-).action(async (url, options) => {
-  try {
-    const explorBot = new ExplorBot(buildExplorBotOptions(url, options));
-    await explorBot.start();
-
-    await explorBot.visit(url);
-
-    const plan = await explorBot.agentDriller().drill({
-      knowledgePath: options.saveKnowledge,
-      maxComponents: Number.parseInt(options.maxComponents || '30', 10),
-      interactive: false,
-    });
-
-    console.log(`\nDrill completed: ${plan.tests.length} components`);
-    console.log(`Successful: ${plan.tests.filter((t) => t.isSuccessful).length}`);
-    console.log(`Failed: ${plan.tests.filter((t) => t.hasFailed).length}`);
-
-    await explorBot.stop();
-    await showStatsAndExit(0);
-  } catch (error) {
-    console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
-    await showStatsAndExit(1);
-  }
-});
+program.commandsGroup(GROUPS.setup);
 
 program
-  .command('context <url>')
-  .description('Print page context (URL, headings, knowledge, experience, interactive elements)')
-  .option('-p, --path <path>', 'Working directory path')
-  .option('-c, --config <path>', 'Path to configuration file')
-  .option('--session [file]', 'Save/restore browser session from file')
-  .option('--full', 'Include HTML and all data')
-  .option('--compact', 'Compact view with summaries')
-  .option('--attached', 'Only auto-attached sections (default)')
-  .option('--visual', 'Annotate elements on screenshot and print screenshot path')
-  .option('--screenshot', 'Alias for --visual')
-  .action(async (url, options) => {
+  .command('init')
+  .description('Initialize configuration for a project or for this machine')
+  .option('-c, --config-path <path>', 'Path for the config file')
+  .option('-f, --force', 'Overwrite existing config file')
+  .option('-p, --path <path>', 'Working directory for initialization')
+  .option('-g, --global', 'Configure explorbot in ~/.explorbot to run from anywhere')
+  .option('--provider <name>', `AI provider for the global config: ${Object.keys(PROVIDERS).join(', ')}`)
+  .option('--api-key <key>', 'API key stored in ~/.explorbot/.env')
+  .option('--url <url>', 'Web application URL written to web.url in the local config')
+  .action(async (options) => {
     try {
-      const mainOptions: ExplorBotOptions = {
+      const { runInit } = await import('../src/commands/init-command.js');
+      await runInit({
+        configPath: options.configPath,
+        force: options.force,
         path: options.path,
-        config: options.config,
-        headless: true,
-        session: options.session,
-      };
-
-      const explorBot = new ExplorBot(mainOptions);
-      await explorBot.start();
-
-      await explorBot.visit(url);
-
-      const { ContextCommand } = await import('../src/commands/context-command.js');
-      const argParts: string[] = [];
-      if (options.full) argParts.push('--full');
-      else if (options.compact) argParts.push('--compact');
-      else argParts.push('--attached');
-      if (options.visual || options.screenshot) argParts.push('--visual');
-      await new ContextCommand(explorBot).execute(argParts.join(' '));
-
-      await explorBot.stop();
-      await showStatsAndExit(0);
+        global: options.global,
+        provider: options.provider,
+        apiKey: options.apiKey,
+        url: options.url,
+      });
     } catch (error) {
       console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
-      await showStatsAndExit(1);
+      process.exit(1);
     }
   });
 
-addCommonOptions(program.command('shell <url> <command>').description('Execute a CodeceptJS command on a page and exit')).action(async (url, command, options) => {
-  try {
-    const explorBot = new ExplorBot(buildExplorBotOptions(url, options));
-    await explorBot.start();
-    await explorBot.visit(url);
+program
+  .command('config [url]')
+  .description('Show models, config file and paths used by this run')
+  .option('-c, --config <path>', 'Path to configuration file')
+  .option('-p, --path <path>', 'Working directory path')
+  .option('--json', 'Print the resolved config as JSON')
+  .action(async (url, options) => {
+    setQuietMode(!isVerboseMode());
+    const { ConfigCommand } = await import('../src/commands/config-command.js');
+    try {
+      console.log(await ConfigCommand.summary({ config: options.config, path: options.path, url, json: options.json }));
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : 'Unknown error');
+      process.exit(1);
+    }
+  });
 
-    const action = explorBot.getExplorer().action();
-    await action.execute(command);
+RecommendedModelsCommand.register(program);
 
-    log('Command executed successfully');
-    const state = explorBot.stateManager().getCurrentState();
-    if (state) log(`URL: ${state.url}`);
+program
+  .command('sites')
+  .description('List sites registered in the global installation')
+  .action(async () => {
+    const { SitesCommand } = await import('../src/commands/sites-command.js');
+    await new SitesCommand(new ExplorBot()).execute('');
+  });
 
-    await explorBot.stop();
-    await showStatsAndExit(0);
-  } catch (error) {
-    console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
-    await showStatsAndExit(1);
-  }
-});
-
-const browserCmd = program.command('browser').description('Manage persistent browser server');
+const browserCmd = program.command('browser').description('Start, stop or check a persistent browser server');
 
 browserCmd
   .command('start')
@@ -921,80 +894,119 @@ browserCmd
   });
 
 program
-  .command('extract-rules <agent>')
-  .description('Extract built-in rules (including planning styles) for an agent to a directory for customization')
-  .option('-d, --dir <path>', 'Target directory (default: ./rules/<agent>)')
-  .action(async (agent, options) => {
-    try {
-      const { RulesLoader } = await import('../src/utils/rules-loader.js');
-      const targetDir = options.dir || path.resolve(`./rules/${agent}`);
-      const extracted = RulesLoader.extractRules(agent, targetDir);
-      if (extracted.length === 0) {
-        console.log('All rule files already exist in target directory.');
-      } else {
-        console.log(`\nExtracted ${extracted.length} rule files to ${targetDir}`);
+  .command('clean [target]')
+  .description('Delete states, research, plans, tests, experiences or output (default: output + experiences)')
+  .option('-p, --path <path>', 'Custom path to clean')
+  .action(async (target, options) => {
+    const customPath = options.path;
+    const originalCwd = process.cwd();
+    const basePath = customPath ? path.resolve(originalCwd, customPath) : process.cwd();
+
+    const targets: Record<string, { description: string; dir: string }> = {
+      states: { description: 'page states', dir: path.join(basePath, 'output', 'states') },
+      research: { description: 'research cache', dir: path.join(basePath, 'output', 'research') },
+      plans: { description: 'test plans', dir: path.join(basePath, 'output', 'plans') },
+      tests: { description: 'generated tests', dir: path.join(basePath, 'output', 'tests') },
+      experiences: { description: 'experience files', dir: path.join(basePath, 'experience') },
+      output: { description: 'all output files', dir: path.join(basePath, 'output') },
+    };
+
+    function cleanDirectoryContents(dirPath: string): number {
+      let count = 0;
+      for (const item of fs.readdirSync(dirPath)) {
+        const itemPath = path.join(dirPath, item);
+        if (fs.statSync(itemPath).isDirectory()) {
+          count += cleanDirectoryContents(itemPath);
+          fs.rmSync(itemPath, { recursive: true });
+        } else {
+          fs.unlinkSync(itemPath);
+          count++;
+        }
       }
+      return count;
+    }
+
+    function cleanTarget(name: string): void {
+      const t = targets[name];
+      if (!fs.existsSync(t.dir)) {
+        console.log(`${name}: nothing to clean (${t.dir} not found)`);
+        return;
+      }
+      const count = cleanDirectoryContents(t.dir);
+      console.log(`Cleaned ${count} ${t.description} files from ${t.dir}`);
+    }
+
+    try {
+      if (target && !targets[target]) {
+        console.error(`Unknown target: ${target}. Available: ${Object.keys(targets).join(', ')}`);
+        process.exit(1);
+      }
+
+      if (!target) {
+        cleanTarget('output');
+        cleanTarget('experiences');
+      } else {
+        cleanTarget(target);
+      }
+
+      console.log('Cleanup completed successfully!');
     } catch (error) {
-      console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
+      console.error('Failed to clean:', error);
       process.exit(1);
     }
   });
 
-program
-  .command('add-rule [agent] [name]')
-  .description('Create a rule file for an agent')
-  .option('--url <pattern>', 'URL pattern for this rule')
-  .option('-p, --path <path>', 'Working directory path')
-  .action(async (agent, name, options) => {
-    if (options.path) process.chdir(path.resolve(options.path));
+program.commandsGroup(GROUPS.tools);
 
-    if (agent && name) {
-      const { AddRuleCommand } = await import('../src/commands/add-rule-command.js');
-      const result = AddRuleCommand.createRuleFile(agent, name, {
-        urlPattern: options.url,
-      });
-      process.exit(result ? 0 : 1);
-    }
-
-    const AddRule = (await import('../src/components/AddRule.js')).default;
-    render(
-      React.createElement(AddRule, {
-        initialAgent: agent || '',
-        initialName: name || '',
-      }),
-      {
-        exitOnCtrlC: false,
-        patchConsole: false,
-      }
-    );
-  });
-
-import { createApiCommands } from '../boat/api-tester/src/cli.ts';
-import { createDocsCommands } from '../boat/doc-collector/src/cli.ts';
-import { createPrimaCommands } from '../boat/prima/src/cli.ts';
 program.addCommand(createApiCommands('api'));
 program.addCommand(createDocsCommands('docs'));
 program.addCommand(createPrimaCommands('prima'));
 
 const envHelp = () => {
   const width = Math.max(...EXPLORBOT_ENV_VARS.map((v) => v.name.length));
-  const rows = EXPLORBOT_ENV_VARS.map((v) => `  ${v.name.padEnd(width)}  ${v.description}`).join('\n');
+  const rows = EXPLORBOT_ENV_VARS.map((v) => `  ${chalk.green(v.name.padEnd(width))}  ${v.description}`).join('\n');
 
   return `
-Environment variables (config-free one-liner mode):
+${chalk.yellow.bold('Environment variables:')}
   Set EXPLORBOT_AI_PROVIDER to run without an explorbot.config.js. A config file always wins.
 
 ${rows}
 
   Providers: ${Object.keys(PROVIDERS).join(', ')}
-  Example:
-    EXPLORBOT_URL=https://app.example.com EXPLORBOT_AI_PROVIDER=openrouter \\
-      ${cli} explore /login --max-tests 3
+
+${chalk.yellow.bold('Example:')}
+  EXPLORBOT_URL=https://app.example.com EXPLORBOT_AI_PROVIDER=openrouter \\
+    ${cli} explore /login --max-tests 3
 `;
 };
 
-program.addHelpText('after', `\nFor agents and tools:\n  ${cli} help-json [command...]  the same definitions as JSON — commands, arguments, options, defaults\n`);
-program.addHelpText('after', envHelp);
+program
+  .command('env')
+  .description('Show environment variables for running without a config file')
+  .helpGroup(GROUPS.setup)
+  .addHelpText('after', envHelp)
+  .action(() => console.log(envHelp()));
+
+const examples = [
+  [`${cli} start`, 'interactive TUI, drive it with /commands'],
+  [`${cli} explore /login`, 'invent and run tests for one page'],
+  [`${cli} freesail`, 'roam the whole app on its own'],
+  [`${cli} plan /users`, 'write a test plan, then run it with test'],
+];
+const exampleWidth = Math.max(...examples.map(([command]) => command.length));
+
+program.addHelpText(
+  'after',
+  `
+${chalk.yellow.bold('Examples:')}
+${examples.map(([command, note]) => `  ${chalk.cyan(command.padEnd(exampleWidth))}  ${chalk.dim(note)}`).join('\n')}
+
+${chalk.dim(`Environment variables: ${cli} help env · JSON definitions for agents: ${cli} help-json [command...]`)}
+`
+);
+
+program.commandsGroup(GROUPS.help);
+program.helpCommand(true);
 HelpJsonCommand.register(program);
 
 program.parse();

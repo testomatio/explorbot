@@ -1,4 +1,3 @@
-import { dirname } from 'node:path';
 import { ConfigParser } from '../../config.ts';
 import type { ExplorBot } from '../../explorbot.ts';
 import type { Task } from '../../test-plan.ts';

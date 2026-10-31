@@ -36,7 +36,7 @@ export class Curler {
 
     this.requestState.clear();
     test.start();
-    await this.reporter.reportTestStart(test);
+    await this.reporter.reportTestStart();
 
     const conversation = this.provider.startConversation(this.buildSystemPrompt(), 'curler', this.provider.getAgenticModel('curler'));
     const tools = createCurlerTools(this.apiClient, this.requestState, test, opts?.searchSpec);

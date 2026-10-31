@@ -10,6 +10,7 @@ import { loadMarkdownFiles } from './utils/markdown-files.ts';
 export class ApplicationSpec {
   private pages: ApplicationSpecPage[] = [];
   readonly sourcePath: string;
+  private totalMarkdownFiles = 0;
 
   constructor(sourcePath: string) {
     this.sourcePath = this.resolveSourcePath(sourcePath);
@@ -38,28 +39,27 @@ export class ApplicationSpec {
     return this.pages.length;
   }
 
+  get markdownFileCount(): number {
+    return this.totalMarkdownFiles;
+  }
+
   private load(): void {
     if (!existsSync(this.sourcePath)) {
       throw new Error(`Application spec not found: ${this.sourcePath}`);
     }
 
     const isDirectory = statSync(this.sourcePath).isDirectory();
-    if (!isDirectory && path.basename(this.sourcePath).toLowerCase() !== 'index.md') {
-      throw new Error(`Application spec file must be index.md: ${this.sourcePath}`);
-    }
-
     const bundlePath = isDirectory ? this.sourcePath : path.dirname(this.sourcePath);
+
+    const allFiles = loadMarkdownFiles(bundlePath, { recursive: true });
     const indexPath = path.join(bundlePath, 'index.md');
-    if (!existsSync(indexPath)) {
-      throw new Error(`Application spec index not found: ${indexPath}`);
-    }
+    this.totalMarkdownFiles = allFiles.filter((file) => path.resolve(file.filePath) !== path.resolve(indexPath)).length;
 
-    const pagesPath = path.join(bundlePath, 'pages');
-    if (!existsSync(pagesPath)) {
-      throw new Error(`Application spec pages directory not found: ${pagesPath}`);
-    }
+    for (const file of allFiles) {
+      if (path.resolve(file.filePath) === path.resolve(indexPath)) continue;
 
-    for (const file of loadMarkdownFiles(pagesPath, { recursive: true })) {
+      if (!file.data.url && file.data.format === undefined && file.data.version === undefined) continue;
+
       const parsed = APPLICATION_SPEC_PAGE_SCHEMA.safeParse(file.data);
       if (!parsed.success && parsed.error.issues.some((issue) => issue.path[0] === 'format')) {
         throw new Error(`Invalid application spec format in ${file.filePath}`);
@@ -73,8 +73,14 @@ export class ApplicationSpec {
       this.pages.push({ url: parsed.data.url, content: file.content.trim() });
     }
 
+    if (this.totalMarkdownFiles === 0) {
+      tag('warning').log(`No markdown files found in spec: ${bundlePath}`);
+      return;
+    }
+
     if (this.pages.length === 0) {
-      throw new Error(`Application spec contains no documented pages: ${pagesPath}`);
+      tag('debug').log(`${this.totalMarkdownFiles} spec files found in ${bundlePath}`);
+      return;
     }
   }
 
