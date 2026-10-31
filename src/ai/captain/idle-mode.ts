@@ -36,6 +36,20 @@ export function WithIdleMode<T extends Constructor>(Base: T) {
       }
 
       const tools: Record<string, any> = {
+        plan: tool({
+          description: 'Run the Planner on the current page. Adds tests to the current plan when it is for this page, otherwise starts a new plan. Returns how many tests were added, or why planning failed.',
+          inputSchema: z.object({
+            feature: z.string().optional().describe('Focus area to plan, if any'),
+            style: z.string().optional().describe('Planning style'),
+          }),
+          execute: async ({ feature, style }) => {
+            const before = new Set(ctx.explorBot.getCurrentPlan()?.tests ?? []);
+            const plan = await ctx.explorBot.plan(feature, { style });
+            const error = ctx.explorBot.lastPlanError;
+            if (error) return { success: false, message: error.message };
+            return { success: true, testsAdded: plan?.tests.filter((t) => !before.has(t)).length ?? 0 };
+          },
+        }),
         updatePlan: tool({
           description: 'Update the current plan by replacing or appending tests',
           inputSchema: z.object({

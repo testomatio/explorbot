@@ -218,7 +218,7 @@ export class Planner extends PlannerBase implements Agent {
         tag('warning').log(`Page is not plannable: ${aiResult.object.blockedBy}`);
       }
       if (!this.currentPlan && aiResult.object.scenarios.length === 0 && aiResult.object.prerequisite) {
-        throw new PlanningBlockedError(state.url, aiResult.object.prerequisite);
+        throw new PlanningBlockedError(state.url, aiResult.object.prerequisite, feature, style);
       }
 
       const defaultStartUrl = this.getDefaultStartUrl(state);
