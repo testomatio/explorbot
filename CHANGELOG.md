@@ -2,6 +2,12 @@
 
 ## 2026-10-31
 
+### Configuration
+- **`ai.decisionModel`** — The OpenRouter recommendation is now `~typesafe/jev-latest`. The previous one, `typesafe/jev-latest`, does not exist on OpenRouter, so with `recommendedModels: 'openrouter'` every decision quietly failed and Explorbot ran as if no decision model were set. To pin it yourself: `decisionModel: { provider: 'openrouter', model: '~typesafe/jev-latest' }`.
+
+### Changes
+- A decision model that fails now prints one warning per session (`Decision model … failed …; continuing without it`) instead of failing silently.
+- `explorbot config` and the models table shown at startup now list the decision model.
 ### Changes
 - [Captain] Can run the planner on the current page with a new `plan()` tool. It adds tests to the current plan when that plan is for this page, and starts a new plan otherwise.
 - [Planner] [Captain] When `explore` hits a page the planner can't plan, such as a sign-in form at the URL you asked for, Captain gets the planner's report: the page, the focus, the planning style and what blocks it. Captain works out from the browser session how to get past it, then re-plans the page itself. If Captain adds no tests, the page is skipped.

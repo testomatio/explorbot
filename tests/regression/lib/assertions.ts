@@ -9,7 +9,7 @@ const RESEARCH_KEYWORDS = ['issue', 'label', 'priority', 'assignee', 'status', '
 const POST_LOGIN_ROUTES = ['/issues', '/settings', '/workspace'];
 const FEATURE_GROUPS = [['create', 'new issue', 'add'], ['label'], ['assign'], ['status', 'close', 'progress'], ['filter', 'search'], ['comment'], ['delete', 'remove']];
 
-export function assertBasicRun(runDir: string, stdout: string): AssertResult {
+export function assertBasicRun(runDir: string, stdout: string, minPassed = MIN_PASSED): AssertResult {
   const details: string[] = [];
   const checks: boolean[] = [];
 
@@ -43,7 +43,7 @@ export function assertBasicRun(runDir: string, stdout: string): AssertResult {
 
   const results = parseStdoutResults(stdout);
   const summary = latestReporterSummary(runDir);
-  const resultsOk = Boolean(results) && results!.failed === 0 && results!.passed >= MIN_PASSED;
+  const resultsOk = Boolean(results) && results!.failed === 0 && results!.passed >= minPassed;
   checks.push(resultsOk);
   let resultsText = 'no Results line';
   if (results) resultsText = `${results.passed} passed, ${results.failed} failed`;
