@@ -39,6 +39,7 @@ export class Captain extends CaptainBase implements Agent {
   private commandDescriptions: { name: string; description: string; options: string }[] = [];
   private unresolvedBlockers = new Set<string>();
   private handling = false;
+  private blocker: BlockedError | null = null;
 
   constructor(explorBot: ExplorBot) {
     super();
@@ -309,7 +310,7 @@ export class Captain extends CaptainBase implements Agent {
 
   private async tools(task: Task, onDone: (summary: string) => void) {
     const mode = this.getMode();
-    const ctx: ModeContext = { explorBot: this.explorBot, task };
+    const ctx: ModeContext = { explorBot: this.explorBot, task, blocker: this.blocker };
     const core = this.coreTools(task, onDone);
     const idle = await this.idleModeTools(ctx);
 
@@ -537,7 +538,10 @@ export class Captain extends CaptainBase implements Agent {
     const key = `${error.name} ${error.url} ${error.blocker}`;
     if (this.unresolvedBlockers.has(key)) return false;
     tag('info').log(`Captain takes over: ${error.message}`);
-    await this.handle(error.request, { reset: true });
+    this.blocker = error;
+    await this.handle(error.request, { reset: true }).finally(() => {
+      this.blocker = null;
+    });
     if (await resolved()) return true;
     this.unresolvedBlockers.add(key);
     return false;

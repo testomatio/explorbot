@@ -4,6 +4,7 @@ import dedent from 'dedent';
 import { z } from 'zod';
 import { ConfigParser } from '../../config.ts';
 import { Test } from '../../test-plan.ts';
+import { PlanningBlockedError } from '../../utils/error-page.ts';
 import { listRecentArtifacts, readCaptainFile } from './file-tools.ts';
 import { type Constructor, type ModeContext, resolveProjectRoot } from './mixin.ts';
 
@@ -43,6 +44,10 @@ export function WithIdleMode<T extends Constructor>(Base: T) {
             style: z.string().optional().describe('Planning style'),
           }),
           execute: async ({ feature, style }) => {
+            if (ctx.blocker instanceof PlanningBlockedError) {
+              feature = ctx.blocker.feature;
+              style = ctx.blocker.style;
+            }
             const before = new Set(ctx.explorBot.getCurrentPlan()?.tests ?? []);
             const plan = await ctx.explorBot.plan(feature, { style });
             const error = ctx.explorBot.lastPlanError;
