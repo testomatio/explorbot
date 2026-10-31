@@ -1,5 +1,64 @@
 # Changelog
 
+## 2026-10-31
+
+### New CLI Options
+- **`plan --tests <count>`** — Generates exactly this many tests for the page.
+  ```bash
+  explorbot plan /users --tests 5
+  ```
+- **`plan --min-tests <count>` / `--max-tests <count>`** — Sets the smallest and largest number of tests the planner proposes for a fresh plan. Without them the planner proposes 3 to 12.
+  ```bash
+  explorbot plan /users --min-tests 4 --max-tests 8
+  ```
+- **`--spec <path>` can be repeated** — Load several documentation folders in one run. A spec folder no longer needs an `index.md` and a `pages/` directory: any folder of markdown files works. Files with a `url` in their frontmatter are matched to pages as before; the rest are searched by Scout.
+  ```bash
+  explorbot explore /orders --spec docs/product --spec docs/api
+  ```
+- **`test <plan name>`** — The plan file can be given by name; it is looked up in `output/plans`, or in `<path>/output/plans` with `--path`. Without an index, all tests of the plan run.
+  ```bash
+  explorbot test login                  # runs output/plans/login.md
+  explorbot test login 2                # runs test #2
+  explorbot test login --path example   # looks in example/output/plans
+  ```
+- **`explorbot env`** — Prints the environment variables for running without a config file.
+  ```bash
+  explorbot env
+  ```
+
+### New TUI Commands
+- **`/test [planfile] [scenario|number|*]`** — Loads a plan file and runs its tests. Autocomplete now suggests plan names.
+  ```
+  /test login.md
+  /test login.md 2
+  ```
+- **`/plan --append`, `/plan --tests <count>`, `/plan --min-tests <count>`, `/plan --max-tests <count>`** — Same as the CLI flags: add tests to the page's existing plan file, or control how many tests are planned.
+  ```
+  /plan --append
+  /plan --tests 5
+  /plan --focus checkout --max-tests 6
+  ```
+
+### Configuration
+- **`ai.agents.planner.minTests`** — Smallest number of tests in a fresh plan. Default: `3`.
+- **`ai.agents.planner.maxTests`** — Largest number of tests in a fresh plan. Default: `12`.
+- **`dirs.spec`** — Now also accepts a list of paths, e.g. `spec: ['docs/product', 'docs/api']`.
+- **`ai.agents.scout.enabled`** — Scout now turns on by itself when a spec is set with `--spec` or `dirs.spec`. Set it to `false` to keep it off.
+
+### Changes
+- [Scout] Searches the docs for the facts a tester needs: roles and permissions, prerequisites, accepted values and limits, error messages, duplicates, state changes, side effects, failure and retry behavior, list and bulk behavior, deletions, file formats and differences between variants. For vague words such as "valid" or "supported" it looks for exact definitions with examples of valid and invalid values.
+- [Scout] Each digest is saved to `output/scout/` and reused for 6 hours for the same page and focus, so repeated planning doesn't search the docs again. The log shows how many words were found, the file path and the first lines of the digest.
+- [Planner] Writes the plan as markdown in the plan file format. If the format is off, the planner is asked to fix it, up to 3 times.
+- [Planner] No longer assigns priorities: new tests are saved with `normal` priority and run in the order they were planned.
+- [Planner] Skips pages that look read-only, degraded or have no usable controls. Tests that need existing records use API data preparation when it is configured, or a record visible on the page, or one created through the UI. Verification-only tests that change nothing are no longer proposed. Documentation from the spec is used in planning when available.
+- [Planner] The log shows how many words of application spec and Scout docs were added to planning.
+- [Planner] Plan summary lists scenarios as a numbered list without priority tags. Suggested next commands use the plan name (`explorbot test login`) and keep your `--path` and `--session` flags.
+- [Navigator] Proposes CSS and XPath locators only after the page HTML is provided; until then it uses ARIA and text locators. When no solution is possible it stops with a reason instead of generating failing code. Verification may use any CodeceptJS command when the listed ones don't fit.
+- [Tester] A failed `verify` now reports every assertion tried and why it failed. Locators are picked in the order ARIA, text, CSS, XPath, and clicks inside a container try the ARIA locator first. Select-all uses one shortcut that works on every OS. `pressKey` accepts `Esc` and `Del`. After filling a form, the suggestion is to check the values with `verify` and then submit with `click`.
+- Console output: documents and digests are printed in a framed block, long step lines wrap to the terminal width and are cut after 10 lines. "Next steps" lists the recommended command first, highlighted.
+- CLI help: commands are grouped (Explore, Steps, Results, Knowledge & rules, Setup, More tools, Help), shared flags appear under global options, and the help ends with usage examples.
+- `plans`: suggests `explorbot test <plan> 1` instead of `--from-plan`.
+
 ## 2026-10-28
 
 ### Changes
