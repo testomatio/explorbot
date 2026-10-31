@@ -156,8 +156,12 @@ export class Tester extends TaskAgent implements Agent {
       return await this.abortStartedTestOnErrorPage(task, initialState);
     }
     if (task.startUrl && (await this.judge?.assert(`This is the right page to start the test: ${task.scenario}`, pageEvidence(initialState))) === false) {
-      offFailedRequest?.();
-      throw new TestStartBlockedError(task.scenario, task.startUrl, initialState.url || '');
+      const blocked = new TestStartBlockedError(task.scenario, task.startUrl, initialState.url || '');
+      if (!(await this.captain?.resolveBlocker(blocked, () => this.navigator.isOn(task.startUrl)))) {
+        offFailedRequest?.();
+        return this.skipBlockedTest(task, blocked);
+      }
+      initialState = this.getCurrentState();
     }
 
     const conversation = this.provider.startConversation(this.getSystemMessage(), 'tester');
@@ -745,6 +749,15 @@ export class Tester extends TaskAgent implements Agent {
     task.finish(TestResult.FAILED);
     this.finishTest(task);
     await this.testRun?.stop(this.buildStopTestMeta(task));
+    clearActivity(true);
+    return { success: false };
+  }
+
+  private skipBlockedTest(task: Test, blocked: TestStartBlockedError): { success: boolean } {
+    tag('warning').log(`Skipping test: ${blocked.message}`);
+    task.start();
+    task.addNote(blocked.message, TestResult.SKIPPED);
+    task.finish(TestResult.SKIPPED);
     clearActivity(true);
     return { success: false };
   }

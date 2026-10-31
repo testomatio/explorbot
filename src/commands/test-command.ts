@@ -1,6 +1,5 @@
 import { Stats } from '../stats.js';
 import { Plan, Test } from '../test-plan.js';
-import { BlockedError } from '../utils/error-page.ts';
 import { tag } from '../utils/logger.js';
 import { type ArgumentCompletion, BaseCommand, type Suggestion } from './base-command.js';
 
@@ -72,10 +71,7 @@ export class TestCommand extends BaseCommand {
     const tester = this.explorBot.agentTester();
     for (const [index, test] of toExecute.entries()) {
       tag('info').log(`Starting test ${index + 1}/${toExecute.length}: ${test.scenario}`);
-      await tester.test(test).catch((err) => {
-        if (!(err instanceof BlockedError)) throw err;
-        tag('warning').log(`Skipping test: ${err.message}`);
-      });
+      await tester.test(test);
     }
     tag('success').log('Test execution finished');
   }

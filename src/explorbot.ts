@@ -156,7 +156,13 @@ export class ExplorBot {
   }
 
   async visit(url: string): Promise<void> {
-    await this.agentNavigator().visit(this.configParser.resolveTargetPath(url));
+    const target = this.configParser.resolveTargetPath(url);
+    await this.agentNavigator()
+      .visit(target)
+      .catch(async (err) => {
+        if (await this.agentCaptain().resolveBlocker(err, () => this.agentNavigator().isOn(target))) return;
+        throw err;
+      });
   }
 
   async openTab(): Promise<void> {
@@ -444,9 +450,11 @@ export class ExplorBot {
       planner.setPlan(this.currentPlan);
     }
     this.lastPlanError = null;
+    const before = new Set(this.currentPlan?.tests ?? []);
     try {
       this.setCurrentPlan(await planner.plan(feature, opts.style, opts.extend, opts.completedPlans));
     } catch (err) {
+      if (await this.agentCaptain().resolveBlocker(err, () => !!this.currentPlan?.tests.some((t) => !before.has(t)))) return this.currentPlan;
       this.lastPlanError = err instanceof Error ? err : new Error(String(err));
       tag('warning').log(`Planning failed: ${this.lastPlanError.message}`);
       if (!this.currentPlan) return undefined;

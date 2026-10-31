@@ -37,6 +37,7 @@ export class Captain extends CaptainBase implements Agent {
   private commandExecutor: ((cmd: string) => Promise<void>) | null = null;
   private commandDescriptions: { name: string; description: string; options: string }[] = [];
   private unresolvedBlockers = new Set<string>();
+  private handling = false;
 
   constructor(explorBot: ExplorBot) {
     super();
@@ -440,6 +441,7 @@ export class Captain extends CaptainBase implements Agent {
 
     conversation.addUserText(initialPrompt);
 
+    this.handling = true;
     await loop(
       async ({ stop, iteration, userInput }) => {
         debugLog(`Captain iteration ${iteration}`);
@@ -513,7 +515,9 @@ export class Captain extends CaptainBase implements Agent {
           stop();
         },
       }
-    );
+    ).finally(() => {
+      this.handling = false;
+    });
 
     const finalUrl = stateManager.getCurrentState()?.url || startUrl;
     await this.getHooksRunner().runAfterHook('captain', finalUrl);
@@ -527,15 +531,15 @@ export class Captain extends CaptainBase implements Agent {
     return null;
   }
 
-  async resolveBlocker(error: unknown, resolved: () => boolean | Promise<boolean>): Promise<void> {
-    if (!(error instanceof BlockedError)) throw error;
+  async resolveBlocker(error: unknown, resolved: () => boolean | Promise<boolean>): Promise<boolean> {
+    if (!(error instanceof BlockedError) || this.handling) return false;
     const key = `${error.name} ${error.url} ${error.blocker}`;
-    if (this.unresolvedBlockers.has(key)) throw error;
+    if (this.unresolvedBlockers.has(key)) return false;
     tag('info').log(`Captain takes over: ${error.message}`);
     await this.handle(error.request, { reset: true });
-    if (await resolved()) return;
+    if (await resolved()) return true;
     this.unresolvedBlockers.add(key);
-    throw error;
+    return false;
   }
 }
 

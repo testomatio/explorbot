@@ -42,7 +42,6 @@ class Navigator implements Agent {
 
   private MAX_ATTEMPTS = Number.parseInt(process.env.MAX_ATTEMPTS || '5');
   lastFailureReason: string | null = null;
-  lastFailureCause: string | null = null;
   executedSteps: ExecutedStep[] = [];
 
   private systemPrompt = dedent`
@@ -203,7 +202,7 @@ class Navigator implements Agent {
   private navigationError(url: string, fallback: string): Error {
     const currentUrl = this.stateManager.getCurrentState()?.url || '';
     const tried = this.executedSteps.slice(-MAX_TRIED_STEPS).map((step) => step.command);
-    return new NavigationBlockedError(url, currentUrl, this.lastFailureReason || fallback, this.lastFailureCause || fallback, tried);
+    return new NavigationBlockedError(url, currentUrl, this.lastFailureReason || fallback, tried);
   }
 
   private failureReason(stopReason: string | null, knowledge: string, url: string): string | null {
@@ -220,7 +219,6 @@ class Navigator implements Agent {
     if (!this.provider) throw new Error('AI-assisted recovery is unavailable: no AI model is configured.');
 
     this.lastFailureReason = null;
-    this.lastFailureCause = null;
     this.executedSteps = [];
     tag('info').log('AI Navigator resolving state at', actionResult.url);
     debugLog('Resolution message:', message);
@@ -379,7 +377,6 @@ class Navigator implements Agent {
       let cause = 'the AI proposed no working solution for this page';
       if (lastFailure) cause = `${totalAttempts} ${pluralize(totalAttempts, 'attempt')} failed, last: ${lastFailure}`;
       if (stopReason) cause = stopReason;
-      this.lastFailureCause = cause;
       this.lastFailureReason = this.failureReason(cause, knowledge, actionResult.url || '');
     }
 

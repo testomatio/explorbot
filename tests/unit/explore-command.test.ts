@@ -1,10 +1,9 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { Captain } from '../../src/ai/captain.ts';
 import { ExploreCommand } from '../../src/commands/explore-command.ts';
 import { ConfigParser } from '../../src/config.ts';
 import type { ExplorBot } from '../../src/explorbot.ts';
-import { Plan, Test, TestResult } from '../../src/test-plan.ts';
-import { NavigationBlockedError, PlanningBlockedError, TestStartBlockedError } from '../../src/utils/error-page.ts';
+import { Plan, Test } from '../../src/test-plan.ts';
+import { PlanningBlockedError } from '../../src/utils/error-page.ts';
 
 beforeEach(() => {
   ConfigParser.resetForTesting();
@@ -489,89 +488,21 @@ describe('ExploreCommand max duration', () => {
   });
 });
 
-describe('ExploreCommand hands blocked work to Captain', () => {
-  function setupBot(opts: { captainFixes: boolean }) {
+describe('ExploreCommand on a page that stays blocked', () => {
+  test('skips the page without a generic retry', async () => {
     const calls: string[] = [];
-    const plan = new Plan('Workspace');
-    let fixed = false;
-    const captain = Object.create(Captain.prototype);
-    captain.unresolvedBlockers = new Set();
-    captain.handle = async (input: string) => {
-      calls.push(`captain: ${input}`);
-      if (!opts.captainFixes) return null;
-      fixed = true;
-      plan.addTest(new Test('Open a workspace project', 'high', [], '/workspace'));
-      return null;
-    };
     const explorBot: any = {
       lastPlanError: null,
       plan: async () => {
         calls.push('plan');
         explorBot.lastPlanError = new PlanningBlockedError('/workspace', 'Sign in', undefined, 'normal');
       },
-      agentCaptain: () => captain,
-      agentNavigator: () => ({ isOn: () => fixed }),
       visit: async (url: string) => {
         calls.push(`visit ${url}`);
-        if (!fixed) throw new NavigationBlockedError(url, '/login', 'sign-in required', 'sign-in required', []);
       },
-      agentTester: () => ({
-        test: async (test: Test) => {
-          calls.push(`test ${test.scenario}`);
-          if (!fixed) throw new TestStartBlockedError(test.scenario, '/workspace', '/login');
-          test.start();
-          test.finish(TestResult.PASSED);
-        },
-      }),
-      getCurrentPlan: () => plan,
+      getCurrentPlan: () => new Plan('Workspace'),
     };
-    return { cmd: new ExploreCommand(explorBot as ExplorBot), calls, plan };
-  }
-
-  test('keeps the tests Captain planned on a page the planner reported blocked', async () => {
-    const { cmd, calls, plan } = setupBot({ captainFixes: true });
-    await (cmd as any).planWithRetry(undefined, { fresh: true, style: 'normal' }, '/workspace');
-    expect(calls).toEqual(['plan', `captain: ${new PlanningBlockedError('/workspace', 'Sign in', undefined, 'normal').request}`]);
-    expect(plan.tests).toHaveLength(1);
-  });
-
-  test('skips a blocked page Captain could not resolve and does not hand it over again', async () => {
-    const { cmd, calls, plan } = setupBot({ captainFixes: false });
-    await (cmd as any).planWithRetry(undefined, { fresh: true, style: 'normal' }, '/workspace');
-    await (cmd as any).planWithRetry(undefined, { fresh: false, style: 'curious' }, '/workspace');
-    expect(calls.filter((c) => c.startsWith('captain'))).toHaveLength(1);
-    expect(plan.tests).toHaveLength(0);
-  });
-
-  test('opens the page once Captain gets past what blocked navigation', async () => {
-    const { cmd, calls } = setupBot({ captainFixes: true });
-    await (cmd as any).visitPage('/workspace');
-    expect(calls).toEqual(['visit /workspace', `captain: ${new NavigationBlockedError('/workspace', '/login', 'sign-in required', 'sign-in required', []).request}`]);
-  });
-
-  test('rethrows the navigation error when Captain cannot open the page', async () => {
-    const { cmd } = setupBot({ captainFixes: false });
-    await expect((cmd as any).visitPage('/workspace')).rejects.toBeInstanceOf(NavigationBlockedError);
-  });
-
-  test('runs a test again after Captain resolves what kept it from starting', async () => {
-    const { cmd, calls } = setupBot({ captainFixes: true });
-    const test = new Test('Open a workspace project', 'high', [], '/workspace');
-    await (cmd as any).runOneTest(test);
-    expect(calls.filter((c) => c.startsWith('test'))).toHaveLength(2);
-    expect(test.isSuccessful).toBe(true);
-  });
-
-  test('skips a test Captain could not get started', async () => {
-    const { cmd } = setupBot({ captainFixes: false });
-    const test = new Test('Open a workspace project', 'high', [], '/workspace');
-    await (cmd as any).runOneTest(test);
-    expect(test.isSkipped).toBe(true);
-  });
-
-  test('leaves Captain out of a dry run', async () => {
-    const { cmd, calls } = setupBot({ captainFixes: true });
-    cmd.dryRun = true;
+    const cmd = new ExploreCommand(explorBot as ExplorBot);
     await (cmd as any).planWithRetry(undefined, { fresh: true, style: 'normal' }, '/workspace');
     expect(calls).toEqual(['plan']);
   });

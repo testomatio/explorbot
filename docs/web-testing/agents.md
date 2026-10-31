@@ -125,7 +125,7 @@ The Captain steps in when a slash command isn't enough — answering questions a
 
 When a test hits a fatal browser error, the Captain tries to recover — reload, restart the browser, open a fresh tab, or close extra tabs — before the test is stopped, then tells the Tester how to continue. It runs on explicit TUI requests and on test interrupts (stop, pass, skip, or redirect a running test).
 
-During `explore` and `freesail`, the Captain also takes over when another agent reports it is blocked:
+Wherever Explorbot opens a page, plans a page or starts a test, including in `explore` and `freesail`, the Captain also takes over when another agent reports it is blocked:
 
 - the Planner can't plan a page, for example because it shows a sign-in form
 - the Navigator can't reach a page after all its attempts

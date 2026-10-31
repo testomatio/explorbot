@@ -93,7 +93,7 @@ export class FreesailCommand extends BaseCommand {
 
         tag('info').log(`Navigating to: ${suggestion.target} - ${suggestion.reason}`);
         await this.explorBot.openTab();
-        await this.explorBot.visit(suggestion.target).catch((err) => this.explorBot.agentCaptain().resolveBlocker(err, () => navigator.isOn(suggestion.target)));
+        await this.explorBot.visit(suggestion.target);
         this.explorBot.clearPlan();
       },
       { maxAttempts: Number.POSITIVE_INFINITY }

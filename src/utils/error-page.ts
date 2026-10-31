@@ -106,11 +106,11 @@ export class PlanningBlockedError extends BlockedError {
 }
 
 export class NavigationBlockedError extends BlockedError {
-  constructor(url: string, currentUrl: string, reason: string, cause: string, tried: string[]) {
-    const lines = [`Navigator was asked to open ${url} but stopped on ${currentUrl}: ${cause}.`];
+  constructor(url: string, currentUrl: string, reason: string, tried: string[]) {
+    const lines = [`Navigator was asked to open ${url} but stopped on ${currentUrl}: ${reason}.`];
     if (tried.length) lines.push(`Already tried: ${tried.join('; ')}.`);
     lines.push(`Look at the current page to find out what keeps it from ${url}, resolve it, then open ${url}. If it cannot be resolved, finish without opening it.`);
-    super(`Navigation to ${url} failed: ${reason}`, url, cause, lines.join('\n'));
+    super(`Navigation to ${url} failed: ${reason}`, url, reason, lines.join('\n'));
     this.name = 'NavigationBlockedError';
   }
 }
