@@ -1,10 +1,13 @@
 # Self-regression: runs Explorbot end-to-end with real AI against a local fixture app.
 #
-# Cost: every run burns real LLM tokens and up to 150 minutes of runner time, so it never
+# Cost: every run burns real LLM tokens and up to 60 minutes of runner time, so it never
 # runs unapproved. Each push to a non-draft PR that changes src/ai/ queues a run that
 # waits at the `regression` environment gate; a reviewer starts it with "Review
 # deployments → Approve and deploy" on the PR. Every push waits for its own approval, including the PR author's own pushes.
 # It can also be dispatched manually.
+#
+# The scenarios run in parallel inside one job, so a single approval starts all of them.
+# Each scenario job would wait at the gate separately.
 #
 # Security: the `regression` GitHub environment holds the OPENROUTER_API_KEY secret behind
 # a required reviewer. On `pull_request` (including forks) the job pauses at the gate
@@ -38,6 +41,7 @@ on:
         default: '42'
 
 permissions:
+  actions: read
   contents: read
   pull-requests: write
   discussions: write
@@ -47,7 +51,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || !github.event.pull_request.draft
     runs-on: ubuntu-latest
     environment: regression
-    timeout-minutes: 150
+    timeout-minutes: 60
 
     steps:
       - name: Checkout code
@@ -82,4 +86,13 @@ jobs:
         with:
           name: regression-runs
           path: tests/regression/.runs
+          if-no-files-found: ignore
+
+      - name: Upload summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: regression-summary
+          path: tests/regression/.runs/records.json
+          retention-days: 90
           if-no-files-found: ignore

@@ -58,8 +58,17 @@
 - Console output: documents and digests are printed in a framed block, long step lines wrap to the terminal width and are cut after 10 lines. "Next steps" lists the recommended command first, highlighted.
 - CLI help: commands are grouped (Explore, Steps, Results, Knowledge & rules, Setup, More tools, Help), shared flags appear under global options, and the help ends with usage examples.
 - `plans`: suggests `explorbot test <plan> 1` instead of `--from-plan`.
+### Configuration
+- **`ai.decisionModel`** — The OpenRouter recommendation is now `~typesafe/jev-latest`. The previous one, `typesafe/jev-latest`, does not exist on OpenRouter, so with `recommendedModels: 'openrouter'` every decision quietly failed and Explorbot ran as if no decision model were set. To pin it yourself: `decisionModel: { provider: 'openrouter', model: '~typesafe/jev-latest' }`.
+
+### Changes
+- A decision model that fails now prints one warning per session (`Decision model … failed …; continuing without it`) instead of failing silently.
+- `explorbot config` and the models table shown at startup now list the decision model.
+### Changes
 - [Captain] Can run the planner on the current page with a new `plan()` tool. It adds tests to the current plan when that plan is for this page, and starts a new plan otherwise.
 - [Planner] [Captain] When `explore` hits a page the planner can't plan, such as a sign-in form at the URL you asked for, Captain gets the planner's report: the page, the focus, the planning style and what blocks it. Captain works out from the browser session how to get past it, then re-plans the page itself. If Captain adds no tests, the page is skipped.
+- [Researcher] A dialog or drawer left open while a test runs is researched once per page, not again on every step. Before, a dialog that showed nothing new was re-researched on each attempt, which made tests that submit the same form repeatedly much slower.
+- [Pilot] A search, filter or other change that only alters the URL's query string (`/issues` → `/issues?q=login`) no longer counts as moving to a new page, so Pilot doesn't review the page again. A different path or a different `#/route` still gets a review.
 
 ## 2026-10-28
 

@@ -44,6 +44,12 @@ export function isSamePageFamily(urlA: string, urlB: string): boolean {
   return true;
 }
 
+export function isSamePageIgnoringQuery(urlA: string, urlB: string): boolean {
+  const a = new URL(urlA, 'http://localhost');
+  const b = new URL(urlB, 'http://localhost');
+  return a.pathname === b.pathname && a.hash === b.hash;
+}
+
 export function generalizeSegment(segment: string): string {
   if (/^\d+$/.test(segment)) return '\\d+';
   if (/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(segment)) return '[a-f0-9-]+';

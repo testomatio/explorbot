@@ -15,6 +15,7 @@ import { ErrorPageError, isErrorPage } from '../utils/error-page.ts';
 import { createDebug, tag } from '../utils/logger.ts';
 import { loop } from '../utils/loop.ts';
 import { compactErrorMessage } from '../utils/strings.ts';
+import { isSamePageIgnoringQuery } from '../utils/url-matcher.ts';
 import type { Agent, AgentDeps } from './agent.ts';
 import type { Captain } from './captain.ts';
 import type { Conversation } from './conversation.ts';
@@ -314,7 +315,7 @@ export class Tester extends TaskAgent implements Agent {
           conversation.compactToolResults(2);
 
           if (iteration > 1) {
-            const isNewPage = this.previousUrl !== null && this.previousUrl !== currentState.url;
+            const isNewPage = this.previousUrl !== null && !isSamePageIgnoringQuery(this.previousUrl, currentState.url);
             let nextStep = '';
             nextStep += await this.reinjectContextIfNeeded(iteration, currentState);
             nextStep += await this.prepareInstructionsForNextStep(task);
