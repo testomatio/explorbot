@@ -26,6 +26,7 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
     declare stateManager: StateManager;
     declare config: ExplorbotConfig;
     declare actionResult: ActionResult | undefined;
+    researchedOverlays = new Set<string>();
 
     async performDeepAnalysis(state: WebPageState, result: ResearchResult): Promise<void> {
       tag('info').log('Starting deep analysis of expandable elements');
@@ -54,7 +55,7 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
         }
       }
 
-      let expandables = await this._discoverExpandables(result.text, missing, verifiedCodes);
+      let expandables = await this._discoverExpandables(result.text, missing);
       if (expandables.length > maxClicks) {
         expandables = await this._selectExpandables(expandables, state.fullUrl || state.url, maxClicks);
         tag('substep').log(`Selected ${expandables.length} expandables to click (max: ${maxClicks})`);
@@ -92,6 +93,10 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
 
       const region = current.overlay;
       if (!region.isOpen || !region.name) return null;
+
+      const overlayKey = `${pageStateHash}:${region.name}`;
+      if (this.researchedOverlays.has(overlayKey)) return null;
+      this.researchedOverlays.add(overlayKey);
 
       const cached = getCachedResearch(pageStateHash);
       if (!cached) return null;
@@ -199,7 +204,7 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
       }
     }
 
-    private async _discoverExpandables(researchText: string, missing: PreviousSection[] = [], verifiedCodes: string[] = []): Promise<ExpandableElement[]> {
+    private async _discoverExpandables(researchText: string, missing: PreviousSection[] = []): Promise<ExpandableElement[]> {
       const allElements = new Map<string, ExpandableElement>();
       for (const section of parseResearchSections(researchText)) {
         for (const el of section.elements) {

@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
@@ -35,7 +35,7 @@ describe('CommandHandler argument autocomplete', () => {
 
     expect(autocomplete.visible).toBe(true);
     expect(autocomplete.completesArgument).toBe(true);
-    expect(autocomplete.suggestions.map((suggestion) => suggestion.value)).toEqual(['--from-plan login.md', '--from-plan checkout.md']);
+    expect(autocomplete.suggestions.map((suggestion) => suggestion.value)).toEqual(['login.md', 'checkout.md']);
     expect(autocomplete.suggestions[0].display).toBe('login.md     /login     1 test');
     expect(autocomplete.replaceFrom).toBe(input.length);
     expect(autocomplete.replaceTo).toBe(input.length);

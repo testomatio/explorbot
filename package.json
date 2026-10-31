@@ -125,6 +125,7 @@
     "sambanova-ai-provider": "^1.2.2",
     "strip-ansi": "^7.1.2",
     "turndown": "^7.2.1",
+    "wrap-ansi": "^9.0.2",
     "unique-names-generator": "^4.7.1",
     "yaml": "^2.8.3",
     "yargs": "^17.7.2",

@@ -31,12 +31,14 @@ export class HelpJsonCommand {
         required: argument.required,
         variadic: argument.variadic,
       })),
-      options: helper.visibleOptions(cmd).map((option) => ({
-        flags: option.flags,
-        description: option.description,
-        default: option.defaultValue,
-        choices: option.argChoices,
-      })),
+      options: cmd.options
+        .filter((option) => !option.hidden)
+        .map((option) => ({
+          flags: option.flags,
+          description: option.description,
+          default: option.defaultValue,
+          choices: option.argChoices,
+        })),
       commands: helper.visibleCommands(cmd).map((sub) => HelpJsonCommand.data(sub)),
     };
 

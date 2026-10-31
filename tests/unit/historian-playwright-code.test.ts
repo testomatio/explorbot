@@ -106,15 +106,6 @@ describe('Historian.toPlaywrightCode — assertion propagation', () => {
   });
 
   it('appends Pilot-recorded verifications under a // Verification block', async () => {
-    const conversation = fakeConversation([
-      {
-        toolName: 'click',
-        input: { explanation: 'Click Save' },
-        wasSuccessful: true,
-        output: { success: true, action: 'click', playwrightGroupId: 'g1' },
-      },
-    ]);
-
     const historian = makeHistorian([
       { name: 'see', args: ['Suite saved'] },
       { name: 'seeElement', args: ['.suites .row'] },

@@ -24,10 +24,9 @@ if (renderer) {
     const originalListitem = renderer.listitem;
     renderer.listitem = function (text: any) {
       if (typeof text === 'object') {
-        const item = text;
         const parser = this.parser;
         const originalParse = parser.parse.bind(parser);
-        parser.parse = (tokens: any, loose?: boolean) => parser.parseInline(tokens);
+        parser.parse = (tokens: any) => parser.parseInline(tokens);
         const result = originalListitem.call(this, text);
         parser.parse = originalParse;
         return result;

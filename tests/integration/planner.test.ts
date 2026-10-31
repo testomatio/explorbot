@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createOpenAI } from '@ai-sdk/openai';
@@ -16,48 +16,71 @@ const UI_MAPS_DIR = join(process.cwd(), 'test-data', 'ui-maps');
 
 const taskBoardUiMap = readFileSync(join(UI_MAPS_DIR, 'task-board.md'), 'utf8');
 
-const defaultScenarios = {
-  planName: 'Task Board Testing',
-  blockedBy: null,
-  prerequisite: null,
-  scenarios: [
-    {
-      scenario: 'Create a new task via the Create Task modal',
-      priority: 'critical',
-      startUrl: null,
-      steps: ['Click Create Task button', 'Fill in Task title', 'Select Assignee', 'Click Save'],
-      expectedOutcomes: ['New task card appears in To Do column', 'Success notification is shown'],
-    },
-    {
-      scenario: 'Filter tasks by assignee',
-      priority: 'important',
-      startUrl: null,
-      steps: ['Click Filter by assignee combobox', 'Select a team member', 'Observe task list'],
-      expectedOutcomes: ['Only tasks assigned to selected member are displayed'],
-    },
-    {
-      scenario: 'Search for a task by keyword',
-      priority: 'important',
-      startUrl: null,
-      steps: ['Click Search tasks field', 'Type a task name', 'Observe filtered results'],
-      expectedOutcomes: ['Task list updates to show matching tasks'],
-    },
-    {
-      scenario: 'Switch between Board and List views',
-      priority: 'normal',
-      startUrl: null,
-      steps: ['Click List view button', 'Observe the layout change', 'Click Board view button'],
-      expectedOutcomes: ['View switches to list layout', 'View switches back to board layout'],
-    },
-    {
-      scenario: 'Apply date range filter and verify results',
-      priority: 'normal',
-      startUrl: null,
-      steps: ['Open Filter Dropdown', 'Set Date range from', 'Set Date range to', 'Click Apply filters'],
-      expectedOutcomes: ['Only tasks within the date range are displayed'],
-    },
-  ],
-};
+const defaultScenarios = `<!-- suite -->
+# Task Board Testing
+
+<!-- test -->
+# Create a new task via the Create Task modal
+
+## Steps
+* Click Create Task button
+* Fill in Task title
+* Select Assignee
+* Click Save
+
+## Expected
+* New task card appears in To Do column
+* Success notification is shown
+
+<!-- test -->
+# Filter tasks by assignee
+
+## Steps
+* Click Filter by assignee combobox
+* Select a team member
+* Observe task list
+
+## Expected
+* Only tasks assigned to selected member are displayed
+
+<!-- test -->
+# Search for a task by keyword
+
+## Steps
+* Click Search tasks field
+* Type a task name
+* Observe filtered results
+
+## Expected
+* Task list updates to show matching tasks
+
+<!-- test -->
+# Switch between Board and List views
+
+## Steps
+* Click List view button
+* Observe the layout change
+* Click Board view button
+
+## Expected
+* View switches to list layout
+* View switches back to board layout
+
+<!-- test -->
+# Apply date range filter and verify results
+
+## Steps
+* Open Filter Dropdown
+* Set Date range from
+* Set Date range to
+* Click Apply filters
+
+## Expected
+* Only tasks within the date range are displayed
+
+`;
+
+const emptyPlan = (comment: string) => `<!-- suite -->\n# Empty\n\n<!-- ${comment} -->\n`;
 
 const fakeState = {
   url: '/tasks/board',
@@ -132,7 +155,7 @@ describe('Planner with aimock', () => {
 
     planner = new Planner({ ...createMockDeps(), ai: provider } as any, { research: async () => taskBoardUiMap } as any);
 
-    mock.on({}, { content: JSON.stringify(defaultScenarios) });
+    mock.on({}, { content: defaultScenarios });
   });
 
   afterAll(async () => {
@@ -149,7 +172,6 @@ describe('Planner with aimock', () => {
 
     const first = plan.tests[0];
     expect(first.scenario).toBe('Create a new task via the Create Task modal');
-    expect(first.priority).toBe('critical');
     expect(first.expected).toEqual(['New task card appears in To Do column', 'Success notification is shown']);
     expect(first.plannedSteps).toEqual(['Click Create Task button', 'Fill in Task title', 'Select Assignee', 'Click Save']);
     expect(first.startUrl).toBe('/tasks/board');
@@ -334,7 +356,7 @@ describe('Planner with aimock', () => {
 
   it('returns an empty plan when AI returns no scenarios', async () => {
     mock.clearFixtures();
-    mock.on({}, { content: JSON.stringify({ planName: 'Empty', scenarios: [], blockedBy: 'nothing to test', prerequisite: null }) });
+    mock.on({}, { content: emptyPlan('blocked: nothing to test') });
 
     const plan = await planner.plan();
 
@@ -343,7 +365,7 @@ describe('Planner with aimock', () => {
 
   it('reports the step the page is blocked by when AI names a prerequisite', async () => {
     mock.clearFixtures();
-    mock.on({}, { content: JSON.stringify({ planName: 'Empty', scenarios: [], blockedBy: 'sign-in form only', prerequisite: 'Sign in' }) });
+    mock.on({}, { content: emptyPlan('prerequisite: Sign in') });
 
     const error = await planner.plan('task filters').catch((e) => e);
 
@@ -354,6 +376,33 @@ describe('Planner with aimock', () => {
     expect(getRegisteredPlan('/tasks/board')).toBeFalsy();
   });
 
+  it('asks again with the format problems when the plan markdown is malformed', async () => {
+    const isRetry = (req: any) => extractPromptText({ body: req }).includes('does not match the required format');
+    mock.clearFixtures();
+    mock.on({ predicate: (req) => !isRetry(req) }, { content: '<!-- suite -->\n# Broken\n\n# Scenario without comment\n\n## Steps\n* Click Save\n' });
+    mock.on({ predicate: isRetry }, { content: defaultScenarios });
+
+    const plan = await planner.plan();
+
+    expect(mock.getRequests().length).toBe(2);
+    const prompt = extractPromptText(mock.getLastRequest());
+    expect(prompt).toContain('Found 1 scenario headings but 0 <!-- test --> comments');
+    expect(prompt).toContain('Scenario "Scenario without comment" has no ## Expected items');
+    expect(plan.tests.length).toBe(5);
+    expect(plan.tests[0].plannedSteps).toContain('Click Save');
+    expect(plan.tests[0].startUrl).toBe('/tasks/board');
+  });
+
+  it('fails planning after repeated malformed plan markdown', async () => {
+    mock.clearFixtures();
+    mock.on({}, { content: 'Here are some ideas for testing the board.' });
+
+    const error = await planner.plan().catch((e) => e);
+
+    expect(mock.getRequests().length).toBe(3);
+    expect(error.message).toContain('Planner output does not match the plan format');
+  });
+
   it('keeps an existing plan when a later style returns empty scenarios', async () => {
     const existingPlan = new Plan('Task Board Testing');
     existingPlan.url = '/tasks/board';
@@ -361,7 +410,7 @@ describe('Planner with aimock', () => {
     planner.currentPlan = existingPlan;
 
     mock.clearFixtures();
-    mock.on({}, { content: JSON.stringify({ planName: 'Empty', scenarios: [], blockedBy: 'nothing to test', prerequisite: null }) });
+    mock.on({}, { content: emptyPlan('blocked: nothing to test') });
 
     const plan = await planner.plan();
 

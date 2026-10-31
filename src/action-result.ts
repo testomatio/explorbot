@@ -1,5 +1,4 @@
 import fs from 'node:fs';
-import { join } from 'node:path';
 import { ConfigParser, type HtmlConfig, outputPath } from './config.ts';
 import type { Link, WebPageState } from './state-manager.ts';
 import { LARGE_ARIA_CHANGE_THRESHOLD, compactAriaSnapshot, diffAriaSnapshots } from './utils/aria.ts';
@@ -742,7 +741,7 @@ export class Diff {
   async calculate(): Promise<void> {
     if (!this.previous) return;
 
-    this._htmlDiffResult = await htmlDiff(this.previous.html, this.current.html, ConfigParser.getInstance().getConfig().html);
+    this._htmlDiffResult = await htmlDiff(this.previous.html, this.current.html);
 
     if (!this._isSameUrl) {
       this._messages = liveRegionMessages(this.previous.html, this.current.html);

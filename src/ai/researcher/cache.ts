@@ -15,6 +15,7 @@ const SIMILARITY_THRESHOLD = 90;
 const memoryCache = new TTLCache<string>(CACHE_TTL_MS);
 
 let fingerprintWorker: Worker | null = null;
+let fingerprintRequestId = 0;
 
 export function researchPath(hash: string): string {
   return outputPath('research', `${hash}.md`);
@@ -90,14 +91,13 @@ function findSimilarMatch(combinedHtml: string, url?: string): Promise<Fingerpri
 
   const worker = getFingerprintWorker();
 
-  return new Promise((resolve) => {
-    const timeout = setTimeout(() => {
-      debugLog('Fingerprint worker timed out');
-      resolve(null);
-    }, FINGERPRINT_WORKER_TIMEOUT_MS);
+  const id = ++fingerprintRequestId;
 
-    worker.on('message', (data: { matchHash: string | null; similarity: number; url?: string }) => {
+  return new Promise((resolve) => {
+    const onMessage = (data: { id: number; matchHash: string | null; similarity: number; url?: string }) => {
+      if (data.id !== id) return;
       clearTimeout(timeout);
+      worker.off('message', onMessage);
       const { matchHash, similarity } = data;
       if (!matchHash) {
         resolve(null);
@@ -106,9 +106,18 @@ function findSimilarMatch(combinedHtml: string, url?: string): Promise<Fingerpri
 
       debugLog(`Similar fingerprint found: ${matchHash} (${similarity}% similar)`);
       resolve({ hash: matchHash, similarity, url: data.url });
-    });
+    };
+
+    const timeout = setTimeout(() => {
+      worker.off('message', onMessage);
+      debugLog('Fingerprint worker timed out');
+      resolve(null);
+    }, FINGERPRINT_WORKER_TIMEOUT_MS);
+
+    worker.on('message', onMessage);
 
     worker.postMessage({
+      id,
       html: combinedHtml,
       statesDir,
       maxAgeMs: FINGERPRINT_MAX_AGE_MS,

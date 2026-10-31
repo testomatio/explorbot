@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ConfigParser } from '../../src/config.js';
-import { StopError, loop } from '../../src/utils/loop.js';
+import { loop } from '../../src/utils/loop.js';
 
 describe('loop', () => {
   beforeEach(() => {

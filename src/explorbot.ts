@@ -55,7 +55,7 @@ export interface ExplorBotOptions {
   optionalAi?: boolean;
   reporter?: ReporterConfig;
   attachedBrowser?: Browser;
-  applicationSpec?: string;
+  applicationSpec?: string | string[];
 }
 
 export type UserResolveFunction = (error?: Error, showWelcome?: boolean) => Promise<string | null>;
@@ -383,9 +383,14 @@ export class ExplorBot {
 
   agentScout(): Scout | null {
     const scoutConfig = this.config.ai?.agents?.scout;
-    if (scoutConfig?.enabled !== true) return null;
-
     const dirs = this.scoutCorpusDirs();
+    const hasSpec = dirs.length > 0;
+    const explicitlyDisabled = scoutConfig?.enabled === false;
+    const explicitlyEnabled = scoutConfig?.enabled === true;
+
+    if (explicitlyDisabled) return null;
+    if (!explicitlyEnabled && !hasSpec) return null;
+
     if (dirs.length === 0) {
       tag('warning').log('Scout enabled but no documentation found — set --spec or ai.agents.scout.dirs');
       return null;
@@ -397,11 +402,10 @@ export class ExplorBot {
   private scoutCorpusDirs(): string[] {
     const dirs: string[] = [];
 
-    const specPath = this.options.applicationSpec || this.config.dirs?.spec;
-    if (specPath) {
+    const specPaths = normalizeSpecPaths(this.options.applicationSpec || this.config.dirs?.spec);
+    for (const specPath of specPaths) {
       const bundle = resolveSpecBundlePath(specPath);
-      const pagesDir = bundle && path.join(bundle, 'pages');
-      if (pagesDir && existsSync(pagesDir)) dirs.push(pagesDir);
+      if (bundle && existsSync(bundle)) dirs.push(bundle);
     }
 
     for (const dir of this.config.ai?.agents?.scout?.dirs || []) {
@@ -429,7 +433,7 @@ export class ExplorBot {
     this.agents.planner = undefined;
   }
 
-  async plan(feature?: string, opts: { fresh?: boolean; style?: string; extend?: Plan; completedPlans?: Plan[]; noSave?: boolean } = {}) {
+  async plan(feature?: string, opts: { fresh?: boolean; style?: string; extend?: Plan; noSave?: boolean; minTests?: number; maxTests?: number } = {}) {
     this.planFeature = feature;
 
     if (opts.fresh) {
@@ -446,13 +450,16 @@ export class ExplorBot {
 
     const planner = this.agentPlanner();
     planner.freshStart = !!opts.fresh;
+    if (opts.minTests !== undefined || opts.maxTests !== undefined) {
+      planner.setTestCount({ minTests: opts.minTests, maxTests: opts.maxTests });
+    }
     if (this.currentPlan) {
       planner.setPlan(this.currentPlan);
     }
     this.lastPlanError = null;
     const before = new Set(this.currentPlan?.tests ?? []);
     try {
-      this.setCurrentPlan(await planner.plan(feature, opts.style, opts.extend, opts.completedPlans));
+      this.setCurrentPlan(await planner.plan(feature, opts.style, opts.extend));
     } catch (err) {
       if (await this.agentCaptain().resolveBlocker(err, () => !!this.currentPlan?.tests.some((t) => !before.has(t)))) return this.currentPlan;
       this.lastPlanError = err instanceof Error ? err : new Error(String(err));
@@ -582,4 +589,9 @@ export class ExplorBot {
       tag('debug').log(`AI provider unavailable: ${this.aiFailure}`);
     }
   }
+}
+
+function normalizeSpecPaths(spec: string | string[] | undefined): string[] {
+  if (!spec) return [];
+  return Array.isArray(spec) ? spec : [spec];
 }

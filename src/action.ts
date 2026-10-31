@@ -34,8 +34,6 @@ class Action {
   public actionResult: ActionResult | null = null;
   private config: ExplorbotConfig;
 
-  // action info
-  private action: string | null = null;
   public lastError: Error | null = null;
   public playwrightHelper: any;
   public playwrightGroupId: string | null = null;
@@ -389,8 +387,6 @@ class Action {
   }
 
   private async executeOnce(code: string, verbatim = false): Promise<Action> {
-    let error: Error | null = null;
-
     setActivity('🔎 Browsing...', 'action');
 
     let codeString = code.replace(/^\(I\) => /, '').trim();
@@ -441,7 +437,6 @@ class Action {
       this.assertionSteps = assertionSteps;
     } catch (err) {
       debugLog('Action error', errorToString(err));
-      error = err as Error;
       if (!isPlaywright) {
         await recorder.reset();
         await recorder.start();
