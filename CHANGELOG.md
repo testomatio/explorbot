@@ -3,7 +3,7 @@
 ## 2026-10-31
 
 ### Changes
-- [Captain] Can run the planner on the current page with a new `plan()` tool. It adds tests to the current plan when that plan is for this page, and starts a new plan otherwise.
+- [Captain] One `plan()` tool now covers planning in the TUI, replacing `updatePlan()`. Ask Captain to plan the current page and the planner writes the tests, optionally with a focus and one of your configured planning styles; dictate tests and Captain adds exactly those. Tests go into the current plan when it is for this page, otherwise a new plan starts. Dictated tests are added to the plan instead of replacing it, unless you ask Captain to replace them.
 - [Planner] [Captain] When `explore` hits a page the planner can't plan, such as a sign-in form at the URL you asked for, Captain gets the planner's report: the page, the focus, the planning style and what blocks it. Captain works out from the browser session how to get past it, then re-plans the page itself. If Captain adds no tests, the page is skipped.
 - [Captain] Captain takes over when another agent is blocked, then the work continues. This applies wherever Explorbot opens a page, plans a page or starts a test, including `explore` and `freesail`. Captain is told what the agent was asked to do, where it stopped, why, and what was already tried. If Captain can't resolve a blocker, the page or test is skipped, and that blocker isn't handed to Captain again in the same run.
 - [Captain] When Captain re-plans a page the planner reported blocked, the plan keeps the focus and planning style the planner was originally asked for. Before, the text describing the blocker, such as the sign-in step, could become the plan's focus.
