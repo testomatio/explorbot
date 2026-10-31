@@ -1,7 +1,7 @@
 import dedent from 'dedent';
 import { ActionResult } from '../action-result.js';
 import { setActivity } from '../activity.ts';
-import { ConfigParser, type ExplorbotConfig, type ResearcherAgentConfig, agentSettings, outputPath } from '../config.ts';
+import { type ExplorbotConfig, type ResearcherAgentConfig, agentSettings, outputPath } from '../config.ts';
 import { executionController } from '../execution-controller.ts';
 import type { ExperienceTracker } from '../experience-tracker.ts';
 import type Explorer from '../explorer.ts';

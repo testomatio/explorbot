@@ -1631,7 +1631,7 @@ describe('documentarian interactive mode', () => {
     const mockExplorer = {
       action() {
         return {
-          async execute(command: string) {
+          async execute() {
             return true;
           },
         };
@@ -1683,7 +1683,7 @@ describe('documentarian interactive mode', () => {
     const mockExplorer = {
       action() {
         return {
-          async execute(command: string) {
+          async execute() {
             return true;
           },
         };
@@ -1822,7 +1822,7 @@ describe('documentarian interactive mode', () => {
     const mockExplorer = {
       action() {
         return {
-          async execute(command: string) {
+          async execute() {
             return true;
           },
         };

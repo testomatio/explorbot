@@ -14,6 +14,7 @@ import { parseSpecPairs } from '../utils/spec.ts';
 import { safeFilename } from '../utils/strings.ts';
 import { UrlFilter } from '../utils/url-filter.ts';
 import { type ArgumentCompletion, BaseCommand, type Suggestion } from './base-command.js';
+import { PlanCommand } from './plan-command.js';
 
 const MAX_SUB_PAGE_ATTEMPTS = 30;
 const PRIORITY_ORDER: Record<string, number> = { critical: 0, important: 1, high: 2, normal: 3, low: 4 };
@@ -136,7 +137,7 @@ export class ExploreCommand extends BaseCommand {
   }
 
   private async runFreshMode(mainUrl: string | undefined, feature: string | undefined, styles?: string[]): Promise<void> {
-    await this.runAllStyles(mainUrl, feature, undefined, undefined, styles);
+    await this.runAllStyles(mainUrl, feature, undefined, styles);
     this.rememberCurrentPlan();
     const mainPlan = this.explorBot.getCurrentPlan();
     if (!mainPlan) return;
@@ -320,7 +321,7 @@ export class ExploreCommand extends BaseCommand {
       tag('warning').log(`Skipping page: ${errorPage.message}`);
       return false;
     }
-    await this.runAllStyles(url, feature, parentPlan, this.completedPlans, styles);
+    await this.runAllStyles(url, feature, parentPlan, styles);
     const plan = this.explorBot.getCurrentPlan();
     if (plan?.tests.length && !this.completedPlans.includes(plan)) {
       this.completedPlans.push(plan);
@@ -333,14 +334,14 @@ export class ExploreCommand extends BaseCommand {
     for (const style of styleList) {
       if (this.isLimitReached()) break;
       this.explorBot.setCurrentPlan(existingPlan);
-      const opts: { fresh: boolean; style: string; completedPlans?: Plan[]; noSave?: boolean } = { fresh: false, style, completedPlans: this.completedPlans };
+      const opts: { fresh: boolean; style: string; noSave?: boolean } = { fresh: false, style };
       if (this.dryRun) opts.noSave = true;
       await this.planWithRetry(feature, opts, pageUrl);
       await this.runPendingTests();
     }
   }
 
-  private async runAllStyles(pageUrl?: string, feature?: string, parentPlan?: Plan, completedPlans?: Plan[], styles?: string[]): Promise<void> {
+  private async runAllStyles(pageUrl?: string, feature?: string, parentPlan?: Plan, styles?: string[]): Promise<void> {
     const styleList = styles ?? Object.keys(getStyles());
     let fresh = true;
     for (const style of styleList) {
@@ -348,7 +349,7 @@ export class ExploreCommand extends BaseCommand {
       if (!fresh && pageUrl && !this.dryRun) {
         await this.explorBot.visit(pageUrl);
       }
-      const opts: { fresh: boolean; style: string; extend?: Plan; completedPlans?: Plan[]; noSave?: boolean } = { fresh, style, completedPlans };
+      const opts: { fresh: boolean; style: string; extend?: Plan; noSave?: boolean } = { fresh, style };
       if (fresh && parentPlan) opts.extend = parentPlan;
       if (this.dryRun) opts.noSave = true;
       await this.planWithRetry(feature, opts, pageUrl);
@@ -371,7 +372,7 @@ export class ExploreCommand extends BaseCommand {
     this.completedPlans.push(plan);
   }
 
-  private async planWithRetry(feature: string | undefined, opts: { fresh: boolean; style: string; extend?: Plan; completedPlans?: Plan[]; noSave?: boolean }, pageUrl?: string): Promise<void> {
+  private async planWithRetry(feature: string | undefined, opts: { fresh: boolean; style: string; extend?: Plan; noSave?: boolean }, pageUrl?: string): Promise<void> {
     const before = new Set(this.explorBot.getCurrentPlan()?.tests ?? []);
 
     await this.explorBot.plan(feature, opts);
@@ -554,16 +555,7 @@ export class ExploreCommand extends BaseCommand {
     const sections: NextStepSection[] = [];
 
     if (savedPlanPath) {
-      const relPlan = relativeToCwd(savedPlanPath);
-      sections.push({
-        label: 'Plan',
-        path: savedPlanPath,
-        commands: [
-          { label: 'Re-run', command: `${cli} test ${relPlan} 1` },
-          { label: 'Run all', command: `${cli} test ${relPlan} *` },
-          { label: 'Run range', command: `${cli} test ${relPlan} 1-3` },
-        ],
-      });
+      sections.push(PlanCommand.planSection(savedPlanPath));
     }
 
     const savedFiles = this.explorBot.agentHistorian().getSavedFiles();

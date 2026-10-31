@@ -1,4 +1,6 @@
 import path from 'node:path';
+import chalk from 'chalk';
+import figures from 'figures';
 import { tag } from './logger.js';
 
 export interface NextStepCommand {
@@ -20,27 +22,27 @@ export function relativeToCwd(absPath: string): string {
 export function printNextSteps(sections: NextStepSection[]): void {
   if (sections.length === 0) return;
 
-  const blocks: string[] = [];
+  const lines: string[] = [''];
+  let isDefault = true;
   for (const section of sections) {
-    const lines: string[] = [];
     const headerPath = section.path ? relativeToCwd(section.path) : '';
-    lines.push(headerPath ? `${section.label}: ${headerPath}` : section.label);
+    lines.push(headerPath ? `${chalk.bold(section.label)}  ${chalk.gray(headerPath)}` : `${chalk.bold(section.label)}`);
 
-    const commands = section.commands || [];
-    if (commands.length > 0) {
-      const labeled = commands.filter((c) => c.label);
-      const maxLabel = labeled.length > 0 ? Math.max(...labeled.map((c) => c.label.length)) : 0;
-      for (const cmd of commands) {
-        if (!cmd.label) {
-          lines.push(`  ${cmd.command}`);
-          continue;
-        }
-        const padded = `${cmd.label}:`.padEnd(maxLabel + 2);
-        lines.push(`  ${padded} ${cmd.command}`);
+    for (const cmd of section.commands || []) {
+      if (cmd.label) lines.push(BLANK);
+      if (isDefault) {
+        if (cmd.label) lines.push(chalk.bold.yellow(`${figures.pointer} ${cmd.label}`));
+        lines.push(chalk.bold(`    ${cmd.command}`));
+        isDefault = false;
+        continue;
       }
+      if (cmd.label) lines.push(chalk.dim(`  ${cmd.label}`));
+      lines.push(`  ${cmd.command}`);
     }
-    blocks.push(lines.join('\n'));
+    lines.push(BLANK);
   }
 
-  tag('multiline').log(blocks.join('\n\n'), { maxLines: 18 });
+  tag('info').log(lines.join('\n'));
 }
+
+const BLANK = ' ';

@@ -1,4 +1,3 @@
-import { ActionResult } from '../action-result.js';
 import { Researcher } from '../ai/researcher.js';
 import { visuallyAnnotateContainers } from '../ai/researcher/coordinates.js';
 import { outputPath } from '../config.js';

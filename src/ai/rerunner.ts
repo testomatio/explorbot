@@ -23,7 +23,6 @@ import { ensureCodeceptResolvable } from '../utils/test-files.ts';
 import type { Agent, AgentDeps } from './agent.ts';
 import { toolExecutionLabel } from './conversation.ts';
 import type { Navigator } from './navigator.ts';
-import { Provider } from './provider.ts';
 import { actionRule, locatorRule, sectionContextRule } from './rules.ts';
 import { TaskAgent } from './task-agent.ts';
 import { createCodeceptJSTools, withdrawVisionTools } from './tools.ts';
@@ -300,7 +299,7 @@ export class Rerunner extends TaskAgent implements Agent {
     const failedCode = step.toCode?.() || '';
     console.log(chalk.yellow(`    ${figureSet.arrowRight} Healing: ${failedCode}`));
 
-    return async ({ I }: { I: any }) => {
+    return async () => {
       const bashTool = await createBashTool({
         destination: this.traceDir,
         onBeforeBashCall: ({ command }) => {

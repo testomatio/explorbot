@@ -19,7 +19,6 @@ const InputPane: React.FC<InputPaneProps> = ({ commandHandler, exitOnEmptyInput 
   const [cursorPosition, setCursorPosition] = useState(0);
   const [showAutocomplete, setShowAutocomplete] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [autoCompleteTriggered, setAutoCompleteTriggered] = useState(false);
   const inputRef = useRef(inputValue);
   const cursorRef = useRef(cursorPosition);
 
@@ -166,7 +165,6 @@ const InputPane: React.FC<InputPaneProps> = ({ commandHandler, exitOnEmptyInput 
           setShowAutocomplete(false);
           setSelectedIndex(0);
           setCursorPosition(selectedCommand.length);
-          setAutoCompleteTriggered(true);
         }
         return;
       }
@@ -182,7 +180,6 @@ const InputPane: React.FC<InputPaneProps> = ({ commandHandler, exitOnEmptyInput 
           setInputValue(newValue);
           setCursorPosition(nextCursor);
           setSelectedIndex(0);
-          setAutoCompleteTriggered(false);
           setShowAutocomplete(shouldShowAutocomplete(newValue));
         }
         return;
@@ -198,7 +195,6 @@ const InputPane: React.FC<InputPaneProps> = ({ commandHandler, exitOnEmptyInput 
         setInputValue(newValue);
         setCursorPosition(nextCursor);
         setSelectedIndex(0);
-        setAutoCompleteTriggered(false);
         setShowAutocomplete(shouldShowAutocomplete(newValue));
       }
     },
@@ -247,7 +243,6 @@ const InputPane: React.FC<InputPaneProps> = ({ commandHandler, exitOnEmptyInput 
             setShowAutocomplete(false);
             setSelectedIndex(0);
             setCursorPosition(selectedCommand.length);
-            setAutoCompleteTriggered(true);
           }
         }}
         visible={showAutocomplete}

@@ -50,7 +50,7 @@ describe('PlansCommand', () => {
     expect(output).toContain('Checkout plan (2 tests)');
     expect(output).toContain('1. Pay with card');
     expect(output).toContain('2. Apply coupon');
-    expect(output).toContain('test 1 --from-plan checkout.md');
+    expect(output).toContain('test checkout.md 1');
   });
 });
 
@@ -71,6 +71,61 @@ describe('TestCommand', () => {
 
     expect(loadPlan).toHaveBeenCalledWith('checkout.md');
     expect(tester.test).toHaveBeenCalledWith(plan.tests[0]);
+  });
+
+  it('runs all tests of a plan named as the first argument', async () => {
+    const plan = new Plan('Checkout plan');
+    plan.addTest(new Test('Pay with card', 'high', ['Payment succeeds'], '/checkout'));
+    plan.addTest(new Test('Apply coupon', 'normal', ['Discount is applied'], '/checkout'));
+    plan.saveToMarkdown(path.join(tmpPath, 'checkout.md'));
+    const loadPlan = mock(() => plan);
+    const tester = { test: mock(async () => {}) };
+    const explorBot = createMockExplorBot({
+      loadPlan,
+      getCurrentPlan: mock(() => plan),
+      agentTester: mock(() => tester),
+    });
+
+    await new TestCommand(explorBot).execute('checkout');
+
+    expect(loadPlan).toHaveBeenCalledWith('checkout');
+    expect(tester.test).toHaveBeenCalledTimes(2);
+  });
+
+  it('selects tests by index from a plan named as the first argument', async () => {
+    const plan = new Plan('Checkout plan');
+    plan.addTest(new Test('Pay with card', 'high', ['Payment succeeds'], '/checkout'));
+    plan.addTest(new Test('Apply coupon', 'normal', ['Discount is applied'], '/checkout'));
+    plan.saveToMarkdown(path.join(tmpPath, 'checkout.md'));
+    const tester = { test: mock(async () => {}) };
+    const explorBot = createMockExplorBot({
+      loadPlan: mock(() => plan),
+      getCurrentPlan: mock(() => plan),
+      agentTester: mock(() => tester),
+    });
+
+    await new TestCommand(explorBot).execute('checkout.md 2');
+
+    expect(tester.test).toHaveBeenCalledTimes(1);
+    expect(tester.test).toHaveBeenCalledWith(plan.tests[1]);
+  });
+
+  it('uses the current plan when the first argument is not a plan file', async () => {
+    const plan = new Plan('Checkout plan');
+    plan.addTest(new Test('Pay with card', 'high', ['Payment succeeds'], '/checkout'));
+    plan.addTest(new Test('Apply coupon', 'normal', ['Discount is applied'], '/checkout'));
+    const loadPlan = mock(() => plan);
+    const tester = { test: mock(async () => {}) };
+    const explorBot = createMockExplorBot({
+      loadPlan,
+      getCurrentPlan: mock(() => plan),
+      agentTester: mock(() => tester),
+    });
+
+    await new TestCommand(explorBot).execute('2');
+
+    expect(loadPlan).not.toHaveBeenCalled();
+    expect(tester.test).toHaveBeenCalledWith(plan.tests[1]);
   });
 });
 

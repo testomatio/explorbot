@@ -1,5 +1,5 @@
 import { existsSync, readdirSync, rmSync, statSync, unlinkSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { ConfigParser, outputPath } from '../config.js';
 import { tag } from '../utils/logger.js';
 import { BaseCommand, type Suggestion } from './base-command.js';

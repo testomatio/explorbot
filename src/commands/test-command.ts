@@ -18,6 +18,11 @@ export class TestCommand extends BaseCommand {
       this.explorBot.loadPlan(String(opts.fromPlan));
     }
 
+    if (!opts.fromPlan && remaining[0] && Plan.resolveFile(remaining[0], this.explorBot.getPlansDir())) {
+      this.explorBot.loadPlan(remaining.shift()!);
+      if (remaining.length === 0) remaining.push('*');
+    }
+
     const plan = this.explorBot.getCurrentPlan();
     const selector = remaining.join(' ');
     Stats.mode = 'test';
@@ -77,7 +82,7 @@ export class TestCommand extends BaseCommand {
   }
 
   completeArguments(): ArgumentCompletion[] {
-    return Plan.listFiles(this.explorBot.getPlansDir()).map((file) => ({ value: `--from-plan ${file.name}`, display: file.label }));
+    return Plan.listFiles(this.explorBot.getPlansDir()).map((file) => ({ value: file.name, display: file.label }));
   }
 }
 

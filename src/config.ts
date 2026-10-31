@@ -132,6 +132,8 @@ interface PlannerAgentConfig extends AgentConfig {
   styles?: string[];
   stylesDir?: string;
   docsWeight?: number;
+  minTests?: number;
+  maxTests?: number;
 }
 
 interface ScoutAgentConfig extends AgentConfig {
@@ -245,7 +247,7 @@ interface ExplorbotConfig {
     knowledge: string;
     experience: string;
     output: string;
-    spec?: string;
+    spec?: string | string[];
   };
   experience?: {
     maxReadLines?: number;
@@ -257,17 +259,6 @@ interface ExplorbotConfig {
   files?: Record<string, string>;
   dynamicPageRegex?: string;
 }
-
-const config: ExplorbotConfig = {
-  playwright: {
-    browser: 'chromium',
-    url: 'http://localhost:3000',
-  },
-
-  ai: {
-    model: null as any,
-  },
-};
 
 type RuleEntry = string | Record<string, string>;
 
@@ -761,10 +752,6 @@ export class ConfigParser {
     } catch {
       throw new Error(`Invalid URL in configuration: ${url}`);
     }
-  }
-
-  private getNestedValue(obj: any, path: string): any {
-    return path.split('.').reduce((current, key) => current?.[key], obj);
   }
 
   public mergeWithDefaults(config: Partial<ExplorbotConfig>): ExplorbotConfig {

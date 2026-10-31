@@ -4,8 +4,8 @@ import { type Span, context, trace } from '@opentelemetry/api';
 import chalk from 'chalk';
 import debug from 'debug';
 import dedent from 'dedent';
-import { marked } from 'marked';
 import stripAnsi from 'strip-ansi';
+import wrapAnsi from 'wrap-ansi';
 import { ConfigParser } from '../config.js';
 import { Observability } from '../observability.ts';
 import { RecentStepFilter } from './log-filters.ts';
@@ -81,6 +81,11 @@ class ConsoleDestination implements LogDestination {
   private forceEnabled = false;
   private quiet = false;
   private recentSteps = new RecentStepFilter();
+  private width: number;
+
+  constructor() {
+    this.width = process.stdout.columns || 80;
+  }
 
   isEnabled(): boolean {
     if (this.quiet) return false;
@@ -113,8 +118,8 @@ class ConsoleDestination implements LogDestination {
     if (entry.type === 'multiline' || entry.type === 'details') {
       const cleaned = stripAnsi(dedent(entry.content));
       const parsed = parseMarkdownToTerminal(cleaned);
-      content = parsed;
-      content = `${chalk.gray(content)}\n`;
+
+      content = `${chalk.dim('\n ┌'.padEnd(this.width, '─'))}\n${this.prefixLines(parsed, ' │ ', chalk.dim, false)}\n`;
     } else if (entry.type === 'success') {
       content = `${chalk.green(content)}\n`;
     } else if (entry.type === 'error') {
@@ -122,13 +127,31 @@ class ConsoleDestination implements LogDestination {
     } else if (entry.type === 'warning') {
       content = chalk.yellow(content);
     } else if (entry.type === 'step') {
-      content = chalk.gray(`   ${content}`);
+      content = this.prefixLines(content, '   ', chalk.gray);
     } else if (entry.type === 'operation') {
-      content = chalk.gray(`   · ${content}`);
+      content = this.prefixLines(content, '   · ', chalk.gray);
     } else if (entry.type === 'substep') {
-      content = chalk.gray(`   > ${content}`);
+      content = this.prefixLines(content, '   > ', chalk.gray);
     }
     console.log(content);
+  }
+
+  private prefixLines(content: string, prefix: string, style: (s: string) => string, strip = true): string {
+    const prefixWidth = stripAnsi(prefix).length;
+    const available = Math.max(20, this.width - prefixWidth);
+    const lines = content
+      .split('\n')
+      .filter((line) => stripAnsi(line).trim() !== '')
+      .flatMap((line) => {
+        const text = strip ? stripAnsi(line) : line;
+        const wrapped = wrapAnsi(text, available, { hard: true });
+        return wrapped.split('\n').map((part) => style(`${prefix}${part}`));
+      });
+    if (lines.length > 10) {
+      const remaining = lines.length - 10;
+      return [...lines.slice(0, 10), chalk.gray(` │ --- +${remaining} lines ---`)].join('\n');
+    }
+    return lines.join('\n');
   }
 }
 
@@ -160,14 +183,9 @@ class DebugDestination implements LogDestination {
 class FileDestination implements LogDestination {
   private initialized = false;
   private logFilePath: string | null = null;
-  private verboseMode = true;
 
   isEnabled(): boolean {
     return true;
-  }
-
-  setVerboseMode(enabled: boolean): void {
-    this.verboseMode = enabled;
   }
 
   write(entry: TaggedLogEntry): void {
@@ -404,7 +422,7 @@ class Logger {
   private truncateTagContent(content: string, tagName: string): string {
     const escapedTag = tagName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const tagRegex = new RegExp(`<${escapedTag}>([\\s\\S]*?)<\\/${escapedTag}>`, 'g');
-    return content.replace(tagRegex, (match, innerContent) => {
+    return content.replace(tagRegex, (_, innerContent) => {
       const trimmed = innerContent.trim();
       const totalLength = trimmed.length;
       if (totalLength <= 100) {

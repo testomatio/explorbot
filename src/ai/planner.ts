@@ -1,10 +1,8 @@
 import dedent from 'dedent';
-import { z } from 'zod';
 import { ActionResult } from '../action-result.ts';
 import { setActivity } from '../activity.ts';
 import { ConfigParser } from '../config.ts';
 import type { ExperienceTracker } from '../experience-tracker.ts';
-import type Explorer from '../explorer.ts';
 import { Observability } from '../observability.ts';
 import type { StateManager } from '../state-manager.js';
 import { Stats } from '../stats.ts';
@@ -12,9 +10,10 @@ import { Suite } from '../suite.ts';
 import { Plan, Test } from '../test-plan.ts';
 import { PlanningBlockedError } from '../utils/error-page.ts';
 import { createDebug, tag } from '../utils/logger.js';
+import { loop } from '../utils/loop.ts';
 import { jsonToTable } from '../utils/markdown-parser.ts';
 import { mdq } from '../utils/markdown-query.js';
-import { planToCompactAiContext } from '../utils/test-plan-markdown.ts';
+import { findPlanMarkdownProblems, parsePlansFromMarkdownText, planToCompactAiContext, readPlanMarkdownComment } from '../utils/test-plan-markdown.ts';
 import type { Agent, AgentDeps } from './agent.js';
 import { Conversation } from './conversation.ts';
 import type { Fisherman } from './fisherman.ts';
@@ -27,34 +26,16 @@ import { findSimilarStateHash } from './researcher/cache.ts';
 import { hasFocusedSection } from './researcher/focus.ts';
 import { RulesLoader } from '../utils/rules-loader.ts';
 import { capabilityGroundingRule, dataProtectionRules, fileUploadRule } from './rules.ts';
-import type { Scout } from './scout.ts';
+import { ScoutQuery, type Scout } from './scout.ts';
 
 const debugLog = createDebug('explorbot:planner');
 
-const TasksSchema = z.object({
-  planName: z.string().describe('Short descriptive name for the test plan (e.g., "User Authentication Testing", "Product Catalog Navigation", "Form Validation Tests")'),
-  scenarios: z
-    .array(
-      z.object({
-        scenario: z.string().describe('A single sentence describing the behavior to test.'),
-        priority: z.enum(['critical', 'important', 'high', 'normal', 'low']).describe('Priority of the task based on business importance'),
-        startUrl: z.string().nullable().describe('Start URL for the test if different from plan URL. Use only stable feature/list/detail pages, not transient create/edit/modal URLs unless the scenario specifically starts inside that form.'),
-        steps: z.array(z.string()).describe('List of steps to perform for this scenario. Each step should be a specific action (e.g., "Open the form", "Enter required data", "Submit the form"). Keep steps atomic and actionable.'),
-        expectedOutcomes: z
-          .array(z.string())
-          .describe('List of expected outcomes that can be verified. Each outcome should be simple, specific, and easy to check (e.g., "Success message appears", "URL changes to /dashboard", "Form field shows error"). Keep outcomes atomic - do not combine multiple checks into one.'),
-      })
-    )
-    .describe('List of testing scenarios'),
-  blockedBy: z.string().nullable().describe('When scenarios is empty, one sentence saying why this page has nothing to test; otherwise null.'),
-  prerequisite: z.string().nullable().describe('Set when the page shows a sign-in form, or another step that must be done first, instead of the content its URL is for: name that step. Otherwise null.'),
-});
+const MAX_FORMAT_ATTEMPTS = 3;
 
 const PlannerBase = WithSessionDedup(WithSubPages(Object as unknown as new (...args: any[]) => object));
 
 export class Planner extends PlannerBase implements Agent {
   emoji = '📋';
-  private explorer: Explorer;
   provider: Provider;
   stateManager: StateManager;
   private experienceTracker: ExperienceTracker;
@@ -62,6 +43,8 @@ export class Planner extends PlannerBase implements Agent {
 
   MIN_TASKS = 3;
   MAX_TASKS = 12;
+  private minTasksOverride?: number;
+  private maxTasksOverride?: number;
   currentPlan: Plan | null = null;
   freshStart = false;
   private lastStyleName = '';
@@ -72,7 +55,6 @@ export class Planner extends PlannerBase implements Agent {
 
   constructor(deps: AgentDeps, researcher: Researcher) {
     super();
-    this.explorer = deps.explorer;
     this.provider = deps.ai;
     this.researcher = researcher;
     this.stateManager = deps.stateManager;
@@ -97,8 +79,23 @@ export class Planner extends PlannerBase implements Agent {
     return Math.max(0, Math.min(100, value));
   }
 
-  private getDefaultStartUrl(state: { url: string; fullUrl?: string }): string {
-    return state.fullUrl || state.url;
+  private get effectiveMinTasks(): number {
+    if (this.minTasksOverride !== undefined) return this.minTasksOverride;
+    return ConfigParser.getInstance().getConfig().ai?.agents?.planner?.minTests ?? this.MIN_TASKS;
+  }
+
+  private get effectiveMaxTasks(): number {
+    if (this.maxTasksOverride !== undefined) return this.maxTasksOverride;
+    return ConfigParser.getInstance().getConfig().ai?.agents?.planner?.maxTests ?? this.MAX_TASKS;
+  }
+
+  setTestCount(opts: { minTests?: number; maxTests?: number }): void {
+    if (opts.minTests !== undefined) this.minTasksOverride = opts.minTests;
+    if (opts.maxTests !== undefined) this.maxTasksOverride = opts.maxTests;
+  }
+
+  private getDefaultStartUrl(state: { url: string }): string {
+    return state.url;
   }
 
   getSystemMessage(feature?: string): string {
@@ -152,7 +149,7 @@ export class Planner extends PlannerBase implements Agent {
     return getRegisteredPlan(url)?.plan || null;
   }
 
-  async plan(feature?: string, style?: string, parentPlan?: Plan, completedPlans?: Plan[]): Promise<Plan> {
+  async plan(feature?: string, style?: string, parentPlan?: Plan): Promise<Plan> {
     Stats.plans++;
     const state = this.stateManager.getCurrentState();
     debugLog('Planning:', state?.url);
@@ -206,25 +203,42 @@ export class Planner extends PlannerBase implements Agent {
         tag('step').log('Focusing on main content of this page');
       }
 
-      debugLog('Sending planning prompt to AI provider with structured output');
+      debugLog('Sending planning prompt to AI provider');
 
-      const aiResult = await this.provider.generateObject(conversation.messages, TasksSchema, conversation.model);
-
-      if (!aiResult?.object?.scenarios) {
-        throw new Error('No tasks were created successfully');
-      }
-
-      if (!this.currentPlan && aiResult.object.scenarios.length === 0 && aiResult.object.blockedBy) {
-        tag('warning').log(`Page is not plannable: ${aiResult.object.blockedBy}`);
-      }
-      if (!this.currentPlan && aiResult.object.scenarios.length === 0 && aiResult.object.prerequisite) {
-        throw new PlanningBlockedError(state.url, aiResult.object.prerequisite);
-      }
+      let markdown = '';
+      await loop(
+        async ({ stop, iteration }) => {
+          const response = await this.provider.chat(conversation.messages, conversation.model, { agentName: 'planner' });
+          markdown = response.text;
+          const problems = findPlanMarkdownProblems(markdown);
+          if (problems.length === 0) stop();
+          if (iteration >= MAX_FORMAT_ATTEMPTS) throw new Error(`Planner output does not match the plan format: ${problems.join('; ')}`);
+          debugLog('Plan format problems: %o', problems);
+          conversation.addAssistantText(markdown);
+          conversation.addUserText(dedent`
+            Your plan does not match the required format:
+            ${problems.map((problem) => `- ${problem}`).join('\n')}
+            Rewrite the whole plan in the format from <output_format>. Keep the same scenarios; fix only the structure.
+          `);
+        },
+        { maxAttempts: MAX_FORMAT_ATTEMPTS, interruptible: false }
+      );
 
       const defaultStartUrl = this.getDefaultStartUrl(state);
-      const fromPlanning = aiResult.object.scenarios.map((s: any) => new Test(s.scenario, s.priority, s.expectedOutcomes, s.startUrl || defaultStartUrl, s.steps || []));
+      markdown = mdq(markdown).query('h1').first().insertAfter(`### Prerequisite\n\n* URL: ${defaultStartUrl}`).toString();
+      const parsedPlan = parsePlansFromMarkdownText(markdown)[0];
+      const fromPlanning = parsedPlan?.tests || [];
+      const blockedBy = readPlanMarkdownComment(markdown, 'blocked');
+      const prerequisite = readPlanMarkdownComment(markdown, 'prerequisite');
 
-      return { tests: fromPlanning, planName: aiResult.object.planName };
+      if (!this.currentPlan && fromPlanning.length === 0 && blockedBy) {
+        tag('warning').log(`Page is not plannable: ${blockedBy}`);
+      }
+      if (!this.currentPlan && fromPlanning.length === 0 && prerequisite) {
+        throw new PlanningBlockedError(state.url, prerequisite);
+      }
+
+      return { tests: fromPlanning, planName: parsedPlan?.title };
     });
 
     const tests = result.tests;
@@ -350,9 +364,6 @@ export class Planner extends PlannerBase implements Agent {
   private async buildConversation(state: ActionResult, style?: string, parentPlan?: Plan, feature?: string): Promise<Conversation> {
     const model = this.provider.getAgenticModel('planner');
     const conversation = new Conversation([], model);
-    conversation.autoTrimTag('page_research', 20000);
-    conversation.autoTrimTag('tested_scenarios', 10000);
-    conversation.autoTrimTag('docs_context', 8000);
 
     conversation.addUserText(this.getSystemMessage(feature));
 
@@ -385,23 +396,25 @@ export class Planner extends PlannerBase implements Agent {
       If exact wording is unknown, describe the expected result generically, for example "an authentication error is shown" or "the user stays on the login page" instead of guessing the literal text.
       If exact redirect destination is unknown, describe the destination by visible page identity, for example "the dashboard page opens" or "the current workspace home page opens" instead of inventing a URL slug.
       Only propose scenarios whose prerequisites are evident from page research, visited pages, or API data preparation context.
-      If a scenario needs existing records, recipients, results, notifications, or other target data, propose it only when that data is visible, API preconditions can create it, or the scenario itself creates the record as its setup.
-      If the page appears read-only, degraded, demo-limited, maintenance-like, or lacks write controls, prefer read-only scenarios such as opening panels, inspecting visible lists, filtering, searching, or verifying current state.
+      If a scenario needs existing records or other target data, propose using api if <api_data_preparation> section is set or reuired record is visible on page or can be created via UI.
+      If the page appears read-only, degraded, demo-limited, maintenance-like, or lacks UI controls skip that page.
       Do not assume hidden data exists just because a control is present.
       Do not put record IDs or unique record names in test plans. Describe which record is needed and let Pilot choose it during execution; name a specific record only when research shows a small, complete list of available records.
       If the list is empty or no concrete item names are visible, do not invent "known" or "existing" items. Prefer empty-state, no-match search, clear-search, or read-only list behavior scenarios.
-      Search, filter, sorting, tab, and list scenarios must start from a stable page where those controls are visible; avoid transient create/edit/new URLs unless the scenario tests that form.
-      For option values and list items, use only visible or previously observed data; do not add create/update/delete setup unless the user explicitly requests that workflow.
-      Detail-view scenarios must target visible data entities from list rows, cards, tree nodes, or detail links; do not use filter tabs, counters, status tabs, breadcrumbs, or navigation controls as detail targets.
-      DO NOT propose "verification-only" tests that merely open a UI element (modal, dropdown, panel) and check it exists.
+
+      <meaningful_tests>
       Every test must complete a meaningful action that changes application state or produces a business outcome.
+      DO NOT propose "verification-only" tests that have only assertions and no real state change
       Opening a modal is NOT a test — performing an action INSIDE the modal IS a test.
       Clicking a dropdown is NOT a test — selecting an option and verifying the result IS a test.
+      </meaningful_tests>
+
       <priority_order>
       Tests that change application data are MORE valuable than tests that only change the UI display.
       Prioritize interactions that create, update, or delete data — these test real application behavior.
       Tests that only switch views, toggle filters, or paginate are LESS valuable — propose them only after data-changing tests are covered.
       If multiple ways to create or modify data exist (different types, different forms), propose a separate test for each.
+      If <docs_content> is provided make sure you incorporate app knowledge into planning
       </priority_order>
       ${capabilityGroundingRule}
       ${dataProtectionRules}
@@ -411,28 +424,8 @@ export class Planner extends PlannerBase implements Agent {
 
     conversation.addUserText(planningPrompt);
     conversation.addUserText(this.getTasksMessage());
-    const currentState = this.stateManager.getCurrentState();
-    const research = await this.researcher.research(currentState || state, {
-      deep: true,
-    });
 
-    let docsPromise: Promise<string> | null = null;
-    if (this.scout && this.docsWeight > 0) {
-      docsPromise = this.scout.collectDocs({ url: state.url, title: state.title, feature, excludeUrls: this.knowledgeTracker.applicationSpecUrls(state) });
-    }
-    let plannerResearch = mdq(research).query('code').replace('').toString();
-    plannerResearch = mdq(plannerResearch)
-      .query('table')
-      .replaceEach((table) => {
-        const rows = table.toJson();
-        if (rows.length === 0 || !rows[0].Element) return table.text();
-        const elementWithType = rows.map((r) => ({
-          Element: r.Element,
-          Type: r.Type || '',
-        }));
-        return jsonToTable(elementWithType, ['Element', 'Type']);
-      })
-      .toString();
+    const [plannerResearch, docs] = await Promise.all([this.collectResearch(state), this.collectDocs(state, feature)]);
 
     const hasFocusedOverlay = hasFocusedSection(plannerResearch);
     const focusNote = hasFocusedOverlay ? "IMPORTANT: One section is marked as **Focused** — this is the user's current focus area. Concentrate testing on the Focused section FIRST — test all interactions inside it before planning tests for the rest of the page." : '';
@@ -453,22 +446,23 @@ export class Planner extends PlannerBase implements Agent {
     const applicationContext = this.knowledgeTracker.renderApplicationSpec(state);
     if (applicationContext) {
       conversation.addUserText(applicationContext);
+      const words = applicationContext.split(/\s+/).filter(Boolean).length;
+      tag('info').log(`Added application spec to planning: ${words} words for ${state.url}`);
     }
 
-    if (docsPromise) {
-      const docs = await docsPromise;
-      if (docs) {
-        conversation.addUserText(dedent`
-          <docs_context>
-          Documentation retrieved from the collected corpus by the Scout agent.
-          Ground scenarios in these documented capabilities where they apply; treat them as supporting context, not a script.
+    if (docs) {
+      conversation.addUserText(dedent`
+        <docs_context>
+        Documentation retrieved from the collected corpus by the Scout agent.
+        Ground scenarios in these documented capabilities where they apply; treat them as supporting context, not a script.
 
-          Aim for roughly ${this.docsWeight}% of the scenarios to exercise behavior documented above; the remainder may explore beyond the documentation.
+        Aim for roughly ${this.docsWeight}% of the scenarios to exercise behavior documented above; the remainder may explore beyond the documentation.
 
-          ${docs}
-          </docs_context>
-        `);
-      }
+        ${docs}
+        </docs_context>
+      `);
+      const words = docs.split(/\s+/).filter(Boolean).length;
+      tag('info').log(`Added spec to planning (${words} words)`);
     }
 
     let activeRegion = '';
@@ -643,20 +637,14 @@ export class Planner extends PlannerBase implements Agent {
   private getTasksMessage(): string {
     return dedent`
     <task>
-      Provide testing scenarios as structured data with the following requirements:
+      Provide testing scenarios with the following requirements:
       1. Create a short, descriptive plan name that summarizes what will be tested (e.g., "User Authentication Testing", "Product Catalog Navigation", "Form Validation Tests")
-      2. Assign priorities based on business importance:
-         - CRITICAL: Core business functionality that defines the page purpose
-         - IMPORTANT: Key user flows, primary features, CRUD operations
-         - HIGH: Secondary features, edge cases for critical flows
-         - NORMAL: Supporting actions, settings, configuration
-         - LOW: Cosmetic checks, boundary testing, minor interactions
-      3. Propose tests following research section order: ${this.sectionOrder.join(', ')}
+      2. Propose tests following research section order: ${this.sectionOrder.join(', ')}
          Cover sections in this order — first propose tests for elements from earlier sections, then later ones.
          Extended Research sections come after the main sections.
-      4. Focus on interactive elements of the page. Skip navigation links that lead away from current page.
-      5. Focus on tests you are 100% sure relevant to this page and can be achived from UI.
-      6. For each task, provide BOTH steps and expected outcomes as separate arrays:
+      3. Focus on interactive elements of the page. Skip navigation links that lead away from current page.
+      4. Focus on tests you are 100% sure relevant to this page and can be achived from UI.
+      5. For each task, provide BOTH steps and expected outcomes as separate lists:
 
          STEPS - actionable commands:
          - Each step should be a specific action to perform
@@ -687,8 +675,63 @@ export class Planner extends PlannerBase implements Agent {
          - Do not wrap text in ** or * quotes, ( or ) brackets.
          - Avoid using emojis or special characters.
       7. Only tests that can be tested from web UI should be proposed.
-      8. For a fresh plan propose at least ${this.MIN_TASKS} tests; when expanding an existing plan return ONLY new scenarios not in the tested list, and an empty array if none remain.
+      8. For a fresh plan propose at least ${this.effectiveMinTasks} and at most ${this.effectiveMaxTasks} tests; when expanding an existing plan return ONLY new scenarios not in the tested list, and no scenarios if none remain.
     </task>
+
+    <output_format>
+    Reply with the plan as markdown in exactly this format and nothing else:
+
+    <!-- suite -->
+    # {short plan name summarizing what is tested}
+
+    <!-- test -->
+    # {one sentence describing the behavior to test}
+
+    ## Steps
+    * {first action}
+    * {next action}
+    * {one bullet per action, as many as the workflow needs}
+
+    ## Expected
+    * {first verifiable outcome}
+    * {one bullet per outcome, as many as the scenario verifies}
+
+    Repeat the block from <!-- test to ## Expected for every scenario.
+    Every scenario needs its own <!-- test --> comment, its steps and its expected outcomes.
+    Steps list every action of the workflow in order, one action per bullet, from the starting page to the final action.
+    Expected lists every outcome to verify, one outcome per bullet.
+
+    When there is nothing to test, write no scenarios; after the plan name add one comment instead:
+    <!-- prerequisite: {step that must be done first} --> when the page shows a sign-in form or another required step instead of the content its URL is for
+    <!-- blocked: {one sentence why the page has nothing to test} --> otherwise
+    </output_format>
     `;
+  }
+
+  private async collectResearch(state: ActionResult): Promise<string> {
+    const currentState = this.stateManager.getCurrentState();
+    const research = await this.researcher.research(currentState || state, { deep: true });
+    let plannerResearch = mdq(research).query('code').replace('').toString();
+    plannerResearch = mdq(plannerResearch)
+      .query('table')
+      .replaceEach((table) => {
+        const rows = table.toJson();
+        if (rows.length === 0 || !rows[0].Element) return table.text();
+        const elementWithType = rows.map((r) => ({
+          Element: r.Element,
+          Type: r.Type || '',
+        }));
+        return jsonToTable(elementWithType, ['Element', 'Type']);
+      })
+      .toString();
+    return plannerResearch;
+  }
+
+  private async collectDocs(state: ActionResult, feature?: string): Promise<string> {
+    if (!this.scout || this.docsWeight <= 0) return '';
+    const query = ScoutQuery.fromState(state);
+    query.feature = feature;
+    query.exclude = this.knowledgeTracker.applicationSpecUrls(state);
+    return this.scout.collectDocs(query);
   }
 }

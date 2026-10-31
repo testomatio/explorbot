@@ -3,7 +3,6 @@ import { z } from 'zod';
 import { normalizeUrl } from '../../state-manager.ts';
 import type { StateManager } from '../../state-manager.ts';
 import type { Plan } from '../../test-plan.ts';
-import { tag } from '../../utils/logger.ts';
 import { isSamePageFamily } from '../../utils/url-matcher.ts';
 import type { Provider } from '../provider.ts';
 import type { Constructor } from '../researcher/mixin.ts';
@@ -85,7 +84,7 @@ export function WithSubPages<T extends Constructor>(Base: T) {
     async pickNextSubPage(candidates: SubPageCandidate[]): Promise<{ url: string; reason: string } | null> {
       if (candidates.length === 0) return null;
 
-      const plannedEntries = [...planRegistry.entries()].map(([key, record]) => `- ${record.url} (${record.plan.tests.length} tests${record.feature ? `, feature: ${record.feature}` : ''})`).join('\n');
+      const plannedEntries = [...planRegistry.entries()].map(([, record]) => `- ${record.url} (${record.plan.tests.length} tests${record.feature ? `, feature: ${record.feature}` : ''})`).join('\n');
 
       const candidateList = candidates.map((c) => `- ${c.url} (visits: ${c.visitCount}${c.title ? `, title: "${c.title}"` : ''}${c.h1 ? `, h1: "${c.h1}"` : ''})`).join('\n');
 

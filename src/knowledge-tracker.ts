@@ -22,7 +22,7 @@ export class KnowledgeTracker {
   private knowledgeFiles: Knowledge[] = [];
   private sessionKnowledge: Knowledge[] = [];
   private isLoaded = false;
-  private applicationSpec?: ApplicationSpec;
+  private applicationSpecs: ApplicationSpec[] = [];
 
   static appendSessionKnowledge(text: string): void {
     sessionEntries.push(text);
@@ -49,9 +49,14 @@ export class KnowledgeTracker {
       mkdirSync(this.knowledgeDir, { recursive: true });
     }
 
-    if (specPath) {
-      this.applicationSpec = new ApplicationSpec(specPath);
-      tag('info').log(`Loaded application spec with ${this.applicationSpec.pageCount} documented pages`);
+    for (const p of normalizeSpecPaths(specPath)) {
+      const spec = new ApplicationSpec(p);
+      this.applicationSpecs.push(spec);
+      if (spec.pageCount > 0) {
+        tag('info').log(`Loaded application spec with ${spec.pageCount} documented pages`);
+      } else if (spec.markdownFileCount > 0) {
+        tag('info').log(`Loaded spec corpus with ${spec.markdownFileCount} markdown files`);
+      }
     }
 
     this.sessionKnowledge = sessionEntries.map((entry, index) => {
@@ -99,11 +104,12 @@ export class KnowledgeTracker {
   }
 
   renderApplicationSpec(state: ActionResult): string {
-    return this.applicationSpec?.renderFor(state) || '';
+    const parts = this.applicationSpecs.map((spec) => spec.renderFor(state)).filter(Boolean);
+    return parts.join('\n\n');
   }
 
   applicationSpecUrls(state: ActionResult): string[] {
-    return this.applicationSpec?.matchedUrls(state) || [];
+    return this.applicationSpecs.flatMap((spec) => spec.matchedUrls(state));
   }
 
   addKnowledge(urlPattern: string, description: string, opts?: { replace?: boolean }): { filename: string; filePath: string; isNewFile: boolean } {
@@ -293,6 +299,11 @@ export class KnowledgeTracker {
   }
 }
 
+function normalizeSpecPaths(spec: string | string[] | undefined): string[] {
+  if (!spec) return [];
+  return Array.isArray(spec) ? spec : [spec];
+}
+
 export interface Knowledge {
   filePath: string;
   url?: string;
@@ -302,6 +313,6 @@ export interface Knowledge {
 }
 
 export interface KnowledgeTrackerOptions {
-  applicationSpec?: string;
+  applicationSpec?: string | string[];
   knowledgeDir?: string;
 }
