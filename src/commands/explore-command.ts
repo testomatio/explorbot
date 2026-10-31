@@ -6,7 +6,7 @@ import { Stats } from '../stats.js';
 import { type Plan, type Test, TestResult } from '../test-plan.js';
 import { browserErrorMessage } from '../utils/browser-errors.ts';
 import { getCliName } from '../utils/cli-name.ts';
-import { ErrorPageError, PlanningBlockedError, getStateErrorPageError } from '../utils/error-page.ts';
+import { BlockedError, ErrorPageError, getStateErrorPageError } from '../utils/error-page.ts';
 import { tag } from '../utils/logger.js';
 import { type NextStepSection, printNextSteps, relativeToCwd } from '../utils/next-steps.ts';
 import { keepSiteUrls, readSitemap } from '../utils/sitemap.ts';
@@ -73,7 +73,7 @@ export class ExploreCommand extends BaseCommand {
     const [target] = remaining;
     if (target?.startsWith('/') || target?.startsWith('http://') || target?.startsWith('https://')) {
       remaining.shift();
-      await this.explorBot.visit(target);
+      await this.visitPage(target);
     }
 
     const feature = (opts.focus as string) || remaining.join(' ') || undefined;
@@ -240,7 +240,7 @@ export class ExploreCommand extends BaseCommand {
       const owningPlan = test.plan;
       if (owningPlan && owningPlan !== currentPlanRef) {
         this.explorBot.setCurrentPlan(owningPlan);
-        if (owningPlan.url && !this.dryRun) await this.explorBot.visit(owningPlan.url);
+        if (owningPlan.url && !this.dryRun) await this.visitPage(owningPlan.url);
         currentPlanRef = owningPlan;
       }
       await this.runOneTest(test);
@@ -250,7 +250,7 @@ export class ExploreCommand extends BaseCommand {
 
     const subpagesMode = cfg.subpages || 'both';
 
-    if (mainUrl && !this.dryRun) await this.explorBot.visit(mainUrl);
+    if (mainUrl && !this.dryRun) await this.visitPage(mainUrl);
     await this.replanAndRun(mainUrl, feature, mainPlan, cfg.styles);
 
     if (this.isLimitReached()) return;
@@ -261,7 +261,7 @@ export class ExploreCommand extends BaseCommand {
         if (!subPlan.url) continue;
         if (!this.urlFilter.admit(subPlan.url)) continue;
         try {
-          if (!this.dryRun) await this.explorBot.visit(subPlan.url);
+          if (!this.dryRun) await this.visitPage(subPlan.url);
           await this.replanAndRun(subPlan.url, undefined, subPlan, cfg.styles);
         } catch (err) {
           this.failedSubPages.add(normalizeUrl(subPlan.url));
@@ -314,7 +314,7 @@ export class ExploreCommand extends BaseCommand {
   }
 
   private async explorePage(url: string, feature: string | undefined, parentPlan: Plan | undefined, styles?: string[]): Promise<boolean> {
-    await this.explorBot.visit(url);
+    await this.visitPage(url);
     const errorPage = getStateErrorPageError(this.explorBot.stateManager().getCurrentState());
     if (errorPage) {
       tag('warning').log(`Skipping page: ${errorPage.message}`);
@@ -346,7 +346,7 @@ export class ExploreCommand extends BaseCommand {
     for (const style of styleList) {
       if (this.isLimitReached()) break;
       if (!fresh && pageUrl && !this.dryRun) {
-        await this.explorBot.visit(pageUrl);
+        await this.visitPage(pageUrl);
       }
       const opts: { fresh: boolean; style: string; extend?: Plan; completedPlans?: Plan[]; noSave?: boolean } = { fresh, style, completedPlans };
       if (fresh && parentPlan) opts.extend = parentPlan;
@@ -376,9 +376,16 @@ export class ExploreCommand extends BaseCommand {
 
     await this.explorBot.plan(feature, opts);
     const blocked = this.explorBot.lastPlanError;
-    if (blocked instanceof PlanningBlockedError) {
-      if (!this.dryRun) await this.explorBot.agentCaptain().handle(blocked.message, { reset: true });
-      if (this.printAddedTests(before, opts.style, pageUrl) === 0) tag('warning').log(`Skipping page ${blocked.url}: ${blocked.prerequisite}`);
+    if (blocked instanceof BlockedError) {
+      const resolved = await this.resolveBlocker(blocked, () => !!this.explorBot.getCurrentPlan()?.tests.some((t) => !before.has(t))).then(
+        () => true,
+        () => false
+      );
+      if (!resolved) {
+        tag('warning').log(`Skipping page: ${blocked.message}`);
+        return;
+      }
+      this.printAddedTests(before, opts.style, pageUrl);
       return;
     }
     if (this.explorBot.lastPlanError) {
@@ -386,7 +393,7 @@ export class ExploreCommand extends BaseCommand {
         throw this.explorBot.lastPlanError;
       }
       tag('info').log(`Retrying planning style '${opts.style}'...`);
-      if (pageUrl && !this.dryRun) await this.explorBot.visit(pageUrl);
+      if (pageUrl && !this.dryRun) await this.visitPage(pageUrl);
       await this.explorBot.plan(feature, opts);
       if (this.explorBot.lastPlanError) {
         tag('warning').log(`Planning style '${opts.style}' failed after retry, skipping`);
@@ -395,6 +402,15 @@ export class ExploreCommand extends BaseCommand {
     }
 
     this.printAddedTests(before, opts.style, pageUrl);
+  }
+
+  private visitPage(url: string): Promise<void> {
+    return this.explorBot.visit(url).catch((err) => this.resolveBlocker(err, () => this.explorBot.agentNavigator().isOn(url)));
+  }
+
+  private async resolveBlocker(error: unknown, resolved: () => boolean | Promise<boolean>): Promise<void> {
+    if (this.dryRun) throw error;
+    await this.explorBot.agentCaptain().resolveBlocker(error, resolved);
   }
 
   private printAddedTests(before: Set<Test>, style: string, pageUrl?: string): number {
@@ -637,7 +653,16 @@ export class ExploreCommand extends BaseCommand {
       test.start();
       test.finish(TestResult.SKIPPED);
     } else {
-      await this.explorBot.agentTester().test(test, { deadline: this.hardDeadlineAt });
+      const run = () => this.explorBot.agentTester().test(test, { deadline: this.hardDeadlineAt });
+      await run()
+        .catch((err) => this.resolveBlocker(err, () => this.explorBot.agentNavigator().isOn(test.startUrl)).then(run))
+        .catch((err) => {
+          if (!(err instanceof BlockedError)) throw err;
+          tag('warning').log(`Skipping test: ${err.message}`);
+          test.start();
+          test.addNote(err.message, TestResult.SKIPPED);
+          test.finish(TestResult.SKIPPED);
+        });
     }
     this.testsRun++;
   }

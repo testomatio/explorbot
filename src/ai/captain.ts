@@ -7,6 +7,7 @@ import type { ExplorBot } from '../explorbot.ts';
 import type { WebPageState } from '../state-manager.ts';
 import { Task, Test } from '../test-plan.ts';
 import { formatHeadings } from '../utils/context-formatter.ts';
+import { BlockedError } from '../utils/error-page.ts';
 import { HooksRunner } from '../utils/hooks-runner.ts';
 import { startLogCapture, stopLogCapture, tag } from '../utils/logger.js';
 import { loop } from '../utils/loop.js';
@@ -35,6 +36,7 @@ export class Captain extends CaptainBase implements Agent {
   private hooksRunner: HooksRunner | null = null;
   private commandExecutor: ((cmd: string) => Promise<void>) | null = null;
   private commandDescriptions: { name: string; description: string; options: string }[] = [];
+  private unresolvedBlockers = new Set<string>();
 
   constructor(explorBot: ExplorBot) {
     super();
@@ -523,6 +525,17 @@ export class Captain extends CaptainBase implements Agent {
     }
 
     return null;
+  }
+
+  async resolveBlocker(error: unknown, resolved: () => boolean | Promise<boolean>): Promise<void> {
+    if (!(error instanceof BlockedError)) throw error;
+    const key = `${error.name} ${error.url} ${error.blocker}`;
+    if (this.unresolvedBlockers.has(key)) throw error;
+    tag('info').log(`Captain takes over: ${error.message}`);
+    await this.handle(error.request, { reset: true });
+    if (await resolved()) return;
+    this.unresolvedBlockers.add(key);
+    throw error;
   }
 }
 

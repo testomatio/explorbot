@@ -13,7 +13,7 @@ import { type StateManager, normalizeUrl } from '../state-manager.js';
 import { isFatalBrowserError } from '../utils/browser-errors.ts';
 import { getCliName } from '../utils/cli-name.ts';
 import { extractCodeBlocks } from '../utils/code-extractor.js';
-import { isLoginPage } from '../utils/error-page.ts';
+import { NavigationBlockedError, isLoginPage } from '../utils/error-page.ts';
 import { HooksRunner } from '../utils/hooks-runner.ts';
 import { createDebug, pluralize, tag } from '../utils/logger.js';
 import { loop, pause } from '../utils/loop.js';
@@ -31,6 +31,7 @@ import { isInteractive } from './task-agent.js';
 import { createLearnExperienceTool } from './tools.ts';
 
 const debugLog = createDebug('explorbot:navigator');
+const MAX_TRIED_STEPS = 5;
 
 class Navigator implements Agent {
   emoji = '🧭';
@@ -41,6 +42,7 @@ class Navigator implements Agent {
 
   private MAX_ATTEMPTS = Number.parseInt(process.env.MAX_ATTEMPTS || '5');
   lastFailureReason: string | null = null;
+  lastFailureCause: string | null = null;
   executedSteps: ExecutedStep[] = [];
 
   private systemPrompt = dedent`
@@ -138,6 +140,10 @@ class Navigator implements Agent {
     return matchesNavigationUrl(expectedUrl, currentUrl);
   }
 
+  isOn(url: string): boolean {
+    return this.isOnExpectedPage(url, this.stateManager);
+  }
+
   async visit(url: string, opts: { recover?: boolean } = {}): Promise<boolean> {
     return this.visitOnce(url, opts.recover !== false);
   }
@@ -195,8 +201,9 @@ class Navigator implements Agent {
   }
 
   private navigationError(url: string, fallback: string): Error {
-    if (this.lastFailureReason) return new Error(`Navigation to ${url} failed: ${this.lastFailureReason}`);
-    return new Error(`Navigation to ${url} failed: ${fallback}`);
+    const currentUrl = this.stateManager.getCurrentState()?.url || '';
+    const tried = this.executedSteps.slice(-MAX_TRIED_STEPS).map((step) => step.command);
+    return new NavigationBlockedError(url, currentUrl, this.lastFailureReason || fallback, this.lastFailureCause || fallback, tried);
   }
 
   private failureReason(stopReason: string | null, knowledge: string, url: string): string | null {
@@ -213,6 +220,7 @@ class Navigator implements Agent {
     if (!this.provider) throw new Error('AI-assisted recovery is unavailable: no AI model is configured.');
 
     this.lastFailureReason = null;
+    this.lastFailureCause = null;
     this.executedSteps = [];
     tag('info').log('AI Navigator resolving state at', actionResult.url);
     debugLog('Resolution message:', message);
@@ -371,6 +379,7 @@ class Navigator implements Agent {
       let cause = 'the AI proposed no working solution for this page';
       if (lastFailure) cause = `${totalAttempts} ${pluralize(totalAttempts, 'attempt')} failed, last: ${lastFailure}`;
       if (stopReason) cause = stopReason;
+      this.lastFailureCause = cause;
       this.lastFailureReason = this.failureReason(cause, knowledge, actionResult.url || '');
     }
 

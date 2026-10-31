@@ -11,13 +11,14 @@ import { Observability } from '../observability.ts';
 import { type StateTransition, normalizeUrl } from '../state-manager.ts';
 import { Stats } from '../stats.ts';
 import { type Test, TestResult, type TestResultType } from '../test-plan.ts';
-import { ErrorPageError, isErrorPage } from '../utils/error-page.ts';
+import { ErrorPageError, TestStartBlockedError, isErrorPage } from '../utils/error-page.ts';
 import { createDebug, tag } from '../utils/logger.ts';
 import { loop } from '../utils/loop.ts';
 import { compactErrorMessage } from '../utils/strings.ts';
 import type { Agent, AgentDeps } from './agent.ts';
 import type { Captain } from './captain.ts';
 import type { Conversation } from './conversation.ts';
+import { pageEvidence } from './judge.ts';
 import { Navigator } from './navigator.ts';
 import type { Pilot } from './pilot.ts';
 import { Provider } from './provider.ts';
@@ -153,6 +154,10 @@ export class Tester extends TaskAgent implements Agent {
       this.testRun = await this.explorer.beginTest(task);
       offFailedRequest?.();
       return await this.abortStartedTestOnErrorPage(task, initialState);
+    }
+    if (task.startUrl && (await this.judge?.assert(`This is the right page to start the test: ${task.scenario}`, pageEvidence(initialState))) === false) {
+      offFailedRequest?.();
+      throw new TestStartBlockedError(task.scenario, task.startUrl, initialState.url || '');
     }
 
     const conversation = this.provider.startConversation(this.getSystemMessage(), 'tester');
