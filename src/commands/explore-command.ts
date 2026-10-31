@@ -601,6 +601,14 @@ export class ExploreCommand extends BaseCommand {
     printNextSteps(sections);
   }
 
+  private skipBlockedTest(test: Test, error: unknown): void {
+    if (!(error instanceof BlockedError)) throw error;
+    tag('warning').log(`Skipping test: ${error.message}`);
+    test.start();
+    test.addNote(error.message, TestResult.SKIPPED);
+    test.finish(TestResult.SKIPPED);
+  }
+
   private isLimitReached(): boolean {
     if (this.maxTests != null && this.testsRun >= this.maxTests) return true;
     return this.isDeadlineReached();
@@ -635,7 +643,13 @@ export class ExploreCommand extends BaseCommand {
       test.start();
       test.finish(TestResult.SKIPPED);
     } else {
-      await this.explorBot.agentTester().test(test, { deadline: this.hardDeadlineAt });
+      const run = () => this.explorBot.agentTester().test(test, { deadline: this.hardDeadlineAt });
+      await run()
+        .catch(async (err) => {
+          if (!(await this.explorBot.agentCaptain().resolveBlocker(err, () => this.explorBot.agentNavigator().isOn(test.startUrl)))) throw err;
+          return run();
+        })
+        .catch((err) => this.skipBlockedTest(test, err));
     }
     this.testsRun++;
   }

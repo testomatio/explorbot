@@ -22,6 +22,7 @@ import type { Navigator } from './navigator.ts';
 import type { Provider } from './provider.ts';
 import { Researcher } from './researcher.ts';
 import { TaskAgent } from './task-agent.ts';
+import type { SupervisorAction } from './tester.ts';
 import { createLearnExperienceTool, withdrawVisionTools } from './tools.ts';
 
 const MAX_STEPS = 15;
@@ -544,11 +545,6 @@ export class Captain extends CaptainBase implements Agent {
 }
 
 export default Captain;
-
-interface SupervisorAction {
-  action: 'inject' | 'stop' | 'pass' | 'skip';
-  message: string;
-}
 
 interface ExecutionRecoveryAction {
   action: 'continue' | 'stop';

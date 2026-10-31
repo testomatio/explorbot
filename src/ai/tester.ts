@@ -16,7 +16,6 @@ import { createDebug, tag } from '../utils/logger.ts';
 import { loop } from '../utils/loop.ts';
 import { compactErrorMessage } from '../utils/strings.ts';
 import type { Agent, AgentDeps } from './agent.ts';
-import type { Captain } from './captain.ts';
 import type { Conversation } from './conversation.ts';
 import { pageEvidence } from './judge.ts';
 import { Navigator } from './navigator.ts';
@@ -49,7 +48,7 @@ export class Tester extends TaskAgent implements Agent {
   private testRun: TestRun | null = null;
   private currentConversation: Conversation | null = null;
   private pilot: Pilot | null = null;
-  private captain: Captain | null = null;
+  private supervisor: Supervisor | null = null;
 
   MAX_ITERATIONS = 30;
   MAX_EXTENSIONS = 2;
@@ -91,8 +90,8 @@ export class Tester extends TaskAgent implements Agent {
     this.pilot = pilot;
   }
 
-  setCaptain(captain: Captain): void {
-    this.captain = captain;
+  setSupervisor(supervisor: Supervisor): void {
+    this.supervisor = supervisor;
   }
 
   private getCurrentState(): ActionResult {
@@ -156,12 +155,8 @@ export class Tester extends TaskAgent implements Agent {
       return await this.abortStartedTestOnErrorPage(task, initialState);
     }
     if (task.startUrl && (await this.judge?.assert(`This is the right page to start the test: ${task.scenario}`, pageEvidence(initialState))) === false) {
-      const blocked = new TestStartBlockedError(task.scenario, task.startUrl, initialState.url || '');
-      if (!(await this.captain?.resolveBlocker(blocked, () => this.navigator.isOn(task.startUrl)))) {
-        offFailedRequest?.();
-        return this.skipBlockedTest(task, blocked);
-      }
-      initialState = this.getCurrentState();
+      offFailedRequest?.();
+      throw new TestStartBlockedError(task.scenario, task.startUrl, initialState.url || '');
     }
 
     const conversation = this.provider.startConversation(this.getSystemMessage(), 'tester');
@@ -428,10 +423,10 @@ export class Tester extends TaskAgent implements Agent {
         {
           maxAttempts: this.MAX_ITERATIONS,
           interruptPrompt: 'Test interrupted. Enter new instruction (or "stop" to cancel):',
-          onInterrupt: this.captain
+          onInterrupt: this.supervisor
             ? async (userInput, context) => {
                 if (!userInput) return;
-                const result = await this.captain!.processSupervisorInterrupt(userInput, task);
+                const result = await this.supervisor!(userInput, task);
                 tag('info').log(`🧑‍✈️ Supervisor: ${result.action} — ${result.message}`);
 
                 const terminalResults: Record<string, (typeof TestResult)[keyof typeof TestResult]> = {
@@ -749,15 +744,6 @@ export class Tester extends TaskAgent implements Agent {
     task.finish(TestResult.FAILED);
     this.finishTest(task);
     await this.testRun?.stop(this.buildStopTestMeta(task));
-    clearActivity(true);
-    return { success: false };
-  }
-
-  private skipBlockedTest(task: Test, blocked: TestStartBlockedError): { success: boolean } {
-    tag('warning').log(`Skipping test: ${blocked.message}`);
-    task.start();
-    task.addNote(blocked.message, TestResult.SKIPPED);
-    task.finish(TestResult.SKIPPED);
     clearActivity(true);
     return { success: false };
   }
@@ -1242,6 +1228,13 @@ export class Tester extends TaskAgent implements Agent {
 
 interface TestSessionHandlers {
   offFailedRequest?: () => void;
+}
+
+export type Supervisor = (input: string, test: Test) => Promise<SupervisorAction>;
+
+export interface SupervisorAction {
+  action: 'inject' | 'stop' | 'pass' | 'skip';
+  message: string;
 }
 
 export interface TestOptions {

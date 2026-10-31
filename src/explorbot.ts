@@ -280,7 +280,7 @@ export class ExplorBot {
       }
       if (this.isHistorianEnabled()) this.agents.tester.setHistorian(this.agentHistorian());
       this.agents.tester.setPilot(this.agentPilot());
-      this.agents.tester.setCaptain(this.agentCaptain());
+      this.agents.tester.setSupervisor((input: string, test: Test) => this.agentCaptain().processSupervisorInterrupt(input, test));
 
       const fisherman = this.agentFisherman();
       if (fisherman) this.agentPilot().setFisherman(fisherman);

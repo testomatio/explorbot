@@ -2,8 +2,8 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import { ExploreCommand } from '../../src/commands/explore-command.ts';
 import { ConfigParser } from '../../src/config.ts';
 import type { ExplorBot } from '../../src/explorbot.ts';
-import { Plan, Test } from '../../src/test-plan.ts';
-import { PlanningBlockedError } from '../../src/utils/error-page.ts';
+import { Plan, Test, TestResult } from '../../src/test-plan.ts';
+import { PlanningBlockedError, TestStartBlockedError } from '../../src/utils/error-page.ts';
 
 beforeEach(() => {
   ConfigParser.resetForTesting();
@@ -505,5 +505,47 @@ describe('ExploreCommand on a page that stays blocked', () => {
     const cmd = new ExploreCommand(explorBot as ExplorBot);
     await (cmd as any).planWithRetry(undefined, { fresh: true, style: 'normal' }, '/workspace');
     expect(calls).toEqual(['plan']);
+  });
+});
+
+describe('ExploreCommand on a test that cannot start', () => {
+  function setupBot(captainFixes: boolean) {
+    const calls: string[] = [];
+    let fixed = false;
+    const explorBot: any = {
+      agentCaptain: () => ({
+        resolveBlocker: async (err: unknown, resolved: () => boolean) => {
+          calls.push(`captain ${(err as Error).name}`);
+          fixed = captainFixes;
+          return resolved();
+        },
+      }),
+      agentNavigator: () => ({ isOn: () => fixed }),
+      agentTester: () => ({
+        test: async (test: Test) => {
+          calls.push('test');
+          if (!fixed) throw new TestStartBlockedError(test.scenario, '/workspace', '/login');
+          test.start();
+          test.finish(TestResult.PASSED);
+        },
+      }),
+    };
+    return { cmd: new ExploreCommand(explorBot as ExplorBot), calls };
+  }
+
+  test('runs the test again after Captain resolves what kept it from starting', async () => {
+    const { cmd, calls } = setupBot(true);
+    const test = new Test('Open a workspace project', 'high', [], '/workspace');
+    await (cmd as any).runOneTest(test);
+    expect(calls).toEqual(['test', 'captain TestStartBlockedError', 'test']);
+    expect(test.isSuccessful).toBe(true);
+  });
+
+  test('skips the test when Captain cannot get it started', async () => {
+    const { cmd, calls } = setupBot(false);
+    const test = new Test('Open a workspace project', 'high', [], '/workspace');
+    await (cmd as any).runOneTest(test);
+    expect(calls).toEqual(['test', 'captain TestStartBlockedError']);
+    expect(test.isSkipped).toBe(true);
   });
 });

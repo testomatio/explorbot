@@ -7,7 +7,7 @@
 - [Planner] [Captain] When `explore` hits a page the planner can't plan, such as a sign-in form at the URL you asked for, Captain gets the planner's report: the page, the focus, the planning style and what blocks it. Captain works out from the browser session how to get past it, then re-plans the page itself. If Captain adds no tests, the page is skipped.
 - [Captain] Captain takes over when another agent is blocked, then the work continues. This applies wherever Explorbot opens a page, plans a page or starts a test, including `explore` and `freesail`. Captain is told what the agent was asked to do, where it stopped, why, and what was already tried. If Captain can't resolve a blocker, the page or test is skipped, and that blocker isn't handed to Captain again in the same run.
 - [Navigator] A page the Navigator can't reach after all its attempts goes to Captain before the page is skipped.
-- [Tester] With `ai.decisionModel` set, the judge checks before each test that the open page is where the test can start, for example that the session hasn't expired. If it isn't, Captain resolves it and the test runs again. Otherwise the test is skipped.
+- [Tester] With `ai.decisionModel` set, the judge checks before each test that the open page is where the test can start, for example that the session hasn't expired. If it isn't, the test doesn't start. In `explore` and `freesail`, Captain resolves it and the test runs again; otherwise, and in `test`, the test is skipped.
 
 ## 2026-10-28
 
