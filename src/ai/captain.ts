@@ -37,7 +37,6 @@ export class Captain extends CaptainBase implements Agent {
   private hooksRunner: HooksRunner | null = null;
   private commandExecutor: ((cmd: string) => Promise<void>) | null = null;
   private commandDescriptions: { name: string; description: string; options: string }[] = [];
-  private unresolvedBlockers = new Set<string>();
   private handling = false;
   private blocker: BlockedError | null = null;
 
@@ -535,15 +534,16 @@ export class Captain extends CaptainBase implements Agent {
 
   async resolveBlocker(error: unknown, resolved: () => boolean | Promise<boolean>): Promise<boolean> {
     if (!(error instanceof BlockedError) || this.handling) return false;
-    const key = `${error.name} ${error.url} ${error.blocker}`;
-    if (this.unresolvedBlockers.has(key)) return false;
+    const stateManager = this.explorBot.stateManager();
+    const blockedState = stateManager.getCurrentState();
+    if (stateManager.findBlockedPage(blockedState)) return false;
     tag('info').log(`Captain takes over: ${error.message}`);
     this.blocker = error;
     await this.handle(error.request, { reset: true }).finally(() => {
       this.blocker = null;
     });
     if (await resolved()) return true;
-    this.unresolvedBlockers.add(key);
+    if (blockedState) stateManager.markBlocked(blockedState, error.blocker);
     return false;
   }
 }

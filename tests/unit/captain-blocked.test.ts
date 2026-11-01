@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'bun:test';
+import { ActionResult } from '../../src/action-result.ts';
 import { Captain } from '../../src/ai/captain.ts';
+import type { ExperienceTracker } from '../../src/experience-tracker.ts';
+import type { KnowledgeTracker } from '../../src/knowledge-tracker.ts';
+import { StateManager } from '../../src/state-manager.ts';
 import { ExplorBot } from '../../src/explorbot.ts';
 import { Plan, Test } from '../../src/test-plan.ts';
 import { NavigationBlockedError, PlanningBlockedError } from '../../src/utils/error-page.ts';
@@ -7,7 +11,9 @@ import { NavigationBlockedError, PlanningBlockedError } from '../../src/utils/er
 function createCaptain(fix: () => void) {
   const requests: string[] = [];
   const captain = Object.create(Captain.prototype);
-  captain.unresolvedBlockers = new Set();
+  const stateManager = new StateManager({} as ExperienceTracker, {} as KnowledgeTracker);
+  stateManager.updateStateFromBasic('/workspace');
+  captain.explorBot = { stateManager: () => stateManager };
   captain.handling = false;
   captain.handle = async (input: string) => {
     requests.push(input);
@@ -29,7 +35,7 @@ describe('Captain.resolveBlocker', () => {
     expect(requests).toEqual([blocked.request]);
   });
 
-  it('does not hand over a blocker it already failed to resolve', async () => {
+  it('does not hand over a page it already failed to unblock', async () => {
     const { captain, requests } = createCaptain(() => {});
     const blocked = new NavigationBlockedError('/workspace', '/login', 'sign-in required', []);
 
@@ -101,5 +107,39 @@ describe('ExplorBot hands blocked work to Captain', () => {
     const { bot } = createBot(false);
     await bot.plan(undefined, { noSave: true });
     expect(bot.lastPlanError).toBeInstanceOf(PlanningBlockedError);
+  });
+});
+
+describe('StateManager blocked pages', () => {
+  const signIn = '- main:\n  - heading "Sign in"\n  - textbox "Email"\n  - textbox "Password"\n  - button "Sign in"';
+  const issues = '- main:\n  - heading "Issues"\n  - table:\n    - row:\n      - cell "Bug"\n  - link "New Issue"\n  - searchbox "Search"';
+
+  function blockedAt(url: string, ariaSnapshot: string | null) {
+    const stateManager = new StateManager({} as ExperienceTracker, {} as KnowledgeTracker);
+    stateManager.markBlocked(new ActionResult({ url, ariaSnapshot }), 'sign-in required');
+    return stateManager;
+  }
+
+  it('recognizes another page with the same structure as blocked', () => {
+    const stateManager = blockedAt('/workspace', signIn);
+    expect(stateManager.findBlockedPage(new ActionResult({ url: '/projects', ariaSnapshot: signIn }))?.url).toBe('/workspace');
+  });
+
+  it('does not treat a page with a different structure as blocked', () => {
+    const stateManager = blockedAt('/workspace', signIn);
+    expect(stateManager.findBlockedPage(new ActionResult({ url: '/issues', ariaSnapshot: issues }))).toBeUndefined();
+  });
+
+  it('matches only the same URL when a snapshot is missing', () => {
+    const stateManager = blockedAt('/workspace', null);
+    expect(stateManager.findBlockedPage(new ActionResult({ url: '/workspace', ariaSnapshot: null }))).toBeDefined();
+    expect(stateManager.findBlockedPage(new ActionResult({ url: '/projects', ariaSnapshot: null }))).toBeUndefined();
+  });
+
+  it('records each blocked URL once', () => {
+    const stateManager = blockedAt('/workspace', signIn);
+    stateManager.markBlocked(new ActionResult({ url: '/workspace', ariaSnapshot: signIn }), 'again');
+    stateManager.markBlocked(new ActionResult({ url: '/projects', ariaSnapshot: signIn }), 'sign-in required');
+    expect(stateManager.getBlockedPages().map((page) => page.url)).toEqual(['/workspace', '/projects']);
   });
 });

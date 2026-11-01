@@ -1,13 +1,16 @@
 import { ActionResult, type FocusedElement } from './action-result.js';
 import type { ExperienceTracker } from './experience-tracker.js';
 import type { Knowledge, KnowledgeTracker } from './knowledge-tracker.js';
+import { ariaTemplateSignature } from './utils/aria.ts';
 import { createDebug, tag } from './utils/logger.js';
 import { Overlay } from './utils/overlay.js';
 import type { Region } from './utils/region.js';
+import { diceSimilarity } from './utils/similarity.ts';
 import { slugify } from './utils/strings.js';
 import { extractStatePath } from './utils/url-matcher.js';
 
 const debugLog = createDebug('explorbot:state');
+const BLOCKED_PAGE_SIMILARITY = 90;
 
 export interface Link {
   title: string;
@@ -86,6 +89,7 @@ export class StateManager {
   private currentState: WebPageState | null = null;
   private stateHistory: StateTransition[] = [];
   private allVisitedUrls: Set<string> = new Set();
+  private blockedPages: BlockedPage[] = [];
   private experienceUrls?: string[];
   private stateChangeListeners: StateChangeListener[] = [];
   private experienceTracker!: ExperienceTracker;
@@ -352,6 +356,25 @@ export class StateManager {
   /**
    * Check if we've been in this state before
    */
+  markBlocked(state: WebPageState, reason: string): void {
+    if (this.blockedPages.some((page) => page.url === state.url)) return;
+    this.blockedPages.push({ url: state.url, reason, signature: ariaTemplateSignature(ActionResult.fromState(state).ariaSnapshot) });
+  }
+
+  findBlockedPage(state: WebPageState | null): BlockedPage | undefined {
+    if (!state) return undefined;
+    const signature = ariaTemplateSignature(ActionResult.fromState(state).ariaSnapshot);
+    return this.blockedPages.find((page) => {
+      if (page.url === state.url) return true;
+      if (!signature.size || !page.signature.size) return false;
+      return diceSimilarity(signature, page.signature) >= BLOCKED_PAGE_SIMILARITY;
+    });
+  }
+
+  getBlockedPages(): BlockedPage[] {
+    return this.blockedPages;
+  }
+
   hasVisitedState(path: string): boolean {
     return this.allVisitedUrls.has(normalizeUrl(path));
   }
@@ -431,6 +454,7 @@ export class StateManager {
     this.currentState = null;
     this.stateHistory = [];
     this.allVisitedUrls.clear();
+    this.blockedPages = [];
     this.stateChangeListeners = [];
     this.nextStateId = 1;
 
@@ -450,4 +474,10 @@ export function normalizeUrl(url: string): string {
   } catch {
     return url.replace(/^\/+|\/+$/g, '');
   }
+}
+
+export interface BlockedPage {
+  url: string;
+  reason: string;
+  signature: Set<string>;
 }

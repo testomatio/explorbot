@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-11-01
+
+### Changes
+- [Explore] A page that cannot be opened (for example a sign-in form with no credentials) is now skipped as a whole: no more planning styles or tests run on it, and pages that look the same are skipped without trying again. Exploration stops after 3 such pages.
+- [Explore] When the start page itself is blocked, the run ends right away and suggests how to unblock it: pass credentials with `--auth`, or save them with `learn`. If knowledge for the page exists but did not help, it suggests updating it.
+  ```bash
+  explorbot explore /workspace --auth 'login: admin@example.com password: secret123'
+  explorbot learn /workspace "login: admin@example.com password: secret123"
+  ```
+- [Captain] Takes over a blocked page once. It no longer gets the same blocked page again each time the Planner words the problem differently.
+- Console output: blocker messages stand out with an empty line before and after, and empty lines no longer stack up.
+
 ## 2026-10-31
 
 ### New CLI Options

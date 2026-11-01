@@ -4,6 +4,7 @@ export const MIN_PLANNED_TESTS = 5;
 export const MIN_PASSED = 3;
 export const MIN_KEYWORD_HITS = 3;
 export const MIN_FEATURE_GROUPS = 3;
+export const MAX_CAPTAIN_HANDOVERS = 1;
 
 const RESEARCH_KEYWORDS = ['issue', 'label', 'priority', 'assignee', 'status', 'search', 'new issue'];
 const POST_LOGIN_ROUTES = ['/issues', '/settings', '/workspace'];
@@ -52,6 +53,15 @@ export function assertBasicRun(runDir: string, stdout: string, minPassed = MIN_P
   details.push(`tests passed: ${status(resultsOk)} (${resultsText}${crossCheck})`);
 
   return { passed: checks.every(Boolean), details };
+}
+
+export function assertBlockedRun(stdout: string, finished: boolean, timeoutSec: number): AssertResult {
+  let stoppedText = `exited on its own before the ${timeoutSec}s timeout`;
+  if (!finished) stoppedText = `crashed or killed by the ${timeoutSec}s timeout`;
+  const handovers = stdout.split('Captain takes over:').length - 1;
+  const handoversOk = handovers <= MAX_CAPTAIN_HANDOVERS;
+  const details = [`stopped: ${status(finished)} (${stoppedText})`, `captain handovers: ${status(handoversOk)} (${handovers}/${MAX_CAPTAIN_HANDOVERS})`];
+  return { passed: finished && handoversOk, details };
 }
 
 export function assertSeededRun(runDir: string): AssertResult {
