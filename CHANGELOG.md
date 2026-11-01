@@ -46,6 +46,8 @@
 - **`ai.agents.scout.enabled`** — Scout now turns on by itself when a spec is set with `--spec` or `dirs.spec`. Set it to `false` to keep it off.
 
 ### Changes
+- [Tester] When the browser page is lost and can't be restored, the test stops as failed at the next browser step instead of running on against a closed browser. Console errors and native dialogs keep being recorded on a page restored after a crash.
+- [Tester] A test stops for final review after three steps in a row with no progress on the same page, including steps where the model called no tools. Pilot steps in after two such steps. A successful `interact` or `visualClick` now counts as progress.
 - [Scout] Searches the docs for the facts a tester needs: roles and permissions, prerequisites, accepted values and limits, error messages, duplicates, state changes, side effects, failure and retry behavior, list and bulk behavior, deletions, file formats and differences between variants. For vague words such as "valid" or "supported" it looks for exact definitions with examples of valid and invalid values.
 - [Scout] Each digest is saved to `output/scout/` and reused for 6 hours for the same page and focus, so repeated planning doesn't search the docs again. The log shows how many words were found, the file path and the first lines of the digest.
 - [Planner] Writes the plan as markdown in the plan file format. If the format is off, the planner is asked to fix it, up to 3 times.
