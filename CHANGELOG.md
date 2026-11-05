@@ -3,9 +3,10 @@
 ## 2026-11-05
 
 ### New CLI Options
-- **`prima --version`** — Shows the installed prima version. Every prima command also prints it to stderr when it starts, so its normal output stays unchanged.
+- **`prima --version`** — Shows the installed prima version. Running `prima` with no arguments also prints it, above the help.
   ```bash
   prima --version
+  prima
   ```
 
 ### Changes

@@ -8,7 +8,7 @@ import { type EnvelopeData, renderEnvelope } from './envelope.ts';
 import { askHelp, checkHelp, doHelp, helpContract, reportHelp, researchHelp, sessionHelp, statusHelp, uxHelp, verifyHelp } from './help.ts';
 import { Prima, type PrimaOptions } from './prima.ts';
 
-const { version } = JSON.parse(readFileSync(new URL('../../../package.json', import.meta.url), 'utf8'));
+export const { version } = JSON.parse(readFileSync(new URL('../../../package.json', import.meta.url), 'utf8'));
 
 let rootOptions: () => any = () => ({});
 
@@ -93,7 +93,6 @@ export function createPrimaCommands(name = 'prima'): Command {
   const cmd = new Command(name);
   cmd.description('Drives a web app through described behaviour, not locators');
   cmd.version(version, '-V, --version');
-  cmd.hook('preAction', () => console.error(`prima ${version}`));
   cmd.option('--pw-session <title>', 'Title of the playwright-cli session to attach to');
   cmd.option('--url <url>', 'Page to open when the session has no page yet');
   cmd.addHelpText('after', `\n${helpContract}`);
