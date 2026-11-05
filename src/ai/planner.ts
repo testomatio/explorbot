@@ -732,6 +732,9 @@ export class Planner extends PlannerBase implements Agent {
     const query = ScoutQuery.fromState(state);
     query.feature = feature;
     query.exclude = this.knowledgeTracker.applicationSpecUrls(state);
-    return this.scout.collectDocs(query);
+    return this.scout.collectDocs(query).catch((error: Error) => {
+      tag('warning').log(`Scout failed, planning without documentation: ${error.message}`);
+      return '';
+    });
   }
 }
