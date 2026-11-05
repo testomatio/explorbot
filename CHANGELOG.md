@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-11-05
+
+### New CLI Options
+- **`prima --version`** — Shows the installed prima version. Every prima command also prints it to stderr when it starts, so its normal output stays unchanged.
+  ```bash
+  prima --version
+  ```
+
+### Changes
+- Prima: `npx prima-cli` releases are published again. Nothing newer than 0.5.4 reached npm because a release test failed, so fixes such as treating `localhost` and `127.0.0.1` as one site were missing from it.
+
 ## 2026-10-31
 
 ### New CLI Options
