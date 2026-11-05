@@ -2,6 +2,11 @@
 
 ## 2026-11-05
 
+### Changes
+- [Navigator] Gets through flows spread over several pages, such as a sign-in that asks for the email, the password and a one-time code on separate pages. When a step moves the page on, Navigator now looks at the new page instead of spending its remaining attempts on the old one.
+
+## 2026-11-05
+
 ### New CLI Options
 - **`prima --version`** — Shows the installed prima version. Running `prima` with no arguments also prints it, above the help.
   ```bash

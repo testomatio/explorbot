@@ -54,6 +54,12 @@ export function assertBasicRun(runDir: string, stdout: string, minPassed = MIN_P
   return { passed: checks.every(Boolean), details };
 }
 
+export function assertNavigatedRun(stdout: string, finished: boolean): AssertResult {
+  const handovers = stdout.split('Captain takes over:').length - 1;
+  const details = [`reached target: ${status(finished)}`, `navigator alone: ${status(handovers === 0)} (captain handovers: ${handovers})`];
+  return { passed: finished && handovers === 0, details };
+}
+
 export function assertSeededRun(runDir: string): AssertResult {
   const summary = latestReporterSummary(runDir);
   if (!summary) return { passed: false, details: ['seeded: FAIL (no reporter summary written)'] };
