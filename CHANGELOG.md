@@ -10,6 +10,8 @@
   ```
 
 ### Changes
+- [Scout] Works when Explorbot is installed from npm. It used to stop with `Scout requires ripgrep or grep on PATH` even though grep was installed, so any run with `--spec` planned no tests.
+- [Planner] A Scout failure no longer stops planning. The log shows a warning and the plan is made without documentation.
 - Prima: `npx prima-cli` releases are published again. Nothing newer than 0.5.4 reached npm because a release test failed, so fixes such as treating `localhost` and `127.0.0.1` as one site were missing from it.
 
 ## 2026-10-31
