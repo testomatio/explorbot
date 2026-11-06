@@ -10,6 +10,7 @@ import { Researcher } from '../../src/ai/researcher.ts';
 import { clearResearchCache, getCachedResearch, saveResearch } from '../../src/ai/researcher/cache.ts';
 import { parseResearchSections } from '../../src/ai/researcher/parser.ts';
 import { ConfigParser } from '../../src/config.ts';
+import { ResearchBlockedError } from '../../src/utils/error-page.ts';
 
 const UI_MAPS_DIR = join(process.cwd(), 'test-data', 'ui-maps');
 const taskBoardResearch = readFileSync(join(UI_MAPS_DIR, 'task-board-research.md'), 'utf8');
@@ -282,6 +283,86 @@ describe('Researcher with aimock', () => {
     provider.oracle = oracle;
 
     expect(deepRuns).toBe(1);
+  });
+
+  describe('closing a wall before research', () => {
+    const wallState = { ...fakeState, ariaSnapshot: `${fakeState.ariaSnapshot}\n- dialog "Cookie settings":\n  - button "Accept"` };
+    const isWallQuestion = (req: any) => JSON.stringify(req.messages || []).includes('open overlay is unrelated');
+    const wallQuestions = () => mock.getRequests().filter((r: any) => isWallQuestion(r.body));
+    const researchRequests = () => mock.getRequests().filter((r: any) => !isWallQuestion(r.body));
+
+    function researcherOnWall(closes: boolean) {
+      const deps = createMockDeps(wallState);
+      const closeInstructions: string[] = [];
+      let current = wallState;
+      deps.explorer.capture = async () => ActionResult.fromState(current);
+      const navigator = {
+        resolveState: async (instruction: string) => {
+          closeInstructions.push(instruction);
+          if (closes) current = fakeState;
+          return true;
+        },
+      };
+      return { researcher: new Researcher({ ...deps, ai: provider } as any, navigator as any), closeInstructions };
+    }
+
+    function answerWall(holds: boolean) {
+      mock.clearFixtures();
+      mock.on({ predicate: isWallQuestion }, { content: JSON.stringify({ holds }) });
+      mock.on({}, { content: taskBoardResearch });
+    }
+
+    it('skips the oracle when no overlay is detected', async () => {
+      answerWall(true);
+
+      await researcher.research(fakeState, { force: true, fix: false });
+
+      expect(wallQuestions()).toHaveLength(0);
+    });
+
+    it('closes a wall, then researches the page without it', async () => {
+      const { researcher, closeInstructions } = researcherOnWall(true);
+      answerWall(true);
+
+      await researcher.research(wallState, { force: true, fix: false });
+
+      expect(closeInstructions).toHaveLength(1);
+      expect(wallQuestions()).toHaveLength(1);
+      expect(extractPromptText(researchRequests()[0])).not.toContain('Cookie settings');
+    });
+
+    it('leaves an overlay that is not a wall open and researches it', async () => {
+      const { researcher, closeInstructions } = researcherOnWall(true);
+      answerWall(false);
+
+      await researcher.research(wallState, { force: true, fix: false });
+
+      expect(closeInstructions).toHaveLength(0);
+      expect(researchRequests().length).toBeGreaterThan(0);
+    });
+
+    it('does not research a page whose wall stays open', async () => {
+      const { researcher } = researcherOnWall(false);
+      answerWall(true);
+
+      await expect(researcher.research(wallState, { force: true, fix: false })).rejects.toBeInstanceOf(ResearchBlockedError);
+
+      expect(wallQuestions()).toHaveLength(2);
+      expect(researchRequests()).toHaveLength(0);
+    });
+
+    it('continues with research when the oracle could not answer', async () => {
+      const { researcher, closeInstructions } = researcherOnWall(true);
+      const oracle = provider.oracle;
+      provider.oracle = async () => null;
+      answerWall(true);
+
+      await researcher.research(wallState, { force: true, fix: false });
+      provider.oracle = oracle;
+
+      expect(closeInstructions).toHaveLength(0);
+      expect(researchRequests().length).toBeGreaterThan(0);
+    });
   });
 
   it('light research accepts a page without locators instead of retrying', async () => {

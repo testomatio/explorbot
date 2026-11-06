@@ -243,6 +243,7 @@ export const focusedElementRule = dedent`
 export const unexpectedPopupRule = dedent`
   <unexpected_popup_rule>
   If a modal/popup appeared that you didn't expect, dismiss it first before continuing with original task.
+  A popup unrelated to the application's features (cookie consent, paywall, marketing, announcement, notification) is never the task, even when it is the current overlay, unless the task is about it. Dismiss it if it blocks the page, otherwise ignore it.
   If elements become hidden or unclickable (timeout errors on visible elements), a dialog or overlay may have appeared on top.
   If a click error mentions "intercepts pointer events", another element is covering the target — dismiss it first.
   If buttons are disabled unexpectedly, trust any explanation the app gives (tooltip, hint text) over your own guess; otherwise check for a blocking popup or empty required fields.
@@ -251,7 +252,8 @@ export const unexpectedPopupRule = dedent`
   1. I.pressKey('Escape') — press Escape to dismiss
   2. I.click('Cancel') — click Cancel button if present
   3. I.click({ role: 'button', text: 'Close' }) — click X/close button if present
-  4. I.clickXY(0, 0) via form() tool and check if page diff changed
+  4. Click the popup's own answer button (Reject, Decline, Accept) if it has no close control
+  5. I.clickXY(0, 0) via form() tool and check if page diff changed
   </unexpected_popup_rule>
 `;
 

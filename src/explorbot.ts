@@ -237,7 +237,7 @@ export class ExplorBot {
   }
 
   agentResearcher(): Researcher {
-    return (this.agents.researcher ||= this.createAgent((deps) => new Researcher(deps)));
+    return (this.agents.researcher ||= this.createAgent((deps) => new Researcher(deps, this.agentNavigator())));
   }
 
   agentNavigator(): Navigator {
