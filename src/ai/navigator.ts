@@ -338,6 +338,7 @@ class Navigator implements Agent {
           if (freshHash !== prevHash && (attempt.ok || check.urlMatches)) {
             progressBlocks.push(codeBlock);
           }
+          if (freshHash !== prevHash) codeBlockIndex = codeBlocks.length;
         } else {
           resolved = attempt.ok;
           if (attempt.ok) progressBlocks.push(codeBlock);
@@ -440,6 +441,8 @@ class Navigator implements Agent {
         .join('\n');
       contextMsg += `<previous_failures>\n${lines}\n</previous_failures>\n\n`;
     }
+
+    contextMsg += `<page>\n${actionResult.toAiContext()}\n</page>\n\n`;
 
     if (includeHtml) {
       contextMsg += `Full HTML context:\n\n<page_html>\n${await actionResult.combinedHtml()}\n</page_html>\n\n`;

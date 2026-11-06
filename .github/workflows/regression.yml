@@ -26,7 +26,7 @@ on:
       scenario:
         description: Scenario to run
         type: choice
-        options: [all, basic, experience, slow, gated, variants]
+        options: [all, basic, experience, slow, gated, staged-login, variants]
         default: all
       retries:
         description: Retries per scenario
