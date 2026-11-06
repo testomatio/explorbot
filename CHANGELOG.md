@@ -1,5 +1,30 @@
 # Changelog
 
+## 2026-11-06
+
+### Changes
+- [Researcher] Closes cookie consent, paywall, marketing and similar popups before researching a page. Regular dialogs stay open and are researched as before.
+- [Planner] No longer plans tests for cookie consent, marketing, announcement or notification popups, unless you plan that feature explicitly.
+
+## 2026-11-05
+
+### Changes
+- [Navigator] Gets through flows spread over several pages, such as a sign-in that asks for the email, the password and a one-time code on separate pages. When a step moves the page on, Navigator now looks at the new page instead of spending its remaining attempts on the old one.
+
+## 2026-11-05
+
+### New CLI Options
+- **`prima --version`** — Shows the installed prima version. Running `prima` with no arguments also prints it, above the help.
+  ```bash
+  prima --version
+  prima
+  ```
+
+### Changes
+- [Scout] Works when Explorbot is installed from npm. It used to stop with `Scout requires ripgrep or grep on PATH` even though grep was installed, so any run with `--spec` planned no tests.
+- [Planner] A Scout failure no longer stops planning. The log shows a warning and the plan is made without documentation.
+- Prima: `npx prima-cli` releases are published again. Nothing newer than 0.5.4 reached npm because a release test failed, so fixes such as treating `localhost` and `127.0.0.1` as one site were missing from it.
+
 ## 2026-11-01
 
 ### Changes
@@ -58,6 +83,8 @@
 - **`ai.agents.scout.enabled`** — Scout now turns on by itself when a spec is set with `--spec` or `dirs.spec`. Set it to `false` to keep it off.
 
 ### Changes
+- [Tester] When the browser page is lost and can't be restored, the test stops as failed at the next browser step instead of running on against a closed browser. Console errors and native dialogs keep being recorded on a page restored after a crash.
+- [Tester] A test stops for final review after three steps in a row with no progress on the same page, including steps where the model called no tools. Pilot steps in after two such steps. A successful `interact` or `visualClick` now counts as progress.
 - [Scout] Searches the docs for the facts a tester needs: roles and permissions, prerequisites, accepted values and limits, error messages, duplicates, state changes, side effects, failure and retry behavior, list and bulk behavior, deletions, file formats and differences between variants. For vague words such as "valid" or "supported" it looks for exact definitions with examples of valid and invalid values.
 - [Scout] Each digest is saved to `output/scout/` and reused for 6 hours for the same page and focus, so repeated planning doesn't search the docs again. The log shows how many words were found, the file path and the first lines of the digest.
 - [Planner] Writes the plan as markdown in the plan file format. If the format is off, the planner is asked to fix it, up to 3 times.

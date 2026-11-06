@@ -36,7 +36,11 @@ Runs scenario A again with the fixture's slow start on: on the first visit of a 
 
 Runs scenario A's assertions against `explore /workspace`. Signed out, `/workspace` shows the sign-in form at its own URL instead of redirecting to `/login`, and signing in there keeps you on `/workspace`. The planner reports the page blocked by a sign-in form, so explore must hand the report to Captain, sign in with the credentials in `seeds/knowledge/workspace.md` and plan the page again. Like scenario C, it executes one test.
 
-### Scenario E — sign-in form without credentials (`regression:gated-no-auth`)
+### Scenario E — sign-in split over three pages (`regression:staged-login`)
+
+Runs `explorbot navigate /account` with the credentials in `seeds/knowledge/staged-login.md`. Signed out, `/account` redirects to `/signin`, which asks only for the email; `/signin/password` asks only for the password and `/signin/otp` only for the one-time code. The later fields do not exist until the earlier stage is submitted, so the Navigator has to read each page as it arrives. The run must exit 0 with no Captain handover, since a Captain rescue would hide a Navigator failure. It tests navigation only: no research, planning or test execution.
+
+### Scenario F — sign-in form without credentials (`regression:gated-no-auth`)
 
 Runs `explore /workspace` with no knowledge, so nothing can sign in. Explorbot must give up on its own: the run fails if it is still going after 180 seconds, or if Captain takes over the blocked page more than once (`MAX_CAPTAIN_HANDOVERS` in `tests/regression/lib/assertions.ts`).
 
@@ -53,6 +57,8 @@ A self-contained issue tracker served in-process by `tests/regression/fixture/se
 | `/settings` | yes | Profile/Preferences tabs + an activity iframe |
 | `/vault` | no | scenario B access-code gate |
 | `/workspace` | no / yes | scenario D: the sign-in form when signed out, the issue list when signed in |
+| `/signin`, `/signin/password`, `/signin/otp` | no | scenario E: one sign-in stage per page, each refusing to open before the previous one is done |
+| `/account` | yes | scenario E target: only the code stage signs in |
 | `/api/*` | cookie | REST API over the same store, `+ /api/openapi.json` |
 
 The REST API mirrors the store and is served for a future API-testing scenario; the current scenarios do not exercise it.
@@ -83,6 +89,7 @@ bunx bunosh regression:experience       # cheapest AI path
 bunx bunosh regression:basic
 bunx bunosh regression:slow
 bunx bunosh regression:gated
+bunx bunosh regression:staged-login
 bunx bunosh regression:gated-no-auth
 bunx bunosh regression:all              # all scenarios
 ```

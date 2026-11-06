@@ -8,11 +8,11 @@ const highlight = require('cli-highlight').highlight;
 import matter from 'gray-matter';
 import yaml from 'js-yaml';
 import { chromium } from 'playwright';
-import { assertBasicRun, assertBlockedRun, assertControlRun, assertSeededRun, status } from './tests/regression/lib/assertions.ts';
+import { assertBasicRun, assertBlockedRun, assertControlRun, assertNavigatedRun, assertSeededRun, status } from './tests/regression/lib/assertions.ts';
 import { readSessionAnalysis } from './tests/regression/lib/artifacts.ts';
 import { DISCUSSION_CATEGORY, DISCUSSION_MUTATION, DISCUSSION_QUERY, prNumberFromEvent, repoOwnerAndName } from './tests/regression/lib/github.ts';
 import { REPORT_MARKER, buildReport, fmtDuration } from './tests/regression/lib/report.ts';
-import { startFixture } from './tests/regression/fixture/server.ts';
+import { SIGN_IN_OTP, startFixture } from './tests/regression/fixture/server.ts';
 import { parsePlansFromMarkdown } from './src/utils/test-plan-markdown.ts';
 import { htmlCombinedSnapshot, htmlTextSnapshot, minifyHtml } from './src/utils/html.js';
 import { analyzeDemoCandidates, createDemoVideo } from './.claude/skills/demo-video/demo-video.ts';
@@ -23,11 +23,12 @@ const { shell, writeToFile, task, stopOnFail, ai } = global.bunosh;
 const CLI = resolve('bin/explorbot-cli.ts');
 const REG_ROOT = resolve('tests/regression');
 const SLOW_START_MS = 12000;
-const BASIC_SCENARIO = { name: 'basic', path: '/issues', knowledge: 'login.md', fixture: {}, maxTests: 5, timeoutSec: 900, assert: (runDir, stdout) => assertBasicRun(runDir, stdout) };
-const SLOW_SCENARIO = { ...BASIC_SCENARIO, name: 'slow', fixture: { slowStartMs: SLOW_START_MS }, maxTests: 1, assert: (runDir, stdout) => assertBasicRun(runDir, stdout, 1) };
-const GATED_SCENARIO = { ...BASIC_SCENARIO, name: 'gated', path: '/workspace', knowledge: 'workspace.md', maxTests: 1, assert: (runDir, stdout) => assertBasicRun(runDir, stdout, 1) };
-const GATED_NO_AUTH_SCENARIO = { ...GATED_SCENARIO, name: 'gated-no-auth', knowledge: null, timeoutSec: 180, assert: (runDir, stdout, finished) => assertBlockedRun(stdout, finished, 180) };
-const SCENARIO_ORDER = ['basic', 'experience', 'slow', 'gated', 'gated-no-auth'];
+const BASIC_SCENARIO = { name: 'basic', path: '/issues', knowledge: 'login.md', fixture: {}, maxTests: 5, timeoutSec: 900, run(runDir) { return shell`timeout ${this.timeoutSec} bun ${CLI} explore ${this.path} --headless --max-tests ${this.maxTests} -p ${runDir}`; }, assert(runDir, stdout) { return assertBasicRun(runDir, stdout, this.minPassed); } };
+const SLOW_SCENARIO = { ...BASIC_SCENARIO, name: 'slow', fixture: { slowStartMs: SLOW_START_MS }, maxTests: 1, minPassed: 1 };
+const GATED_SCENARIO = { ...BASIC_SCENARIO, name: 'gated', path: '/workspace', knowledge: 'workspace.md', maxTests: 1, minPassed: 1 };
+const GATED_NO_AUTH_SCENARIO = { ...GATED_SCENARIO, name: 'gated-no-auth', knowledge: null, timeoutSec: 180, assert: (_runDir, stdout, finished) => assertBlockedRun(stdout, finished, 180) };
+const STAGED_LOGIN_SCENARIO = { name: 'staged-login', path: '/account', knowledge: 'staged-login.md', fixture: {}, run(runDir) { return shell`timeout 300 bun ${CLI} navigate ${this.path} --headless -p ${runDir}`; }, assert: (_runDir, stdout, finished) => assertNavigatedRun(stdout, finished) };
+const SCENARIO_ORDER = ['basic', 'experience', 'slow', 'gated', 'staged-login', 'gated-no-auth'];
 const HISTORY_RUNS = 5;
 const SUMMARY_FILE = 'records.json';
 const RUNS = join(REG_ROOT, '.runs');
@@ -351,7 +352,17 @@ export async function regressionGated(options = { variant: 'native', seed: 42 })
 }
 
 /**
- * Regression scenario E: the same sign-in page with no credentials. Explorbot must give up on its own before the timeout, handing the blocker to Captain at most once.
+ * Regression scenario E: the Navigator reaches a page behind a sign-in split over three pages: email, password, one-time code.
+ * @param {object} options
+ * @param {string} [options.variant=native] - Widget variant: native|aria|plain|random
+ * @param {number} [options.seed=42] - RNG seed for the random variant
+ */
+export async function regressionStagedLogin(options = { variant: 'native', seed: 42 }) {
+  await gateBasicScenario(options, STAGED_LOGIN_SCENARIO);
+}
+
+/**
+ * Regression scenario F: the same sign-in page as scenario D with no credentials. Explorbot must give up on its own before the timeout, handing the blocker to Captain at most once.
  * @param {object} options
  * @param {string} [options.variant=native] - Widget variant: native|aria|plain|random
  * @param {number} [options.seed=42] - RNG seed for the random variant
@@ -383,7 +394,7 @@ export async function regressionExperience(options = { variant: 'native', seed: 
  * @param {number} [options.seed=42]
  */
 export async function regressionAll(options = { variant: 'native', seed: 42 }) {
-  await Promise.all([regressionBasic(options), regressionExperience(options), regressionSlow(options), regressionGated(options), regressionGatedNoAuth(options)]);
+  await Promise.all([regressionBasic(options), regressionExperience(options), regressionSlow(options), regressionGated(options), regressionStagedLogin(options), regressionGatedNoAuth(options)]);
 }
 
 /**
@@ -516,6 +527,36 @@ export async function regressionSmoke() {
   const workspace = await (await fetch(`${gatedFixture.url}/workspace`, { headers: { cookie: gatedCookie } })).text();
   await check('signed-in /workspace renders the issue list', workspace.includes('<table') && !workspace.includes('type="password"'));
   gatedFixture.stop();
+
+  const stagedFixture = startFixture({ port: 0, variant: 'native', seed: 42 });
+  const stagedPost = (path, fields, cookie = '') => fetch(`${stagedFixture.url}${path}`, { method: 'POST', redirect: 'manual', headers: { cookie }, body: new URLSearchParams(fields) });
+  const cookieOf = (response) => (response.headers.get('set-cookie') || '').split(';')[0];
+  const stagedAnon = await fetch(`${stagedFixture.url}/account`, { redirect: 'manual' });
+  await check('anonymous /account redirects to /signin', stagedAnon.status === 302 && stagedAnon.headers.get('location') === '/signin');
+  const skippedToPassword = await fetch(`${stagedFixture.url}/signin/password`, { redirect: 'manual' });
+  await check('password stage needs the email stage', skippedToPassword.headers.get('location') === '/signin');
+  const skippedToOtp = await fetch(`${stagedFixture.url}/signin/otp`, { redirect: 'manual' });
+  await check('code stage needs the password stage', skippedToOtp.headers.get('location') === '/signin');
+  const emailStage = await stagedPost('/signin', { email: 'demo@example.com' });
+  const emailCookie = cookieOf(emailStage);
+  await check('email stage leads to the password stage', emailStage.headers.get('location') === '/signin/password');
+  const badPassword = await stagedPost('/signin/password', { password: 'nope' }, emailCookie);
+  await check('password stage rejects a wrong password', badPassword.status === 401);
+  const passwordStage = await stagedPost('/signin/password', { password: 'hunter2-fixture' }, emailCookie);
+  const pendingCookie = cookieOf(passwordStage);
+  await check('password stage leads to the code stage', passwordStage.headers.get('location') === '/signin/otp');
+  const pendingAccount = await fetch(`${stagedFixture.url}/account`, { redirect: 'manual', headers: { cookie: pendingCookie } });
+  await check('password alone does not open /account', pendingAccount.headers.get('location') === '/signin');
+  const badCode = await stagedPost('/signin/otp', { code: '000000' }, pendingCookie);
+  await check('code stage rejects a wrong code', badCode.status === 401);
+  const codeStage = await stagedPost('/signin/otp', { code: SIGN_IN_OTP }, pendingCookie);
+  await check('code stage leads to /account', codeStage.headers.get('location') === '/account');
+  const account = await (await fetch(`${stagedFixture.url}/account`, { headers: { cookie: cookieOf(codeStage) } })).text();
+  await check('signed-in /account renders', account.includes('<h1>Account</h1>'));
+  stagedFixture.stop();
+  const stagedKnowledge = matter(readFileSync(join(SEEDS, 'knowledge', 'staged-login.md'), 'utf-8'));
+  await check('staged sign-in knowledge targets /signin/* and carries the code', stagedKnowledge.data.url === '/signin/*' && stagedKnowledge.content.includes(SIGN_IN_OTP));
+
   const workspaceKnowledge = matter(readFileSync(join(SEEDS, 'knowledge', 'workspace.md'), 'utf-8'));
   await check('workspace knowledge targets /workspace', workspaceKnowledge.data.url === '/workspace');
 
@@ -637,7 +678,7 @@ async function runBasicScenario(variant, seed, scenario = BASIC_SCENARIO) {
   const runDir = prepareRunDir(dirName(scenario.name, variant, seed));
   if (scenario.knowledge) cpSync(join(SEEDS, 'knowledge', scenario.knowledge), join(runDir, 'knowledge', scenario.knowledge));
   const started = Date.now();
-  const res = await shell`timeout ${scenario.timeoutSec} bun ${CLI} explore ${scenario.path} --headless --max-tests ${scenario.maxTests} -p ${runDir}`.env(runEnv(fixture.url));
+  const res = await scenario.run(runDir).env(runEnv(fixture.url));
   fixture.stop();
   const outcome = scenario.assert(runDir, String(res.output || ''), !res.hasFailed);
   recordRun(runDir, { scenario: scenario.name, label, kind: 'gate', passed: outcome.passed, durationSec: elapsed(started), details: outcome.details, analysis: readSessionAnalysis(runDir) });

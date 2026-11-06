@@ -190,7 +190,6 @@ class Explorer {
     if (!(await this.recoverOrRestart())) {
       return { ok: false, action: 'stop', message: 'Browser page could not be recovered' };
     }
-    this.watchActiveTestPage();
     return { ok: true, action: 'continue', recovered: true, message: 'Browser page was recovered' };
   }
 
@@ -414,7 +413,7 @@ class Explorer {
 
   private async runWithRecovery<T>(label: string, operation: () => Promise<T>): Promise<T> {
     if (!this.page && !(await this.recoverOrRestart())) {
-      throw new Error(`Browser page is unavailable before ${label}`);
+      throw new BrowserRecoveryError(label, new Error('Browser page is unavailable'), false);
     }
 
     try {
@@ -516,7 +515,6 @@ class Explorer {
       return { ok: false, action: 'stop', recovered: false, message: `Browser could not be recovered after fatal error: ${message}` };
     }
 
-    this.watchActiveTestPage();
     return {
       ok: true,
       action: 'continue',
@@ -531,8 +529,9 @@ class Explorer {
   }
 
   private async recoverOrRestart(): Promise<boolean> {
-    if (await this.recoverPage()) return true;
-    return this.restartBrowser();
+    if (!(await this.recoverPage()) && !(await this.restartBrowser())) return false;
+    this.watchActiveTestPage();
+    return true;
   }
 
   private async recoverPage(): Promise<boolean> {

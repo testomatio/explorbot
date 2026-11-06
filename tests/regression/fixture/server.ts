@@ -1,9 +1,10 @@
 import { handleApi } from './api.ts';
 import { type Variant, type VariantMode, createRegistry } from './components.ts';
-import { activityWidget, issueDetailPage, issuesPage, loginPage, settingsPage, slowStartShell, vaultPage } from './pages.ts';
+import { accountPage, activityWidget, issueDetailPage, issuesPage, loginPage, settingsPage, signInStagePage, slowStartShell, vaultPage } from './pages.ts';
 import { type Store, createStore } from './store.ts';
 
 export const VAULT_CODE = 'K7-9284-XRAY-TANGO';
+export const SIGN_IN_OTP = '482913';
 const VAULT_DOCS = ['Quarterly report', 'Design archive', 'Payroll ledger'];
 const SIGN_IN_TARGETS: Record<string, string> = { '/login': '/issues', '/workspace': '/workspace' };
 
@@ -72,6 +73,29 @@ async function handle(req: Request, store: Store, defaultVariant: VariantMode, d
 
   if (path === '/workspace' && !user) return html(loginPage(undefined, '/workspace'));
   if (path === '/workspace') return html(issuesPage(reg, store, {}, user));
+
+  if (path === '/signin' && method === 'GET') return html(signInStagePage('email'));
+  if (path === '/signin' && method === 'POST') {
+    const form = await req.formData();
+    return redirect('/signin/password', `trackly_signin_email=${encodeURIComponent(String(form.get('email') || ''))}; Path=/`);
+  }
+  if (path === '/signin/password') {
+    if (!cookies.trackly_signin_email) return redirect('/signin');
+    if (method === 'GET') return html(signInStagePage('password'));
+    const form = await req.formData();
+    const token = store.login(decodeURIComponent(cookies.trackly_signin_email), String(form.get('password') || ''));
+    if (!token) return html(signInStagePage('password', 'Invalid email or password'), 401);
+    return redirect('/signin/otp', `trackly_signin_pending=${token}; Path=/; HttpOnly`);
+  }
+  if (path === '/signin/otp') {
+    if (!cookies.trackly_signin_pending) return redirect('/signin');
+    if (method === 'GET') return html(signInStagePage('otp'));
+    const form = await req.formData();
+    if (String(form.get('code') || '') !== SIGN_IN_OTP) return html(signInStagePage('otp', 'Invalid code'), 401);
+    return redirect('/account', `trackly_session=${cookies.trackly_signin_pending}; Path=/; HttpOnly`);
+  }
+  if (path === '/account' && !user) return redirect('/signin');
+  if (path === '/account') return html(accountPage(user));
 
   if (!user) return redirect('/login');
 

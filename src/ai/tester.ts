@@ -124,7 +124,6 @@ export class Tester extends TaskAgent implements Agent {
     this.previousRegionPresent = null;
     this.regionTransitioned = false;
     this.stateManager.clearHistory();
-    this.resetFailureCount();
     this.pilot?.reset();
 
     const requestStore = this.requestStore;
@@ -272,12 +271,6 @@ export class Tester extends TaskAgent implements Agent {
             return;
           }
           debugLog('iteration', iteration);
-          if (!(await this.explorer.recover()).ok) {
-            task.addNote('Browser page is unavailable');
-            task.finish(TestResult.FAILED);
-            stop();
-            return;
-          }
           const currentState = this.getCurrentState();
 
           const tools = {
@@ -336,7 +329,6 @@ export class Tester extends TaskAgent implements Agent {
                 guidance = await this.pilot.periodicAnalyzeProgress(task, currentState, conversation);
               }
               if (guidance) nextStep += `\n\n${guidance}`;
-              this.consecutiveFailures = 0;
               this.lastAnalyzedStateHash = currentState.hash;
             }
             conversation.addUserText(nextStep);
@@ -361,14 +353,6 @@ export class Tester extends TaskAgent implements Agent {
           const actionPerformed = !!allToolNames.find((toolName: string) => this.ACTION_TOOLS.includes(toolName));
           assertionPerformed = !!successfulToolNames.find((toolName: string) => this.ASSERTION_TOOLS.includes(toolName));
           const wasSuccessful = result?.toolExecutions?.every((execution: any) => execution.wasSuccessful);
-
-          this.trackToolExecutions(result?.toolExecutions || []);
-
-          if (this.consecutiveEmptyResults >= 5) {
-            task.addNote('AI model is not responding with actions. Stopped');
-            stop();
-            return;
-          }
 
           if (actionPerformed && !wasSuccessful) {
             const noted = new Set(Object.values(task.notes).map((note) => note.message));
@@ -505,12 +489,10 @@ export class Tester extends TaskAgent implements Agent {
   }
 
   private get isStruggling(): boolean {
-    return this.consecutiveFailures >= 3 || this.consecutiveEmptyResults >= 2;
+    return this.stalledIterations >= this.MAX_STALLED_ITERATIONS - 1;
   }
 
   private shouldStopForStalledExecution(task: Test, previousState: ActionResult, toolExecutions: any[]): boolean {
-    if (task.hasFinished) return false;
-
     const currentState = this.getCurrentState();
     const stateChanged = previousState.url !== currentState.url || previousState.hash !== currentState.hash;
     const actionTools = [...this.ACTION_TOOLS, ...this.DELEGATED_ACTION_TOOLS, ...this.SPECIAL_CONTEXT_ACTION_TOOLS];
@@ -522,14 +504,7 @@ export class Tester extends TaskAgent implements Agent {
       return false;
     }
 
-    const hasNoBrowserProgress = toolExecutions.length === 0 || toolExecutions.every((execution) => !actionTools.includes(execution.toolName) || !execution.wasSuccessful);
-    if (!hasNoBrowserProgress) return false;
-
-    this.stalledIterations++;
-    if (this.stalledIterations < this.MAX_STALLED_ITERATIONS) return false;
-
-    task.addNote('No further browser progress on unchanged page; requesting final review');
-    return true;
+    return this.shouldStopAfterStall(task, 'No further browser progress on unchanged page; requesting final review');
   }
 
   private async prepareInstructionsForNextStep(task: Test): Promise<string> {
@@ -1191,11 +1166,10 @@ export class Tester extends TaskAgent implements Agent {
     }
 
     if (result.recovered) {
-      this.resetFailureCount();
       this.previousUrl = null;
       this.previousStateHash = null;
       this.stalledIterations = 0;
-    } else if (this.shouldStopAfterStalledLoopError(task)) {
+    } else if (this.shouldStopAfterStall(task, 'No browser progress after repeated execution errors; requesting final review')) {
       return 'stop';
     }
 
@@ -1203,13 +1177,13 @@ export class Tester extends TaskAgent implements Agent {
     return 'continue';
   }
 
-  private shouldStopAfterStalledLoopError(task: Test): boolean {
+  private shouldStopAfterStall(task: Test, note: string): boolean {
     if (task.hasFinished) return false;
 
     this.stalledIterations++;
     if (this.stalledIterations < this.MAX_STALLED_ITERATIONS) return false;
 
-    task.addNote('No browser progress after repeated execution errors; requesting final review');
+    task.addNote(note);
     return true;
   }
 
