@@ -102,7 +102,7 @@ export class ExploreCommand extends BaseCommand {
         await this.runFreshMode(mainUrl, feature, cfg.styles);
       }
 
-      if (this.explorBot.stateManager().findBlockedPage(startState)) {
+      if (this.explorBot.stateManager().isPageBlocked(startState)) {
         tag('error').log(`Start page ${startState?.url} is blocked, nothing to explore`, { emphasize: true });
         this.printNextSteps();
         return;
@@ -628,10 +628,10 @@ export class ExploreCommand extends BaseCommand {
   private skipBlockedPage(): boolean {
     const stateManager = this.explorBot.stateManager();
     const state = stateManager.getCurrentState();
-    const blocked = stateManager.findBlockedPage(state);
-    if (!state || !blocked) return false;
-    stateManager.markBlocked(state, blocked.reason);
-    tag('warning').log(`Skipping page ${state.url}: ${blocked.reason}`, { emphasize: true });
+    if (!state || !stateManager.isPageBlocked(state)) return false;
+    const reason = 'matches a blocked page';
+    stateManager.markBlocked(state, reason);
+    tag('warning').log(`Skipping page ${state.url}: ${reason}`, { emphasize: true });
     if (stateManager.getBlockedPages().length >= MAX_BLOCKED_PAGES) tag('warning').log(`${MAX_BLOCKED_PAGES} blocked pages met, stopping exploration`);
     return true;
   }

@@ -28,7 +28,7 @@
 ## 2026-11-01
 
 ### Changes
-- [Explore] A page that cannot be opened (for example a sign-in form with no credentials) is now skipped as a whole: no more planning styles or tests run on it, and pages that look the same are skipped without trying again. Exploration stops after 3 such pages.
+- [Explore] A page that cannot be opened (for example a sign-in form with no credentials) is now skipped as a whole: no more planning styles or tests run on it, and pages that look the same are skipped without trying again, listed as "matches a blocked page". Exploration stops after 3 such pages.
 - [Explore] When the start page itself is blocked, the run ends right away and suggests how to unblock it: pass credentials with `--auth`, or save them with `learn`. If knowledge for the page exists but did not help, it suggests updating it.
   ```bash
   explorbot explore /workspace --auth 'login: admin@example.com password: secret123'

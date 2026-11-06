@@ -122,18 +122,18 @@ describe('StateManager blocked pages', () => {
 
   it('recognizes another page with the same structure as blocked', () => {
     const stateManager = blockedAt('/workspace', signIn);
-    expect(stateManager.findBlockedPage(new ActionResult({ url: '/projects', ariaSnapshot: signIn }))?.url).toBe('/workspace');
+    expect(stateManager.isPageBlocked(new ActionResult({ url: '/projects', ariaSnapshot: signIn }))).toBe(true);
   });
 
   it('does not treat a page with a different structure as blocked', () => {
     const stateManager = blockedAt('/workspace', signIn);
-    expect(stateManager.findBlockedPage(new ActionResult({ url: '/issues', ariaSnapshot: issues }))).toBeUndefined();
+    expect(stateManager.isPageBlocked(new ActionResult({ url: '/issues', ariaSnapshot: issues }))).toBe(false);
   });
 
   it('matches only the same URL when a snapshot is missing', () => {
     const stateManager = blockedAt('/workspace', null);
-    expect(stateManager.findBlockedPage(new ActionResult({ url: '/workspace', ariaSnapshot: null }))).toBeDefined();
-    expect(stateManager.findBlockedPage(new ActionResult({ url: '/projects', ariaSnapshot: null }))).toBeUndefined();
+    expect(stateManager.isPageBlocked(new ActionResult({ url: '/workspace', ariaSnapshot: null }))).toBe(true);
+    expect(stateManager.isPageBlocked(new ActionResult({ url: '/projects', ariaSnapshot: null }))).toBe(false);
   });
 
   it('records each blocked URL once', () => {

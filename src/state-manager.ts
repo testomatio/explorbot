@@ -5,7 +5,7 @@ import { ariaTemplateSignature } from './utils/aria.ts';
 import { createDebug, tag } from './utils/logger.js';
 import { Overlay } from './utils/overlay.js';
 import type { Region } from './utils/region.js';
-import { diceSimilarity } from './utils/similarity.ts';
+import { similarityScore } from './utils/similarity.ts';
 import { slugify } from './utils/strings.js';
 import { extractStatePath } from './utils/url-matcher.js';
 
@@ -361,13 +361,13 @@ export class StateManager {
     this.blockedPages.push({ url: state.url, reason, signature: ariaTemplateSignature(ActionResult.fromState(state).ariaSnapshot) });
   }
 
-  findBlockedPage(state: WebPageState | null): BlockedPage | undefined {
-    if (!state) return undefined;
+  isPageBlocked(state: WebPageState | null): boolean {
+    if (!state) return false;
     const signature = ariaTemplateSignature(ActionResult.fromState(state).ariaSnapshot);
-    return this.blockedPages.find((page) => {
+    return this.blockedPages.some((page) => {
       if (page.url === state.url) return true;
       if (!signature.size || !page.signature.size) return false;
-      return diceSimilarity(signature, page.signature) >= BLOCKED_PAGE_SIMILARITY;
+      return similarityScore(signature, page.signature) >= BLOCKED_PAGE_SIMILARITY;
     });
   }
 

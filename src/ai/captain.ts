@@ -536,7 +536,7 @@ export class Captain extends CaptainBase implements Agent {
     if (!(error instanceof BlockedError) || this.handling) return false;
     const stateManager = this.explorBot.stateManager();
     const blockedState = stateManager.getCurrentState();
-    if (stateManager.findBlockedPage(blockedState)) return false;
+    if (stateManager.isPageBlocked(blockedState)) return false;
     tag('info').log(`Captain takes over: ${error.message}`);
     this.blocker = error;
     await this.handle(error.request, { reset: true }).finally(() => {

@@ -149,7 +149,7 @@ describe('ExploreCommand picking algorithm (via dry-run execute)', () => {
 
   function setupCommand(plan: Plan, _configure: string, maxTests: number) {
     const explorBot = {
-      stateManager: () => ({ findBlockedPage: () => undefined, getBlockedPages: () => [], getCurrentState: () => ({ url: '/demo' }) }),
+      stateManager: () => ({ isPageBlocked: () => false, getBlockedPages: () => [], getCurrentState: () => ({ url: '/demo' }) }),
       generatePlanFilename: () => 'demo.md',
       loadPlans: () => [plan],
       agentPlanner: () => ({ registerPlanInSession: () => {}, collectSubPageCandidates: () => [], pickNextSubPage: async () => null }),
@@ -257,7 +257,7 @@ describe('ExploreCommand error page guard', () => {
     let saveCalled = 0;
     const explorBot = {
       stateManager: () => ({
-        findBlockedPage: () => undefined,
+        isPageBlocked: () => false,
         getBlockedPages: () => [],
         getCurrentState: () => ({
           url: '/missing',
@@ -304,7 +304,7 @@ describe('ExploreCommand URL argument', () => {
       visit: async (url: string) => {
         visited.push(url);
       },
-      stateManager: () => ({ findBlockedPage: () => undefined, getBlockedPages: () => [], getCurrentState: () => ({ url: '/login', title: 'Application', httpStatus: 404 }) }),
+      stateManager: () => ({ isPageBlocked: () => false, getBlockedPages: () => [], getCurrentState: () => ({ url: '/login', title: 'Application', httpStatus: 404 }) }),
       printSessionAnalysis: async () => {},
     } as unknown as ExplorBot;
 
@@ -323,7 +323,7 @@ describe('ExploreCommand reporting survives a failed return to the main page', (
     let savePlansCalled = false;
     let analysisCalled = false;
     const explorBot = {
-      stateManager: () => ({ findBlockedPage: () => undefined, getBlockedPages: () => [], getCurrentState: () => ({ url: '/live' }) }),
+      stateManager: () => ({ isPageBlocked: () => false, getBlockedPages: () => [], getCurrentState: () => ({ url: '/live' }) }),
       generatePlanFilename: () => 'live.md',
       loadPlans: () => [fakePlan],
       agentPlanner: () => ({ registerPlanInSession: () => {}, collectSubPageCandidates: () => [], pickNextSubPage: async () => null }),
@@ -362,7 +362,7 @@ describe('ExploreCommand priority filter applies to NEW tests too', () => {
 
     let planCalled = 0;
     const explorBot = {
-      stateManager: () => ({ findBlockedPage: () => undefined, getBlockedPages: () => [], getCurrentState: () => ({ url: '/live' }) }),
+      stateManager: () => ({ isPageBlocked: () => false, getBlockedPages: () => [], getCurrentState: () => ({ url: '/live' }) }),
       generatePlanFilename: () => 'live.md',
       loadPlans: () => [fakePlan],
       agentPlanner: () => ({ registerPlanInSession: () => {}, collectSubPageCandidates: () => [], pickNextSubPage: async () => null }),
@@ -404,7 +404,7 @@ describe('ExploreCommand max duration', () => {
   function setupCountingBot() {
     const counters = { plan: 0, test: 0, savePlans: 0, analysis: 0 };
     const explorBot = {
-      stateManager: () => ({ findBlockedPage: () => undefined, getBlockedPages: () => [], getCurrentState: () => ({ url: '/live' }) }),
+      stateManager: () => ({ isPageBlocked: () => false, getBlockedPages: () => [], getCurrentState: () => ({ url: '/live' }) }),
       generatePlanFilename: () => 'live.md',
       loadPlans: () => [],
       agentPlanner: () => ({ registerPlanInSession: () => {}, collectSubPageCandidates: () => [], pickNextSubPage: async () => null }),
@@ -460,7 +460,7 @@ describe('ExploreCommand max duration', () => {
 
     let testerCalled = 0;
     const explorBot = {
-      stateManager: () => ({ findBlockedPage: () => undefined, getBlockedPages: () => [], getCurrentState: () => ({ url: '/live' }) }),
+      stateManager: () => ({ isPageBlocked: () => false, getBlockedPages: () => [], getCurrentState: () => ({ url: '/live' }) }),
       generatePlanFilename: () => 'live.md',
       loadPlans: () => [fakePlan],
       agentPlanner: () => ({ registerPlanInSession: () => {}, collectSubPageCandidates: () => [], pickNextSubPage: async () => null }),
