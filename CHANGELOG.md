@@ -3,9 +3,8 @@
 ## 2026-11-06
 
 ### Changes
-- [Researcher] Closes cookie consent, paywall, marketing and similar popups before researching a page, so research describes the page itself. Regular dialogs stay open and are researched as before. A page whose popup cannot be closed is not researched, and during planning Captain takes over.
+- [Researcher] Closes cookie consent, paywall, marketing and similar popups before researching a page. Regular dialogs stay open and are researched as before.
 - [Planner] No longer plans tests for cookie consent, marketing, announcement or notification popups, unless you plan that feature explicitly.
-- [Tester] Dismisses popups unrelated to the application when they block the page and ignores them otherwise, including popups that can only be closed with an answer such as Accept or Decline. Navigator, Captain and test re-runs follow the same rule.
 
 ## 2026-11-05
 

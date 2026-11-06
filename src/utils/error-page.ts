@@ -115,21 +115,6 @@ export class NavigationBlockedError extends BlockedError {
   }
 }
 
-export class ResearchBlockedError extends BlockedError {
-  constructor(url: string, overlay: string) {
-    super(
-      `Research of ${url} is blocked: ${overlay}`,
-      url,
-      overlay,
-      dedent`
-        Researcher was asked to research ${url} but could not close a popup unrelated to the application's features: ${overlay}.
-        Look at the current page to find out what keeps it open, resolve it, then call plan() to re-plan this page. If it cannot be resolved, finish without planning.
-      `
-    );
-    this.name = 'ResearchBlockedError';
-  }
-}
-
 export class TestStartBlockedError extends BlockedError {
   constructor(scenario: string, url: string, currentUrl: string) {
     super(

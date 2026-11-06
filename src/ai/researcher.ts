@@ -10,7 +10,7 @@ import type { StateManager } from '../state-manager.js';
 import { WebPageState } from '../state-manager.js';
 import { Stats } from '../stats.ts';
 import { diffAriaSnapshots } from '../utils/aria.ts';
-import { ErrorPageError, type PageCondition, ResearchBlockedError, detectPageCondition } from '../utils/error-page.ts';
+import { ErrorPageError, type PageCondition, detectPageCondition } from '../utils/error-page.ts';
 import { isBodyEmpty } from '../utils/html.ts';
 import { createDebug, tag } from '../utils/logger.js';
 import { mdq } from '../utils/markdown-query.ts';
@@ -30,6 +30,7 @@ import { type PaginationMethods, WithPagination } from './researcher/pagination.
 import { extractValidContainers, formatResearchSummary, parseResearchSections } from './researcher/parser.ts';
 import { ResearchResult } from './researcher/research-result.ts';
 import { type SectionMethods, WithSections } from './researcher/sections.ts';
+import { type WallMethods, WithWalls } from './researcher/walls.ts';
 import { locatorRule as generalLocatorRuleText } from './rules.js';
 import { TaskAgent } from './task-agent.ts';
 
@@ -37,8 +38,6 @@ export type { Locator } from './researcher/locators.ts';
 
 const debugLog = createDebug('explorbot:researcher');
 const HIDDEN_CONTENT_STATEMENT = 'The page has collapsed or hidden content behind controls that open or expand it.';
-const WALL_STATEMENT = "The open overlay is unrelated to the application's features, such as cookie consent, a paywall, marketing or an announcement. A sign-in form is not such an overlay.";
-const CLOSE_WALL_INSTRUCTION = "Close the overlay that is unrelated to the application's features and stay on this page.";
 
 export const POSSIBLE_SECTIONS = {
   overlay: 'dialog, modal, drawer, popup, or active form overlay',
@@ -50,9 +49,9 @@ export const POSSIBLE_SECTIONS = {
   navigation: 'main navigation (top bar, sidebar, breadcrumbs)',
 };
 
-const ResearcherBase = WithSections(WithPagination(WithDeepAnalysis(WithCoordinates(WithLocators(TaskAgent as unknown as new (...args: any[]) => TaskAgent)))));
+const ResearcherBase = WithWalls(WithSections(WithPagination(WithDeepAnalysis(WithCoordinates(WithLocators(TaskAgent as unknown as new (...args: any[]) => TaskAgent))))));
 
-export interface Researcher extends LocatorMethods, CoordinateMethods, DeepAnalysisMethods, SectionMethods, PaginationMethods {}
+export interface Researcher extends LocatorMethods, CoordinateMethods, DeepAnalysisMethods, SectionMethods, PaginationMethods, WallMethods {}
 
 export class Researcher extends ResearcherBase implements Agent {
   protected readonly ACTION_TOOLS = ['click'];
@@ -65,10 +64,7 @@ export class Researcher extends ResearcherBase implements Agent {
   private hasScreenshotToAnalyze = false;
   declare actionResult: ActionResult | undefined;
 
-  constructor(
-    deps: AgentDeps,
-    private navigator: Navigator
-  ) {
+  constructor(deps: AgentDeps) {
     super(deps);
     this.experienceTracker = deps.stateManager.getExperienceTracker();
     this.settings.reasoning ??= 'low';
@@ -91,7 +87,7 @@ export class Researcher extends ResearcherBase implements Agent {
   }
 
   protected getNavigator(): Navigator {
-    return this.navigator;
+    throw new Error('not implemented');
   }
 
   static getCachedResearch(state: WebPageState): string {
@@ -163,7 +159,7 @@ export class Researcher extends ResearcherBase implements Agent {
           tag('warning').log(`Page at ${state.url} did not finish loading within timeout, continuing with best-effort research`);
         }
       }
-      if (!retrying && this.actionResult!.overlay.isModal) await this.closeWall(state.url, screenshot);
+      if (this.actionResult!.overlay.isModal) await this.closeWall(screenshot);
 
       debugLog('Researching web page:', this.actionResult!.url);
 
@@ -405,28 +401,6 @@ export class Researcher extends ResearcherBase implements Agent {
     };
     const decision = await this.judge.decide('The page was blank or barely rendered when it opened. What state is it in now?', [...Object.keys(conditions), UNDECIDED], pageEvidence(this.actionResult!));
     return conditions[decision.value ?? ''] || 'ok';
-  }
-
-  private async closeWall(url: string, screenshot: boolean): Promise<void> {
-    if (!(await this.isWallOpen())) return;
-
-    const wall = this.actionResult!.overlay.describe();
-    tag('step').log(`Closing ${wall} before research`);
-    await this.navigator.resolveState(CLOSE_WALL_INSTRUCTION, this.actionResult!);
-    if (await this.isWallOpen()) throw new ResearchBlockedError(url, wall);
-
-    await this.explorer.withPage(annotatePageElements);
-    this.actionResult = await this.explorer.capture({ screenshot: screenshot && this.provider.hasVision() });
-  }
-
-  private async isWallOpen(): Promise<boolean> {
-    const captured = await this.explorer.capture({ screenshot: true });
-    if (!captured.overlay.isModal) return false;
-
-    const evidence = { ...pageEvidence(captured), overlay: captured.overlay.describe(), overlayContent: captured.getRegionARIA() };
-    const open = await this.provider.oracle(WALL_STATEMENT, evidence, { agentName: 'researcher', screenshot: captured.screenshot, telemetry: { functionId: 'researcher.isWallOpen' } });
-    if (open === null) tag('warning').log('Could not check whether the open overlay blocks research, continuing');
-    return open === true;
   }
 
   private async hasHiddenContent(): Promise<boolean> {
