@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-11-06
+
+### Changes
+- [Researcher] Closes cookie consent, paywall, marketing and similar popups before researching a page. Regular dialogs stay open and are researched as before.
+- [Planner] No longer plans tests for cookie consent, marketing, announcement or notification popups, unless you plan that feature explicitly.
+
 ## 2026-11-05
 
 ### Changes
