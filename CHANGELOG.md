@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-11-07
+
+### Changes
+- [Planner] Works out what a website is for and plans its main user flow first, such as buying or reserving, managing records, communicating, multi-step applications or reporting. Steps of that flow that are not visible yet are still planned. Sign-in, FAQ and support pages come afterwards, unless they are the main flow.
+
 ## 2026-11-06
 
 ### Changes
