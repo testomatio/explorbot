@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-11-07
+
+### Changes
+- [Researcher] Opens one item from each list on the page, such as a product card, so controls that only appear inside it are found. It only opens links and controls marked as opening something, never unlabelled row buttons like Delete.
+- [Planner] Plans tests for actions that live inside a list item. On a store whose Add to cart button sits in the product dialog, the plan now covers adding to the cart.
+
 ## 2026-11-06
 
 ### Changes

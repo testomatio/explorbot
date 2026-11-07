@@ -10,10 +10,12 @@ import { extractCodeBlocks } from '../../utils/code-extractor.ts';
 import { tag } from '../../utils/logger.js';
 import { mdq } from '../../utils/markdown-query.ts';
 import { truncate } from '../../utils/strings.ts';
+import { annotatePageElements } from '../../utils/web-annotate.ts';
+import { eidxInContainer } from '../../utils/web-eidx.ts';
 import type { Provider } from '../provider.js';
 import { getCachedResearch, getPreviousResearch, saveResearch } from './cache.ts';
 import { type Constructor, debugLog } from './mixin.ts';
-import { type ResearchElement, parseResearchSections } from './parser.ts';
+import { type ResearchElement, parseDataSections, parseResearchSections } from './parser.ts';
 import type { ResearchResult } from './research-result.ts';
 
 const DEFAULT_MAX_EXPANDABLE_CLICKS = 10;
@@ -60,6 +62,7 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
         expandables = await this._selectExpandables(expandables, state.fullUrl || state.url, maxClicks);
         tag('substep').log(`Selected ${expandables.length} expandables to click (max: ${maxClicks})`);
       }
+      expandables.push(...(await this._findDataItems(result.text)));
 
       const elements = expandables
         .map((el) => ({
@@ -294,6 +297,28 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
       debugLog(`Text model picked eidx: [${textRefs.join(', ')}], Vision model picked eidx: [${visionRefs.join(', ')}]`);
 
       return [...eidxSet].map((eidx) => allElements.get(eidx)!);
+    }
+
+    private async _findDataItems(researchText: string): Promise<ExpandableElement[]> {
+      const sections = parseDataSections(researchText).filter((section) => section.containerCss);
+      if (sections.length === 0) return [];
+
+      const { elements } = await this.explorer.withPage(annotatePageElements);
+      await this.explorer.capture();
+      const byEidx = new Map(elements.map((el) => [el.eidx, el]));
+
+      const items: ExpandableElement[] = [];
+      for (const section of sections) {
+        const eidxList: string[] = await this.explorer.withPage((page) => eidxInContainer(page, section.containerCss)).catch(() => []);
+        const item = eidxList.map((eidx) => byEidx.get(eidx)).find((el) => el?.declaresDestination);
+        if (!item) continue;
+
+        const label = item.attrs['aria-label'] || item.text;
+        let aria: ResearchElement['aria'] = null;
+        if (item.role && label) aria = { role: item.role, text: label };
+        items.push({ name: label || section.name, type: item.role, aria, css: item.clickXPath, xpath: null, coordinates: null, color: null, icon: null, eidx: item.eidx, container: section.containerCss });
+      }
+      return items;
     }
 
     private _buildClickCommands(el: ExpandableElement): string[] {

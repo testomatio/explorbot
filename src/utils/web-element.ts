@@ -5,6 +5,7 @@ export { extractElementData } from './html.ts';
 
 const KEY_DISPLAY_ATTRS = ['role', 'id', 'class', 'aria-label'];
 const KEY_ATTRS = ['role', 'aria-label', 'id', 'name', 'type', 'href'];
+const REVEALING_ATTRS = ['aria-haspopup', 'aria-expanded', 'aria-controls'];
 
 export class WebElement {
   tag: string;
@@ -55,6 +56,14 @@ export class WebElement {
     if (this.tag !== 'a') return false;
     const href = this.attrs.href || '';
     return !!href && href !== '#' && !href.startsWith('javascript:');
+  }
+
+  get revealsContent(): boolean {
+    return REVEALING_ATTRS.some((attr) => this.attrs[attr]);
+  }
+
+  get declaresDestination(): boolean {
+    return this.isNavigationLink || this.revealsContent;
   }
 
   get filteredClasses(): string[] {

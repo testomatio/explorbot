@@ -1101,6 +1101,6 @@ function isInteractiveElement(element: WebElement): boolean {
   if (HTML_INTERACTIVE_ROLES.has(role)) return true;
   if (element.attrs.contenteditable === 'true') return true;
   if (element.attrs.tabindex && Number(element.attrs.tabindex) >= 0) return true;
-  if (element.attrs['aria-haspopup'] || element.attrs['aria-expanded'] || element.attrs['aria-controls']) return true;
+  if (element.revealsContent) return true;
   return false;
 }
