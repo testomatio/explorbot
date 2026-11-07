@@ -377,6 +377,18 @@ export class Planner extends PlannerBase implements Agent {
       Exception: if the page reports the requested resource is missing, shows a failure state, or holds no content and no controls, return an empty scenarios list. Never invent tests for a page with nothing to exercise.${ignoredPagesRule}
       </task>
 
+      <main_purpose>
+      First decide what this website is for and which business outcome its users come for. Unless a focus was requested, plan that outcome end to end before anything else.
+      Common main flows:
+      - Buying or reserving (shops, marketplaces, booking, listings): find an item, choose options, add it to the cart or select it, check out or confirm, see the confirmation.
+      - Managing records (SaaS, admin): create, update, delete.
+      - Communicating (chat, social, community): post or send, see it appear, reply, react.
+      - Multi-step applications (claims, onboarding, enrollment): complete each step, submit, track the status.
+      - Reporting (dashboards, analytics): change the period or grouping, drill into a number, export.
+      Sign-in, FAQ and support pages are supporting features: cover them after the main flow, unless they are the main flow.
+      Steps of the main flow may be unseen yet. Describe them by goal; the tester finds the controls at run time. For these steps this overrides <capability_grounding> and the rules requiring evident prerequisites or observed interface details.
+      </main_purpose>
+
       <rules>
       Scenarios must involve interaction with the web page (clicking, scrolling or typing).
       Scenarios must focus on business logic and functionality of the page.
@@ -643,7 +655,7 @@ export class Planner extends PlannerBase implements Agent {
          Cover sections in this order — first propose tests for elements from earlier sections, then later ones.
          Extended Research sections come after the main sections.
       3. Focus on interactive elements of the page. Skip navigation links that lead away from current page.
-      4. Focus on tests you are 100% sure relevant to this page and can be achived from UI.
+      4. Focus on tests relevant to this page and achievable from UI.
       5. For each task, provide BOTH steps and expected outcomes as separate lists:
 
          STEPS - actionable commands:
