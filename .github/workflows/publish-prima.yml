@@ -72,6 +72,7 @@ jobs:
         npm init -y > /dev/null
         npm install --ignore-scripts --no-audit --no-fund /tmp/prima-cli-*.tgz
         ./node_modules/.bin/prima-cli --help
+        test "$(./node_modules/.bin/prima-cli --version)" = "${{ steps.release.outputs.version }}"
         HOME=$(mktemp -d) EXPLORBOT_AI_PROVIDER=openrouter OPENROUTER_API_KEY=dummy EXPLORBOT_URL=https://example.com ./node_modules/.bin/prima-cli config --ephemeral
 
     - name: Publish prima-cli to npm

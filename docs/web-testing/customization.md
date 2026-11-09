@@ -27,6 +27,8 @@ Log in with these credentials:
 
 Explorbot reads this when it opens the login page and signs in on its own. See [Knowledge](../workflow/knowledge.md).
 
+Some apps show the sign-in form at the page you asked for instead of redirecting to `/login`. When the planner reports that the page is blocked by a sign-in form, `explore` hands that report to Captain. Captain looks at the browser session, decides how to get past the form with this knowledge, and re-plans the page itself. If Captain adds no tests, the page is skipped with the planner's reason. Set the knowledge file's `url` to that page so the credentials load there.
+
 ## Stay logged in between runs
 
 Logging in on every run is slow. Use `--session` to save cookies and local storage, then restore them next time:

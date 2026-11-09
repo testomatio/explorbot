@@ -1,5 +1,6 @@
 import { Stats } from '../stats.js';
 import { Plan, Test } from '../test-plan.js';
+import { BlockedError } from '../utils/error-page.ts';
 import { tag } from '../utils/logger.js';
 import { type ArgumentCompletion, BaseCommand, type Suggestion } from './base-command.js';
 
@@ -16,6 +17,11 @@ export class TestCommand extends BaseCommand {
     const { opts, args: remaining } = this.parseArgs(args);
     if (opts.fromPlan) {
       this.explorBot.loadPlan(String(opts.fromPlan));
+    }
+
+    if (!opts.fromPlan && remaining[0] && Plan.resolveFile(remaining[0], this.explorBot.getPlansDir())) {
+      this.explorBot.loadPlan(remaining.shift()!);
+      if (remaining.length === 0) remaining.push('*');
     }
 
     const plan = this.explorBot.getCurrentPlan();
@@ -71,13 +77,16 @@ export class TestCommand extends BaseCommand {
     const tester = this.explorBot.agentTester();
     for (const [index, test] of toExecute.entries()) {
       tag('info').log(`Starting test ${index + 1}/${toExecute.length}: ${test.scenario}`);
-      await tester.test(test);
+      await tester.test(test).catch((err) => {
+        if (!(err instanceof BlockedError)) throw err;
+        tag('warning').log(`Skipping test: ${err.message}`);
+      });
     }
     tag('success').log('Test execution finished');
   }
 
   completeArguments(): ArgumentCompletion[] {
-    return Plan.listFiles(this.explorBot.getPlansDir()).map((file) => ({ value: `--from-plan ${file.name}`, display: file.label }));
+    return Plan.listFiles(this.explorBot.getPlansDir()).map((file) => ({ value: file.name, display: file.label }));
   }
 }
 

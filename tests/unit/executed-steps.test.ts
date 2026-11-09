@@ -1,6 +1,6 @@
-import codeceptjs from 'codeceptjs';
 import { describe, expect, it } from 'bun:test';
-import { attachStepLogger, type ExecutedStep } from '../../src/action.ts';
+import codeceptjs from 'codeceptjs';
+import { type ExecutedStep, attachStepLogger } from '../../src/action.ts';
 import { formatExecutedSteps } from '../../src/ai/tools.ts';
 
 function step(code: string) {

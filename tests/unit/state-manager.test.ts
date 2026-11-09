@@ -318,7 +318,6 @@ describe('StateManager', () => {
   describe('state comparison', () => {
     it('should detect state changes correctly', () => {
       const state1: WebPageState = { url: '/test1', hash: 'hash1' };
-      const state2: WebPageState = { url: '/test2', hash: 'hash2' };
 
       expect(stateManager.hasStateChanged(null)).toBe(false);
 

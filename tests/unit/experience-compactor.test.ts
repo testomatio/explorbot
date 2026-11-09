@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
-import { existsSync, readFileSync, rmSync } from 'node:fs';
-import matter from 'gray-matter';
+import { existsSync, rmSync } from 'node:fs';
 import { ExperienceCompactor } from '../../src/ai/experience-compactor';
 import type { Provider } from '../../src/ai/provider';
 import { ConfigParser } from '../../src/config';

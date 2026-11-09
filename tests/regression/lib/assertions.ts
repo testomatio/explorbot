@@ -4,12 +4,13 @@ export const MIN_PLANNED_TESTS = 5;
 export const MIN_PASSED = 3;
 export const MIN_KEYWORD_HITS = 3;
 export const MIN_FEATURE_GROUPS = 3;
+export const MAX_CAPTAIN_HANDOVERS = 1;
 
 const RESEARCH_KEYWORDS = ['issue', 'label', 'priority', 'assignee', 'status', 'search', 'new issue'];
-const POST_LOGIN_ROUTES = ['/issues', '/settings'];
+const POST_LOGIN_ROUTES = ['/issues', '/settings', '/workspace'];
 const FEATURE_GROUPS = [['create', 'new issue', 'add'], ['label'], ['assign'], ['status', 'close', 'progress'], ['filter', 'search'], ['comment'], ['delete', 'remove']];
 
-export function assertBasicRun(runDir: string, stdout: string): AssertResult {
+export function assertBasicRun(runDir: string, stdout: string, minPassed = MIN_PASSED): AssertResult {
   const details: string[] = [];
   const checks: boolean[] = [];
 
@@ -43,7 +44,7 @@ export function assertBasicRun(runDir: string, stdout: string): AssertResult {
 
   const results = parseStdoutResults(stdout);
   const summary = latestReporterSummary(runDir);
-  const resultsOk = Boolean(results) && results!.failed === 0 && results!.passed >= MIN_PASSED;
+  const resultsOk = Boolean(results) && results!.failed === 0 && results!.passed >= minPassed;
   checks.push(resultsOk);
   let resultsText = 'no Results line';
   if (results) resultsText = `${results.passed} passed, ${results.failed} failed`;
@@ -52,6 +53,21 @@ export function assertBasicRun(runDir: string, stdout: string): AssertResult {
   details.push(`tests passed: ${status(resultsOk)} (${resultsText}${crossCheck})`);
 
   return { passed: checks.every(Boolean), details };
+}
+
+export function assertBlockedRun(stdout: string, finished: boolean, timeoutSec: number): AssertResult {
+  let stoppedText = `exited on its own before the ${timeoutSec}s timeout`;
+  if (!finished) stoppedText = `crashed or killed by the ${timeoutSec}s timeout`;
+  const handovers = stdout.split('Captain takes over:').length - 1;
+  const handoversOk = handovers <= MAX_CAPTAIN_HANDOVERS;
+  const details = [`stopped: ${status(finished)} (${stoppedText})`, `captain handovers: ${status(handoversOk)} (${handovers}/${MAX_CAPTAIN_HANDOVERS})`];
+  return { passed: finished && handoversOk, details };
+}
+
+export function assertNavigatedRun(stdout: string, finished: boolean): AssertResult {
+  const handovers = stdout.split('Captain takes over:').length - 1;
+  const details = [`reached target: ${status(finished)}`, `navigator alone: ${status(handovers === 0)} (captain handovers: ${handovers})`];
+  return { passed: finished && handovers === 0, details };
 }
 
 export function assertSeededRun(runDir: string): AssertResult {
@@ -71,7 +87,7 @@ export function assertControlRun(runDir: string, cliRan: boolean): AssertResult 
   return { passed: failedAsExpected, details: [detail] };
 }
 
-function status(ok: boolean): string {
+export function status(ok: boolean): string {
   if (ok) return 'PASS';
   return 'FAIL';
 }

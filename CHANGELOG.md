@@ -1,5 +1,145 @@
 # Changelog
 
+## 2026-11-07
+
+### Changes
+- [Planner] Works out what a website is for and plans its main user flow first, such as buying or reserving, managing records, communicating, multi-step applications or reporting. Steps of that flow that are not visible yet are still planned. Sign-in, FAQ and support pages come afterwards, unless they are the main flow.
+
+## 2026-11-06
+
+### Changes
+- [Researcher] Closes cookie consent, paywall, marketing and similar popups before researching a page. Regular dialogs stay open and are researched as before.
+- [Planner] No longer plans tests for cookie consent, marketing, announcement or notification popups, unless you plan that feature explicitly.
+
+## 2026-11-05
+
+### Changes
+- [Navigator] Gets through flows spread over several pages, such as a sign-in that asks for the email, the password and a one-time code on separate pages. When a step moves the page on, Navigator now looks at the new page instead of spending its remaining attempts on the old one.
+
+## 2026-11-05
+
+### New CLI Options
+- **`prima --version`** — Shows the installed prima version. Running `prima` with no arguments also prints it, above the help.
+  ```bash
+  prima --version
+  prima
+  ```
+
+### Changes
+- [Scout] Works when Explorbot is installed from npm. It used to stop with `Scout requires ripgrep or grep on PATH` even though grep was installed, so any run with `--spec` planned no tests.
+- [Planner] A Scout failure no longer stops planning. The log shows a warning and the plan is made without documentation.
+- Prima: `npx prima-cli` releases are published again. Nothing newer than 0.5.4 reached npm because a release test failed, so fixes such as treating `localhost` and `127.0.0.1` as one site were missing from it.
+
+## 2026-11-01
+
+### Changes
+- [Explore] A page that cannot be opened (for example a sign-in form with no credentials) is now skipped as a whole: no more planning styles or tests run on it, and pages that look the same are skipped without trying again, listed as "matches a blocked page". Exploration stops after 3 such pages.
+- [Explore] When the start page itself is blocked, the run ends right away and suggests how to unblock it: pass credentials with `--auth`, or save them with `learn`. If knowledge for the page exists but did not help, it suggests updating it.
+  ```bash
+  explorbot explore /workspace --auth 'login: admin@example.com password: secret123'
+  explorbot learn /workspace "login: admin@example.com password: secret123"
+  ```
+- [Captain] Takes over a blocked page once. It no longer gets the same blocked page again each time the Planner words the problem differently.
+- Console output: blocker messages stand out with an empty line before and after, and empty lines no longer stack up.
+
+## 2026-10-31
+
+### New CLI Options
+- **`plan --tests <count>`** — Generates exactly this many tests for the page.
+  ```bash
+  explorbot plan /users --tests 5
+  ```
+- **`plan --min-tests <count>` / `--max-tests <count>`** — Sets the smallest and largest number of tests the planner proposes for a fresh plan. Without them the planner proposes 3 to 12.
+  ```bash
+  explorbot plan /users --min-tests 4 --max-tests 8
+  ```
+- **`--spec <path>` can be repeated** — Load several documentation folders in one run. A spec folder no longer needs an `index.md` and a `pages/` directory: any folder of markdown files works. Files with a `url` in their frontmatter are matched to pages as before; the rest are searched by Scout.
+  ```bash
+  explorbot explore /orders --spec docs/product --spec docs/api
+  ```
+- **`test <plan name>`** — The plan file can be given by name; it is looked up in `output/plans`, or in `<path>/output/plans` with `--path`. Without an index, all tests of the plan run.
+  ```bash
+  explorbot test login                  # runs output/plans/login.md
+  explorbot test login 2                # runs test #2
+  explorbot test login --path example   # looks in example/output/plans
+  ```
+- **`explorbot env`** — Prints the environment variables for running without a config file.
+  ```bash
+  explorbot env
+  ```
+
+### New TUI Commands
+- **`/test [planfile] [scenario|number|*]`** — Loads a plan file and runs its tests. Autocomplete now suggests plan names.
+  ```
+  /test login.md
+  /test login.md 2
+  ```
+- **`/plan --append`, `/plan --tests <count>`, `/plan --min-tests <count>`, `/plan --max-tests <count>`** — Same as the CLI flags: add tests to the page's existing plan file, or control how many tests are planned.
+  ```
+  /plan --append
+  /plan --tests 5
+  /plan --focus checkout --max-tests 6
+  ```
+
+### Configuration
+- **`ai.agents.planner.minTests`** — Smallest number of tests in a fresh plan. Default: `3`.
+- **`ai.agents.planner.maxTests`** — Largest number of tests in a fresh plan. Default: `12`.
+- **`dirs.spec`** — Now also accepts a list of paths, e.g. `spec: ['docs/product', 'docs/api']`.
+- **`ai.agents.scout.enabled`** — Scout now turns on by itself when a spec is set with `--spec` or `dirs.spec`. Set it to `false` to keep it off.
+
+### Changes
+- [Tester] When the browser page is lost and can't be restored, the test stops as failed at the next browser step instead of running on against a closed browser. Console errors and native dialogs keep being recorded on a page restored after a crash.
+- [Tester] A test stops for final review after three steps in a row with no progress on the same page, including steps where the model called no tools. Pilot steps in after two such steps. A successful `interact` or `visualClick` now counts as progress.
+- [Scout] Searches the docs for the facts a tester needs: roles and permissions, prerequisites, accepted values and limits, error messages, duplicates, state changes, side effects, failure and retry behavior, list and bulk behavior, deletions, file formats and differences between variants. For vague words such as "valid" or "supported" it looks for exact definitions with examples of valid and invalid values.
+- [Scout] Each digest is saved to `output/scout/` and reused for 6 hours for the same page and focus, so repeated planning doesn't search the docs again. The log shows how many words were found, the file path and the first lines of the digest.
+- [Planner] Writes the plan as markdown in the plan file format. If the format is off, the planner is asked to fix it, up to 3 times.
+- [Planner] No longer assigns priorities: new tests are saved with `normal` priority and run in the order they were planned.
+- [Planner] Skips pages that look read-only, degraded or have no usable controls. Tests that need existing records use API data preparation when it is configured, or a record visible on the page, or one created through the UI. Verification-only tests that change nothing are no longer proposed. Documentation from the spec is used in planning when available.
+- [Planner] The log shows how many words of application spec and Scout docs were added to planning.
+- [Planner] Plan summary lists scenarios as a numbered list without priority tags. Suggested next commands use the plan name (`explorbot test login`) and keep your `--path` and `--session` flags.
+- [Navigator] Proposes CSS and XPath locators only after the page HTML is provided; until then it uses ARIA and text locators. When no solution is possible it stops with a reason instead of generating failing code. Verification may use any CodeceptJS command when the listed ones don't fit.
+- [Tester] A failed `verify` now reports every assertion tried and why it failed. Locators are picked in the order ARIA, text, CSS, XPath, and clicks inside a container try the ARIA locator first. Select-all uses one shortcut that works on every OS. `pressKey` accepts `Esc` and `Del`. After filling a form, the suggestion is to check the values with `verify` and then submit with `click`.
+- Console output: documents and digests are printed in a framed block, long step lines wrap to the terminal width and are cut after 10 lines. "Next steps" lists the recommended command first, highlighted.
+- CLI help: commands are grouped (Explore, Steps, Results, Knowledge & rules, Setup, More tools, Help), shared flags appear under global options, and the help ends with usage examples.
+- `plans`: suggests `explorbot test <plan> 1` instead of `--from-plan`.
+### Configuration
+- **`ai.decisionModel`** — The OpenRouter recommendation is now `~typesafe/jev-latest`. The previous one, `typesafe/jev-latest`, does not exist on OpenRouter, so with `recommendedModels: 'openrouter'` every decision quietly failed and Explorbot ran as if no decision model were set. To pin it yourself: `decisionModel: { provider: 'openrouter', model: '~typesafe/jev-latest' }`.
+
+### Changes
+- A decision model that fails now prints one warning per session (`Decision model … failed …; continuing without it`) instead of failing silently.
+- `explorbot config` and the models table shown at startup now list the decision model.
+### Changes
+- [Captain] One `plan()` tool now covers planning in the TUI, replacing `updatePlan()`. Ask Captain to plan the current page and the planner writes the tests, optionally with a focus and one of your configured planning styles; dictate tests and Captain adds exactly those. Tests go into the current plan when it is for this page, otherwise a new plan starts. Dictated tests are added to the plan instead of replacing it, unless you ask Captain to replace them.
+- [Planner] [Captain] When `explore` hits a page the planner can't plan, such as a sign-in form at the URL you asked for, Captain gets the planner's report: the page, the focus, the planning style and what blocks it. Captain works out from the browser session how to get past it, then re-plans the page itself. If Captain adds no tests, the page is skipped.
+- [Captain] Captain takes over when another agent is blocked, then the work continues. This applies wherever Explorbot opens a page, plans a page or starts a test, including `explore` and `freesail`. Captain is told what the agent was asked to do, where it stopped, why, and what was already tried. If Captain can't resolve a blocker, the page or test is skipped, and that blocker isn't handed to Captain again in the same run.
+- [Captain] When Captain re-plans a page the planner reported blocked, the plan keeps the focus and planning style the planner was originally asked for. Before, the text describing the blocker, such as the sign-in step, could become the plan's focus.
+- [Navigator] A page the Navigator can't reach after all its attempts goes to Captain before the page is skipped.
+- [Tester] With `ai.decisionModel` set, the judge checks before each test that the open page is where the test can start, given the scenario, its expected outcomes, planned steps and notes, for example that the session hasn't expired. If it isn't, the test doesn't start. In `explore` and `freesail`, Captain resolves it and the test runs again; otherwise, and in `test`, the test is skipped.
+- [Researcher] A dialog or drawer left open while a test runs is researched once per page, not again on every step. Before, a dialog that showed nothing new was re-researched on each attempt, which made tests that submit the same form repeatedly much slower.
+- [Pilot] A search, filter or other change that only alters the URL's query string (`/issues` → `/issues?q=login`) no longer counts as moving to a new page, so Pilot doesn't review the page again. A different path or a different `#/route` still gets a review.
+
+## 2026-10-28
+
+### Changes
+- [Researcher] A page that is still blank or barely rendered when it opens is no longer researched as an empty page. Explorbot keeps waiting, up to `ai.agents.researcher.errorPageTimeout` seconds (default 10), with the same readiness checks it runs after every action: network requests settle, the DOM stops changing, `playwright.spinnerSelectors` disappear, and the page shows visible text or a control. A small page that has rendered doesn't wait the full time. With `ai.decisionModel` set, a page that still looks unfinished goes to the judge, which decides whether it is still loading, an error page or loaded; while it is still loading, Explorbot waits for the page to change and asks again.
+- Page readiness: a page counts as rendered only when it shows visible text or a visible control or media element. An app shell holding only scripts or an empty root element no longer counts as loaded.
+- [Planner] [Captain] `explore` on a page that shows a sign-in form at the URL you asked for, instead of redirecting to a login page, now gets past it. The planner reports that the page is blocked and names the step needed first. Captain decides which agent completes it, using your knowledge or `--auth` details, then the page is reopened and planned. If it is still blocked, the page is skipped with the planner's reason.
+- [Researcher] Deep research, which opens every menu, dropdown and panel on the page, now runs only when the AI, looking at the page and a screenshot, sees hidden content to expand. A bare form is researched without it. If that check fails, deep research runs as before.
+- [Captain] Answers quick yes/no questions about the page with one lightweight AI check of the page and a screenshot, instead of a full visual analysis or page snapshot.
+
+## 2026-10-26
+
+### New CLI Options
+- **`--auth <text>`** — Passes login details for one run in free form: credentials, a token, whatever the app asks for. They apply on every page and API endpoint, stay in memory, and are never written to disk. Works on `explorbot`, `explorbot api`, `explorbot docs`, `apibot`, `doc-collector` and `prima`, anywhere on the line. `init` now suggests it as a quick way to start on an app behind a login.
+  ```bash
+  explorbot explore /dashboard --auth 'login: admin@example.com password: secret123'
+  apibot explore /orders --auth 'Bearer: eyJhbGciOi...'
+  prima check "the editor saves" --auth 'login: admin password: secret'
+  ```
+
+### Configuration
+- **`EXPLORBOT_AUTH`** — Environment twin of `--auth`, e.g. `EXPLORBOT_AUTH="login: admin@example.com password: secret123"`; the flag wins when both are set. Unlike `EXPLORBOT_KNOWLEDGE`, nothing lands in the knowledge directory, and `explorbot config` shows it only as `set`.
+
 ## 2026-10-23
 
 ### New CLI Options

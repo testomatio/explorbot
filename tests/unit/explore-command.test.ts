@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import { ExploreCommand } from '../../src/commands/explore-command.ts';
 import { ConfigParser } from '../../src/config.ts';
 import type { ExplorBot } from '../../src/explorbot.ts';
-import { Plan, Test } from '../../src/test-plan.ts';
+import { Plan, Test, TestResult } from '../../src/test-plan.ts';
+import { PlanningBlockedError, TestStartBlockedError } from '../../src/utils/error-page.ts';
 
 beforeEach(() => {
   ConfigParser.resetForTesting();
@@ -148,7 +149,7 @@ describe('ExploreCommand picking algorithm (via dry-run execute)', () => {
 
   function setupCommand(plan: Plan, _configure: string, maxTests: number) {
     const explorBot = {
-      stateManager: () => ({ getCurrentState: () => ({ url: '/demo' }) }),
+      stateManager: () => ({ isPageBlocked: () => false, getBlockedPages: () => [], getCurrentState: () => ({ url: '/demo' }) }),
       generatePlanFilename: () => 'demo.md',
       loadPlans: () => [plan],
       agentPlanner: () => ({ registerPlanInSession: () => {}, collectSubPageCandidates: () => [], pickNextSubPage: async () => null }),
@@ -256,6 +257,8 @@ describe('ExploreCommand error page guard', () => {
     let saveCalled = 0;
     const explorBot = {
       stateManager: () => ({
+        isPageBlocked: () => false,
+        getBlockedPages: () => [],
         getCurrentState: () => ({
           url: '/missing',
           fullUrl: 'https://example.com/missing',
@@ -301,9 +304,7 @@ describe('ExploreCommand URL argument', () => {
       visit: async (url: string) => {
         visited.push(url);
       },
-      stateManager: () => ({
-        getCurrentState: () => ({ url: '/login', title: 'Application', httpStatus: 404 }),
-      }),
+      stateManager: () => ({ isPageBlocked: () => false, getBlockedPages: () => [], getCurrentState: () => ({ url: '/login', title: 'Application', httpStatus: 404 }) }),
       printSessionAnalysis: async () => {},
     } as unknown as ExplorBot;
 
@@ -322,7 +323,7 @@ describe('ExploreCommand reporting survives a failed return to the main page', (
     let savePlansCalled = false;
     let analysisCalled = false;
     const explorBot = {
-      stateManager: () => ({ getCurrentState: () => ({ url: '/live' }) }),
+      stateManager: () => ({ isPageBlocked: () => false, getBlockedPages: () => [], getCurrentState: () => ({ url: '/live' }) }),
       generatePlanFilename: () => 'live.md',
       loadPlans: () => [fakePlan],
       agentPlanner: () => ({ registerPlanInSession: () => {}, collectSubPageCandidates: () => [], pickNextSubPage: async () => null }),
@@ -361,7 +362,7 @@ describe('ExploreCommand priority filter applies to NEW tests too', () => {
 
     let planCalled = 0;
     const explorBot = {
-      stateManager: () => ({ getCurrentState: () => ({ url: '/live' }) }),
+      stateManager: () => ({ isPageBlocked: () => false, getBlockedPages: () => [], getCurrentState: () => ({ url: '/live' }) }),
       generatePlanFilename: () => 'live.md',
       loadPlans: () => [fakePlan],
       agentPlanner: () => ({ registerPlanInSession: () => {}, collectSubPageCandidates: () => [], pickNextSubPage: async () => null }),
@@ -403,7 +404,7 @@ describe('ExploreCommand max duration', () => {
   function setupCountingBot() {
     const counters = { plan: 0, test: 0, savePlans: 0, analysis: 0 };
     const explorBot = {
-      stateManager: () => ({ getCurrentState: () => ({ url: '/live' }) }),
+      stateManager: () => ({ isPageBlocked: () => false, getBlockedPages: () => [], getCurrentState: () => ({ url: '/live' }) }),
       generatePlanFilename: () => 'live.md',
       loadPlans: () => [],
       agentPlanner: () => ({ registerPlanInSession: () => {}, collectSubPageCandidates: () => [], pickNextSubPage: async () => null }),
@@ -459,7 +460,7 @@ describe('ExploreCommand max duration', () => {
 
     let testerCalled = 0;
     const explorBot = {
-      stateManager: () => ({ getCurrentState: () => ({ url: '/live' }) }),
+      stateManager: () => ({ isPageBlocked: () => false, getBlockedPages: () => [], getCurrentState: () => ({ url: '/live' }) }),
       generatePlanFilename: () => 'live.md',
       loadPlans: () => [fakePlan],
       agentPlanner: () => ({ registerPlanInSession: () => {}, collectSubPageCandidates: () => [], pickNextSubPage: async () => null }),
@@ -484,5 +485,67 @@ describe('ExploreCommand max duration', () => {
     await cmd.execute('--configure "new:0%"');
 
     expect(testerCalled).toBe(1);
+  });
+});
+
+describe('ExploreCommand on a page that stays blocked', () => {
+  test('skips the page without a generic retry', async () => {
+    const calls: string[] = [];
+    const explorBot: any = {
+      lastPlanError: null,
+      plan: async () => {
+        calls.push('plan');
+        explorBot.lastPlanError = new PlanningBlockedError('/workspace', 'Sign in', undefined, 'normal');
+      },
+      visit: async (url: string) => {
+        calls.push(`visit ${url}`);
+      },
+      getCurrentPlan: () => new Plan('Workspace'),
+    };
+    const cmd = new ExploreCommand(explorBot as ExplorBot);
+    await (cmd as any).planWithRetry(undefined, { fresh: true, style: 'normal' }, '/workspace');
+    expect(calls).toEqual(['plan']);
+  });
+});
+
+describe('ExploreCommand on a test that cannot start', () => {
+  function setupBot(captainFixes: boolean) {
+    const calls: string[] = [];
+    let fixed = false;
+    const explorBot: any = {
+      agentCaptain: () => ({
+        resolveBlocker: async (err: unknown, resolved: () => boolean) => {
+          calls.push(`captain ${(err as Error).name}`);
+          fixed = captainFixes;
+          return resolved();
+        },
+      }),
+      agentNavigator: () => ({ isOn: () => fixed }),
+      agentTester: () => ({
+        test: async (test: Test) => {
+          calls.push('test');
+          if (!fixed) throw new TestStartBlockedError(test.scenario, '/workspace', '/login');
+          test.start();
+          test.finish(TestResult.PASSED);
+        },
+      }),
+    };
+    return { cmd: new ExploreCommand(explorBot as ExplorBot), calls };
+  }
+
+  test('runs the test again after Captain resolves what kept it from starting', async () => {
+    const { cmd, calls } = setupBot(true);
+    const test = new Test('Open a workspace project', 'high', [], '/workspace');
+    await (cmd as any).runOneTest(test);
+    expect(calls).toEqual(['test', 'captain TestStartBlockedError', 'test']);
+    expect(test.isSuccessful).toBe(true);
+  });
+
+  test('skips the test when Captain cannot get it started', async () => {
+    const { cmd, calls } = setupBot(false);
+    const test = new Test('Open a workspace project', 'high', [], '/workspace');
+    await (cmd as any).runOneTest(test);
+    expect(calls).toEqual(['test', 'captain TestStartBlockedError']);
+    expect(test.isSkipped).toBe(true);
   });
 });

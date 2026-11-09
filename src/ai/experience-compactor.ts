@@ -1,5 +1,5 @@
 import { unlinkSync } from 'node:fs';
-import { basename } from 'node:path';
+import { basename, relative } from 'node:path';
 import dedent from 'dedent';
 import { z } from 'zod';
 import { type ExperienceFile, type ExperienceTracker, RECENT_WINDOW_DAYS } from '../experience-tracker.js';
@@ -322,7 +322,7 @@ export class ExperienceCompactor implements Agent {
     };
 
     this.experienceTracker.writeExperienceFile(targetStateHash, combinedContent, newFrontmatter);
-    log(`Merged ${group.files.length} experience files into ${targetFile.filePath}`);
+    log(`Merged ${group.files.length} experience files into ${relative(process.cwd(), targetFile.filePath)}`);
     debugLog('New URL pattern:', group.pattern);
 
     for (const sourceFile of sourceFiles) {

@@ -1,6 +1,5 @@
 import { parse, serialize } from 'parse5';
 import type * as parse5TreeAdapter from 'parse5/lib/tree-adapters/default';
-import type { HtmlConfig } from '../config.ts';
 import { isTailwindClass, isTrashClass, minifyHtml } from './html.ts';
 import { isDynamicId, isGenericClass } from './xpath.ts';
 
@@ -203,9 +202,9 @@ export function computeHtmlFingerprint(html: string): string[] {
 /**
  * Compares two HTML documents and returns differences along with a diff subtree.
  */
-export async function htmlDiff(originalHtml: string, modifiedHtml: string, htmlConfig?: HtmlConfig): Promise<HtmlDiffResult> {
-  const originalDocument = parseDocument(originalHtml, htmlConfig);
-  const modifiedDocument = parseDocument(modifiedHtml, htmlConfig);
+export async function htmlDiff(originalHtml: string, modifiedHtml: string): Promise<HtmlDiffResult> {
+  const originalDocument = parseDocument(originalHtml);
+  const modifiedDocument = parseDocument(modifiedHtml);
 
   const originalRoot = getRootNodeForFlatten(originalDocument);
   const modifiedRoot = getRootNodeForFlatten(modifiedDocument);
@@ -308,7 +307,7 @@ function isLiveRegion(element: ElementNode): boolean {
  * Parse HTML into a document, wrapping fragments with html/body for consistency.
  * Uses custom sanitization that removes iframes for diff purposes.
  */
-function parseDocument(html: string, htmlConfig?: HtmlConfig): DocumentNode {
+function parseDocument(html: string): DocumentNode {
   const document = parse(html);
   const documentTitle = getDocumentTitle(document);
   sanitizeDocumentTreeForDiff(document);
@@ -425,42 +424,6 @@ const attributesDiffer = (current: ElementNode, previous: ElementNode): boolean 
 
   for (const attr of currentAttrs) {
     if (previousMap.get(attr.name) !== attr.value) {
-      return true;
-    }
-  }
-
-  return false;
-};
-
-const getDirectTextValues = (element: ElementNode): string[] => {
-  if (!element.childNodes || element.childNodes.length === 0) {
-    return [];
-  }
-
-  const values: string[] = [];
-
-  for (const child of element.childNodes) {
-    if (child.nodeName === '#text') {
-      const value = (child as parse5TreeAdapter.TextNode).value.trim();
-      if (value.length > 0) {
-        values.push(value);
-      }
-    }
-  }
-
-  return values;
-};
-
-const directTextDiffer = (current: ElementNode, previous: ElementNode): boolean => {
-  const currentText = getDirectTextValues(current);
-  const previousText = getDirectTextValues(previous);
-
-  if (currentText.length !== previousText.length) {
-    return true;
-  }
-
-  for (let i = 0; i < currentText.length; i++) {
-    if (currentText[i] !== previousText[i]) {
       return true;
     }
   }
@@ -785,21 +748,6 @@ function findHtmlElement(document: DocumentNode): ElementNode | null {
 
   for (const node of document.childNodes) {
     if ('tagName' in node && node.tagName && node.tagName.toLowerCase() === 'html') {
-      return node as ElementNode;
-    }
-  }
-
-  return null;
-}
-
-function findHeadElement(document: DocumentNode): ElementNode | null {
-  const html = findHtmlElement(document);
-  if (!html || !html.childNodes) {
-    return null;
-  }
-
-  for (const node of html.childNodes) {
-    if ('tagName' in node && node.tagName && node.tagName.toLowerCase() === 'head') {
       return node as ElementNode;
     }
   }

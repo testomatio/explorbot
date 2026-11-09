@@ -9,7 +9,6 @@ export class ContextKnowledgeCommand extends BaseCommand {
   description = 'Print all matching knowledge for current page';
 
   async execute(_args: string): Promise<void> {
-    const explorer = this.explorBot.getExplorer();
     const state = this.explorBot.stateManager().getCurrentState();
 
     if (!state) {

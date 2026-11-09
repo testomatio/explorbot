@@ -244,6 +244,72 @@ describe('Researcher with aimock', () => {
     expect(locatorCalls.filter((selector) => selector !== 'body').length).toBeGreaterThan(0);
   });
 
+  it('runs deep analysis only when the oracle sees hidden content on the page', async () => {
+    const isHiddenContentQuestion = (req: any) => JSON.stringify(req.messages || []).includes('collapsed or hidden content');
+    const deps = createMockDeps();
+    deps.explorer.capture = async () => new ActionResult({ ...fakeState, screenshot: Buffer.from('fake-png') });
+    const researcher = new Researcher({ ...deps, ai: provider } as any);
+    let deepRuns = 0;
+    (researcher as any).performDeepAnalysis = async () => {
+      deepRuns++;
+    };
+
+    for (const holds of [false, true]) {
+      mock.clearFixtures();
+      mock.on({ predicate: isHiddenContentQuestion }, { content: JSON.stringify({ holds }) });
+      mock.on({}, { content: taskBoardResearch });
+      await researcher.research(fakeState, { force: true, fix: false, deep: true });
+    }
+
+    const oracleRequests = mock.getRequests().filter((r: any) => isHiddenContentQuestion(r.body));
+    expect(oracleRequests).toHaveLength(2);
+    expect(JSON.stringify(oracleRequests[0].body)).toContain(Buffer.from('fake-png').toString('base64'));
+    expect(deepRuns).toBe(1);
+  });
+
+  it('runs deep analysis when the oracle could not answer', async () => {
+    const researcher = new Researcher({ ...createMockDeps(), ai: provider } as any);
+    let deepRuns = 0;
+    (researcher as any).performDeepAnalysis = async () => {
+      deepRuns++;
+    };
+    const oracle = provider.oracle;
+    provider.oracle = async () => null;
+    mock.clearFixtures();
+    mock.on({}, { content: taskBoardResearch });
+
+    await researcher.research(fakeState, { force: true, fix: false, deep: true });
+    provider.oracle = oracle;
+
+    expect(deepRuns).toBe(1);
+  });
+
+  it('closes an overlay only when the oracle says it is a wall', async () => {
+    const wallState = { ...fakeState, ariaSnapshot: `${fakeState.ariaSnapshot}\n- dialog "Cookie settings":\n  - button "Accept"` };
+    const isWallQuestion = (req: any) => JSON.stringify(req.messages || []).includes('open overlay is unrelated');
+    const researcher = new Researcher({ ...createMockDeps(wallState), ai: provider } as any);
+    let closed = 0;
+    (researcher as any).cancelInUi = async () => {
+      closed++;
+    };
+
+    for (const holds of [false, true]) {
+      mock.clearFixtures();
+      mock.on({ predicate: isWallQuestion }, { content: JSON.stringify({ holds }) });
+      mock.on({}, { content: taskBoardResearch });
+      await researcher.research(wallState, { force: true, fix: false });
+    }
+
+    expect(mock.getRequests().filter((r: any) => isWallQuestion(r.body))).toHaveLength(2);
+    expect(closed).toBe(1);
+  });
+
+  it('does not ask the oracle about a wall when no overlay is detected', async () => {
+    await researcher.research(fakeState, { force: true, fix: false });
+
+    expect(JSON.stringify(mock.getRequests().map((r: any) => r.body))).not.toContain('open overlay is unrelated');
+  });
+
   it('light research accepts a page without locators instead of retrying', async () => {
     mock.clearFixtures();
     mock.on({}, { content: '# Informational page\n\nStatic text without interactive elements.' });

@@ -3,6 +3,7 @@ import { type Note, Plan, Test } from '../test-plan.ts';
 import { mdq } from './markdown-query.ts';
 
 const NOISE_PREFIXES = ['Test started', 'Finish requested:', 'Session name:'];
+const CURRENT_PAGE = 'Current page';
 
 function isNoiseNote(message: string): boolean {
   return NOISE_PREFIXES.some((prefix) => message.startsWith(prefix));
@@ -118,7 +119,10 @@ export function parsePlanFromMarkdown(filePath: string): Plan {
 }
 
 export function parsePlansFromMarkdown(filePath: string): Plan[] {
-  const content = readFileSync(filePath, 'utf-8');
+  return parsePlansFromMarkdownText(readFileSync(filePath, 'utf-8'));
+}
+
+export function parsePlansFromMarkdownText(content: string): Plan[] {
   const lines = content.split('\n');
 
   const plans: Plan[] = [];
@@ -193,7 +197,7 @@ export function parsePlansFromMarkdown(filePath: string): Plan[] {
     }
 
     if (currentTest && inRequirements && line && !line.startsWith('##')) {
-      currentTest.startUrl = line;
+      if (line !== CURRENT_PAGE) currentTest.startUrl = line;
       continue;
     }
 
@@ -217,7 +221,7 @@ export function parsePlansFromMarkdown(filePath: string): Plan[] {
     if (suiteStart === -1) continue;
     const nextSuite = content.indexOf('<!-- suite -->', suiteStart + 1);
     const suiteContent = nextSuite === -1 ? content.slice(suiteStart) : content.slice(suiteStart, nextSuite);
-    const firstItem = mdq(suiteContent).query('section[0] item[0]').text().trim();
+    const firstItem = mdq(suiteContent).query('section[0] item[0]').nodes()[0]?.text.trim() || '';
     const urlMatch = firstItem.match(/^URL:\s*(.+)/);
     if (urlMatch) {
       plan.url = urlMatch[1].replace(/\*\*|`|\*|_|~~?/g, '').trim();
@@ -228,6 +232,34 @@ export function parsePlansFromMarkdown(filePath: string): Plan[] {
   }
 
   return plans;
+}
+
+export function findPlanMarkdownProblems(markdown: string): string[] {
+  const doc = mdq(markdown);
+  const problems: string[] = [];
+  const headings = doc.query('h1').nodes();
+  if (!doc.query('comment(/^suite/)').exists() || headings.length === 0) {
+    problems.push('Missing <!-- suite --> comment followed by the plan name heading');
+  }
+
+  const scenarioCount = Math.max(headings.length - 1, 0);
+  const testComments = doc.query('comment(/^test/)').count();
+  if (testComments !== scenarioCount) {
+    problems.push(`Found ${scenarioCount} scenario headings but ${testComments} <!-- test --> comments`);
+  }
+
+  for (const section of doc.query('section1').each().slice(1)) {
+    const title = section.query('heading').nodes()[0]?.text;
+    if (!section.query('section2("Steps") item').exists()) problems.push(`Scenario "${title}" has no ## Steps items`);
+    if (!section.query('section2("Expected") item').exists()) problems.push(`Scenario "${title}" has no ## Expected items`);
+  }
+  return problems;
+}
+
+export function readPlanMarkdownComment(markdown: string, key: string): string | null {
+  const body = mdq(markdown).query(`comment(/^${key}:/)`).nodes()[0]?.text;
+  if (!body) return null;
+  return body.slice(key.length + 1).trim() || null;
 }
 
 function formatPlanSuite(plan: Plan): string {
@@ -245,7 +277,7 @@ function formatPlanSuite(plan: Plan): string {
     content += `<!-- test\npriority: ${test.priority}\n-->\n`;
     content += `# ${test.scenario}\n\n`;
     content += '## Requirements\n';
-    content += `${test.startUrl || 'Current page'}\n\n`;
+    content += `${test.startUrl || CURRENT_PAGE}\n\n`;
 
     if (test.plannedSteps.length > 0) {
       content += '## Steps\n';

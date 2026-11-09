@@ -13,7 +13,6 @@ export class LearnCommand extends BaseCommand {
 
     if (!note) {
       const AddKnowledge = (await import('../components/AddKnowledge.js')).default;
-      const explorer = this.explorBot.getExplorer();
       const state = this.explorBot.stateManager().getCurrentState();
       const initialUrl = state?.url || '';
 
@@ -32,7 +31,6 @@ export class LearnCommand extends BaseCommand {
       return;
     }
 
-    const explorer = this.explorBot.getExplorer();
     const state = this.explorBot.stateManager().getCurrentState();
 
     if (!state) {

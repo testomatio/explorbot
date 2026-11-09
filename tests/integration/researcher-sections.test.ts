@@ -4,8 +4,9 @@ import { LLMock } from '@copilotkit/aimock';
 import { ActionResult } from '../../src/action-result.ts';
 import { Provider } from '../../src/ai/provider.ts';
 import { Researcher } from '../../src/ai/researcher.ts';
-import { clearResearchCache } from '../../src/ai/researcher/cache.ts';
+import { clearResearchCache, saveResearch } from '../../src/ai/researcher/cache.ts';
 import { ConfigParser } from '../../src/config.ts';
+import { Region } from '../../src/utils/region.ts';
 
 const fakeState = {
   url: '/test/page',
@@ -184,5 +185,19 @@ describe('Researcher researchBySections', () => {
     expect(mock.getRequests().length).toBe(2);
     expect(result).toContain('## Navigation');
     expect(result).not.toContain('> **Focused**');
+  });
+
+  it('researches an open overlay once per page state, even when it reveals nothing new', async () => {
+    const researcher = makeResearcher();
+    saveResearch({ hash: 'overlay-page-hash' }, "## Content\n\n| Element | ARIA | CSS |\n| 'Click me' | - | 'button' |");
+    mock.on({}, { content: 'No meaningful expansion.' });
+    const page = ActionResult.fromState(fakeState);
+    const withDrawer = ActionResult.fromState({ ...fakeState, html: fakeState.html.replace('</main>', '</main><aside id="drawer"><input name="title"><button>Save</button></aside>'), ariaSnapshot: `${fakeState.ariaSnapshot}\n- complementary:\n  - textbox "Title"\n  - button "Save"` });
+    withDrawer.overlay = new Region({ type: 'overlay', name: 'New Item', root: '#drawer' });
+
+    await researcher.researchOverlay(withDrawer, page, 'overlay-page-hash');
+    await researcher.researchOverlay(withDrawer, page, 'overlay-page-hash');
+
+    expect(mock.getRequests().length).toBe(1);
   });
 });

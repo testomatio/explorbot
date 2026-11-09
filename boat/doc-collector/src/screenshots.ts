@@ -3,14 +3,14 @@ import path from 'node:path';
 import { PNG } from 'pngjs';
 import { removeVisualAnnotations } from '../../../src/ai/researcher/coordinates.ts';
 import { parseResearchSections } from '../../../src/ai/researcher/parser.ts';
-import { parseAriaLocator } from '../../../src/utils/aria.ts';
 import type Explorer from '../../../src/explorer.ts';
 import { type WebPageState, normalizeUrl } from '../../../src/state-manager.ts';
+import { parseAriaLocator } from '../../../src/utils/aria.ts';
 import { safeFilename, sanitizeFilename } from '../../../src/utils/strings.ts';
 import type { PageDocumentation } from './ai/documentarian.ts';
 import type { DocStateTransition } from './ai/tools.ts';
 import type { DocbotConfig } from './config.ts';
-import { addPadding, captureInteractionAfter, captureInteractionBefore, regionAround, saveRegion } from './interaction-screenshots.ts';
+import { captureInteractionAfter, captureInteractionBefore, regionAround, saveRegion } from './interaction-screenshots.ts';
 
 const DEFAULT_MAX_SECTION_SCREENSHOTS = 8;
 const EVIDENCE_PADDING = 250;

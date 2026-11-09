@@ -6,7 +6,7 @@ import { Stats } from '../stats.js';
 import { type Plan, type Test, TestResult } from '../test-plan.js';
 import { browserErrorMessage } from '../utils/browser-errors.ts';
 import { getCliName } from '../utils/cli-name.ts';
-import { ErrorPageError, getStateErrorPageError } from '../utils/error-page.ts';
+import { BlockedError, ErrorPageError, getStateErrorPageError } from '../utils/error-page.ts';
 import { tag } from '../utils/logger.js';
 import { type NextStepSection, printNextSteps, relativeToCwd } from '../utils/next-steps.ts';
 import { keepSiteUrls, readSitemap } from '../utils/sitemap.ts';
@@ -14,8 +14,10 @@ import { parseSpecPairs } from '../utils/spec.ts';
 import { safeFilename } from '../utils/strings.ts';
 import { UrlFilter } from '../utils/url-filter.ts';
 import { type ArgumentCompletion, BaseCommand, type Suggestion } from './base-command.js';
+import { PlanCommand } from './plan-command.js';
 
 const MAX_SUB_PAGE_ATTEMPTS = 30;
+const MAX_BLOCKED_PAGES = 3;
 const PRIORITY_ORDER: Record<string, number> = { critical: 0, important: 1, high: 2, normal: 3, low: 4 };
 export const DEADLINE_RESERVE_MS = 3 * 60_000;
 export const DEADLINE_TEST_ALLOWANCE_MS = 5 * 60_000;
@@ -84,6 +86,7 @@ export class ExploreCommand extends BaseCommand {
     Stats.mode ??= 'explore';
     Stats.focus ??= feature;
     const mainUrl = this.getCurrentPageUrl();
+    const startState = this.explorBot.stateManager().getCurrentState();
     const error = getStateErrorPageError(this.explorBot.stateManager().getCurrentState());
     if (error && !this.sitemapUrls) {
       tag('warning').log(error.message);
@@ -97,6 +100,12 @@ export class ExploreCommand extends BaseCommand {
         await this.runReuseMode(mainUrl, feature, cfg);
       } else {
         await this.runFreshMode(mainUrl, feature, cfg.styles);
+      }
+
+      if (this.explorBot.stateManager().isPageBlocked(startState)) {
+        tag('error').log(`Start page ${startState?.url} is blocked, nothing to explore`, { emphasize: true });
+        this.printNextSteps();
+        return;
       }
 
       const mainPlan = this.completedPlans[0];
@@ -136,7 +145,7 @@ export class ExploreCommand extends BaseCommand {
   }
 
   private async runFreshMode(mainUrl: string | undefined, feature: string | undefined, styles?: string[]): Promise<void> {
-    await this.runAllStyles(mainUrl, feature, undefined, undefined, styles);
+    await this.runAllStyles(mainUrl, feature, undefined, styles);
     this.rememberCurrentPlan();
     const mainPlan = this.explorBot.getCurrentPlan();
     if (!mainPlan) return;
@@ -320,7 +329,8 @@ export class ExploreCommand extends BaseCommand {
       tag('warning').log(`Skipping page: ${errorPage.message}`);
       return false;
     }
-    await this.runAllStyles(url, feature, parentPlan, this.completedPlans, styles);
+    if (this.skipBlockedPage()) return false;
+    await this.runAllStyles(url, feature, parentPlan, styles);
     const plan = this.explorBot.getCurrentPlan();
     if (plan?.tests.length && !this.completedPlans.includes(plan)) {
       this.completedPlans.push(plan);
@@ -333,14 +343,15 @@ export class ExploreCommand extends BaseCommand {
     for (const style of styleList) {
       if (this.isLimitReached()) break;
       this.explorBot.setCurrentPlan(existingPlan);
-      const opts: { fresh: boolean; style: string; completedPlans?: Plan[]; noSave?: boolean } = { fresh: false, style, completedPlans: this.completedPlans };
+      const opts: { fresh: boolean; style: string; noSave?: boolean } = { fresh: false, style };
       if (this.dryRun) opts.noSave = true;
       await this.planWithRetry(feature, opts, pageUrl);
+      if (this.skipBlockedPage()) return;
       await this.runPendingTests();
     }
   }
 
-  private async runAllStyles(pageUrl?: string, feature?: string, parentPlan?: Plan, completedPlans?: Plan[], styles?: string[]): Promise<void> {
+  private async runAllStyles(pageUrl?: string, feature?: string, parentPlan?: Plan, styles?: string[]): Promise<void> {
     const styleList = styles ?? Object.keys(getStyles());
     let fresh = true;
     for (const style of styleList) {
@@ -348,10 +359,11 @@ export class ExploreCommand extends BaseCommand {
       if (!fresh && pageUrl && !this.dryRun) {
         await this.explorBot.visit(pageUrl);
       }
-      const opts: { fresh: boolean; style: string; extend?: Plan; completedPlans?: Plan[]; noSave?: boolean } = { fresh, style, completedPlans };
+      const opts: { fresh: boolean; style: string; extend?: Plan; noSave?: boolean } = { fresh, style };
       if (fresh && parentPlan) opts.extend = parentPlan;
       if (this.dryRun) opts.noSave = true;
       await this.planWithRetry(feature, opts, pageUrl);
+      if (this.skipBlockedPage()) return;
       const plan = this.explorBot.getCurrentPlan();
       if (plan && plan.tests.length === 0) {
         tag('warning').log('Nothing to test on this page, moving on');
@@ -371,10 +383,11 @@ export class ExploreCommand extends BaseCommand {
     this.completedPlans.push(plan);
   }
 
-  private async planWithRetry(feature: string | undefined, opts: { fresh: boolean; style: string; extend?: Plan; completedPlans?: Plan[]; noSave?: boolean }, pageUrl?: string): Promise<void> {
+  private async planWithRetry(feature: string | undefined, opts: { fresh: boolean; style: string; extend?: Plan; noSave?: boolean }, pageUrl?: string): Promise<void> {
     const before = new Set(this.explorBot.getCurrentPlan()?.tests ?? []);
 
     await this.explorBot.plan(feature, opts);
+    if (this.explorBot.lastPlanError instanceof BlockedError) return;
     if (this.explorBot.lastPlanError) {
       if (this.explorBot.lastPlanError instanceof ErrorPageError) {
         throw this.explorBot.lastPlanError;
@@ -388,12 +401,15 @@ export class ExploreCommand extends BaseCommand {
       }
     }
 
-    const planAfter = this.explorBot.getCurrentPlan();
-    if (!planAfter) return;
-    const added = planAfter.tests.filter((t) => !before.has(t));
-    if (added.length === 0) return;
+    this.printAddedTests(before, opts.style, pageUrl);
+  }
+
+  private printAddedTests(before: Set<Test>, style: string, pageUrl?: string): number {
+    const added = this.explorBot.getCurrentPlan()?.tests.filter((t) => !before.has(t)) ?? [];
+    if (added.length === 0) return 0;
     const urlNote = pageUrl ? ` for ${pageUrl}` : '';
-    this.printPreview(`Planner added ${added.length} new test(s) [style=${opts.style}]${urlNote}:`, added);
+    this.printPreview(`Planner added ${added.length} new test(s) [style=${style}]${urlNote}:`, added);
+    return added.length;
   }
 
   private parseConfigure(raw: string | undefined): ConfigureSpec {
@@ -545,16 +561,7 @@ export class ExploreCommand extends BaseCommand {
     const sections: NextStepSection[] = [];
 
     if (savedPlanPath) {
-      const relPlan = relativeToCwd(savedPlanPath);
-      sections.push({
-        label: 'Plan',
-        path: savedPlanPath,
-        commands: [
-          { label: 'Re-run', command: `${cli} test ${relPlan} 1` },
-          { label: 'Run all', command: `${cli} test ${relPlan} *` },
-          { label: 'Run range', command: `${cli} test ${relPlan} 1-3` },
-        ],
-      });
+      sections.push(PlanCommand.planSection(savedPlanPath));
     }
 
     const savedFiles = this.explorBot.agentHistorian().getSavedFiles();
@@ -583,6 +590,22 @@ export class ExploreCommand extends BaseCommand {
       });
     }
 
+    for (const page of this.explorBot.stateManager().getBlockedPages()) {
+      let commands = [{ label: 'Knowledge for this page did not unblock it, update it', command: `${cli} learn ${page.url} "<facts>"` }];
+      if (!this.explorBot.knowledgeTracker().getMatchingKnowledge(page.url).length) {
+        commands = [
+          { label: 'Pass credentials for this run', command: `${cli} explore ${page.url} --auth '<credentials>'` },
+          { label: 'Or save them as knowledge', command: `${cli} learn ${page.url} "<credentials>"` },
+        ];
+      }
+      sections.push({ label: `Blocked ${page.url}: ${page.reason}`, commands });
+    }
+
+    if (!this.completedPlans.length) {
+      printNextSteps(sections);
+      return;
+    }
+
     sections.push({
       label: 'Explore more',
       commands: [
@@ -594,8 +617,28 @@ export class ExploreCommand extends BaseCommand {
     printNextSteps(sections);
   }
 
+  private skipBlockedTest(test: Test, error: unknown): void {
+    if (!(error instanceof BlockedError)) throw error;
+    tag('warning').log(`Skipping test: ${error.message}`);
+    test.start();
+    test.addNote(error.message, TestResult.SKIPPED);
+    test.finish(TestResult.SKIPPED);
+  }
+
+  private skipBlockedPage(): boolean {
+    const stateManager = this.explorBot.stateManager();
+    const state = stateManager.getCurrentState();
+    if (!state || !stateManager.isPageBlocked(state)) return false;
+    const reason = 'matches a blocked page';
+    stateManager.markBlocked(state, reason);
+    tag('warning').log(`Skipping page ${state.url}: ${reason}`, { emphasize: true });
+    if (stateManager.getBlockedPages().length >= MAX_BLOCKED_PAGES) tag('warning').log(`${MAX_BLOCKED_PAGES} blocked pages met, stopping exploration`);
+    return true;
+  }
+
   private isLimitReached(): boolean {
     if (this.maxTests != null && this.testsRun >= this.maxTests) return true;
+    if (this.explorBot.stateManager().getBlockedPages().length >= MAX_BLOCKED_PAGES) return true;
     return this.isDeadlineReached();
   }
 
@@ -628,7 +671,13 @@ export class ExploreCommand extends BaseCommand {
       test.start();
       test.finish(TestResult.SKIPPED);
     } else {
-      await this.explorBot.agentTester().test(test, { deadline: this.hardDeadlineAt });
+      const run = () => this.explorBot.agentTester().test(test, { deadline: this.hardDeadlineAt });
+      await run()
+        .catch(async (err) => {
+          if (!(await this.explorBot.agentCaptain().resolveBlocker(err, () => this.explorBot.agentNavigator().isOn(test.startUrl)))) throw err;
+          return run();
+        })
+        .catch((err) => this.skipBlockedTest(test, err));
     }
     this.testsRun++;
   }

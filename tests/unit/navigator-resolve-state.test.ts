@@ -223,6 +223,25 @@ describe('Navigator resolveState', () => {
     expect(retry).toContain('Choose exactly ONE path');
   });
 
+  it('drops the rest of the batch once a step moves the page, and asks about the new page', async () => {
+    const stages = ['/signin/password', '/signin/otp', '/account'];
+    const harness = createHarness({
+      responses: ["```js\nI.fillField('Email', 'a')\n```\n```js\nI.fillField('#email', 'a')\n```", "```js\nI.fillField('Password', 'b')\n```\n```js\nI.fillField('#password', 'b')\n```", "```js\nI.fillField('Code', 'c')\n```\n```js\nI.fillField('#code', 'c')\n```"],
+      ariaChanged: 'the next stage',
+      attempt: (_code, page) => {
+        page.url = stages.shift() as string;
+        page.hash = page.url;
+        return true;
+      },
+    });
+
+    const resolved = await harness.navigator.resolveState('reach /account', fakeActionResult('/signin'), { expectedUrl: '/account' });
+
+    expect(resolved).toBe(true);
+    expect(harness.attempts).toEqual(["I.fillField('Email', 'a')", "I.fillField('Password', 'b')", "I.fillField('Code', 'c')"]);
+    expect(harness.sent.filter((text) => text.includes('the next stage'))).toHaveLength(2);
+  });
+
   it('asks for different strategies when nothing on the page reacted', async () => {
     const harness = createHarness({
       responses: ["```js\nI.click('Sign in')\n```"],
@@ -245,8 +264,8 @@ describe('Navigator resolveState', () => {
 
     await harness.navigator.resolveState('reach /defects', fakeActionResult(), { expectedUrl: '/defects' });
 
-    expect(harness.sent[0]).not.toContain('<page_html>');
-    expect(harness.sent[1]).toContain('<page_html>');
+    expect(harness.sent[0]).not.toContain('Full HTML context:');
+    expect(harness.sent[1]).toContain('Full HTML context:');
   });
 
   it('gives the retry the HTML of the page as it is now, not as it was at the start', async () => {
@@ -259,6 +278,39 @@ describe('Navigator resolveState', () => {
     await harness.navigator.resolveState('reach /defects', fakeActionResult(), { expectedUrl: '/defects' });
 
     expect(harness.sent[1]).toContain('menu opened');
+  });
+
+  it('drops the rest of the batch when a step moves the page and a later line of it fails', async () => {
+    const harness = createHarness({
+      responses: ["```js\nI.click('next')\nI.fillField('later', 'x')\n```\n```js\nI.click('stale')\n```", ''],
+      attempt: (_code, page) => {
+        page.url = '/next';
+        page.hash = 'next';
+        return false;
+      },
+    });
+
+    await harness.navigator.resolveState('reach /defects', fakeActionResult(), { expectedUrl: '/defects' });
+
+    expect(harness.attempts).toHaveLength(1);
+    expect(harness.sent[1]).toContain('element not visible');
+  });
+
+  it('shows every retry the page as it is now', async () => {
+    const pages = ['password page', 'code page'];
+    const harness = createHarness({
+      responses: ["```js\nI.click('a')\n```", "```js\nI.click('b')\n```"],
+      attempt: (_code, page) => {
+        page.hash = pages[0];
+        harness.action.actionResult = { ...fakeActionResult(), toAiContext: () => pages.shift() };
+        return true;
+      },
+    });
+
+    await harness.navigator.resolveState('reach /defects', fakeActionResult(), { expectedUrl: '/defects' });
+
+    expect(harness.sent[1]).toContain('<page>\npassword page\n</page>');
+    expect(harness.sent[2]).toContain('<page>\ncode page\n</page>');
   });
 
   it('adds the full HTML context to the retry prompt only once', async () => {

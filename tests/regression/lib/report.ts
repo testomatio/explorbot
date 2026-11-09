@@ -1,70 +1,76 @@
 export const REPORT_MARKER = '<!-- explorbot-regression-report -->';
+const NOTABLE_CHANGE_PCT = 20;
 
-export function buildReport(records: AttemptRecord[]): string {
-  const groups = groupByLabel(records);
+export function buildReport(records: RunRecord[], history: RunRecord[][] = []): string {
   const rows: string[] = [];
   const detailLines: string[] = [];
 
-  for (const group of groups) {
-    rows.push(`| ${group.label} | ${resultCell(group)} | ${group.attemptsUsed}/${group.maxAttempts} | ${fmtDuration(group.durationSec)} |`);
-    for (const rec of group.records) {
-      detailLines.push(`- ${group.label} attempt ${rec.attempt} — ${passLabel(rec)}: ${rec.details.join('; ')}`);
-    }
+  for (const rec of records) {
+    const baseline = medianTime(rec.label, history);
+    rows.push(`| ${rec.label} | ${resultCell(rec)} | ${fmtDuration(rec.durationSec)} | ${baselineCell(baseline)} | ${changeCell(rec.durationSec, baseline)} |`);
+    detailLines.push(`- ${rec.label} — ${passLabel(rec)} (${fmtDuration(rec.durationSec)}): ${rec.details.join('; ')}`);
   }
 
-  const table = ['| Scenario | Result | Attempts | Duration |', '|---|---|---|---|', ...rows].join('\n');
-  const parts = [REPORT_MARKER, '# Explorbot Self-Regression', '', commitLine(), '', table, '', '## Attempt details', ...detailLines, ''];
+  const table = ['| Scenario | Result | Time | Previous median | Change |', '|---|---|---|---|---|', ...rows].join('\n');
+  const parts = [REPORT_MARKER, '# Explorbot Self-Regression', '', commitLine(), '', table, '', speedNote(history), '', '## Run details', ...detailLines, ''];
 
-  for (const group of groups) {
-    const analysis = analysisFor(group);
-    if (!analysis) continue;
-    parts.push('---', '', `_Session analysis — ${group.label}:_`, '', analysis, '');
+  for (const rec of records) {
+    if (!rec.analysis) continue;
+    parts.push('---', '', `_Session analysis — ${rec.label}:_`, '', rec.analysis, '');
   }
 
   return parts.join('\n');
 }
 
-function analysisFor(group: Group): string | null {
-  const passing = group.records.find((r) => r.passed && r.analysis);
-  if (passing?.analysis) return passing.analysis;
-  const latest = [...group.records].reverse().find((r) => r.analysis);
-  if (latest?.analysis) return latest.analysis;
-  return null;
+export function fmtDuration(sec: number): string {
+  if (sec < 60) return `${sec}s`;
+  return `${Math.floor(sec / 60)}m ${sec % 60}s`;
 }
 
-function groupByLabel(records: AttemptRecord[]): Group[] {
-  const order: string[] = [];
-  const byLabel = new Map<string, AttemptRecord[]>();
-  for (const rec of records) {
-    if (!byLabel.has(rec.label)) {
-      byLabel.set(rec.label, []);
-      order.push(rec.label);
-    }
-    byLabel.get(rec.label)!.push(rec);
-  }
-
-  return order.map((label) => {
-    const recs = byLabel.get(label)!;
-    const passed = recs.some((r) => r.passed);
-    const durationSec = recs.reduce((sum, r) => sum + r.durationSec, 0);
-    return { label, records: recs, passed, kind: recs[0].kind, attemptsUsed: recs.length, maxAttempts: recs[0].maxAttempts, durationSec };
-  });
+function medianTime(label: string, history: RunRecord[][]): number | null {
+  const times = history
+    .map((run) => run.find((r) => r.label === label && r.passed)?.durationSec)
+    .filter((sec): sec is number => typeof sec === 'number')
+    .sort((a, b) => a - b);
+  if (times.length === 0) return null;
+  const mid = Math.floor(times.length / 2);
+  if (times.length % 2) return times[mid];
+  return Math.round((times[mid - 1] + times[mid]) / 2);
 }
 
-function resultCell(group: Group): string {
-  if (group.kind === 'control') {
-    if (group.passed) return 'OK — failed as expected';
+function baselineCell(baseline: number | null): string {
+  if (!baseline) return '—';
+  return fmtDuration(baseline);
+}
+
+function changeCell(sec: number, baseline: number | null): string {
+  if (!baseline) return '—';
+  const pct = Math.round(((sec - baseline) / baseline) * 100);
+  if (pct >= NOTABLE_CHANGE_PCT) return `+${pct}% slower`;
+  if (pct <= -NOTABLE_CHANGE_PCT) return `${pct}% faster`;
+  if (pct > 0) return `+${pct}%`;
+  return `${pct}%`;
+}
+
+function speedNote(history: RunRecord[][]): string {
+  if (history.length === 0) return '_No previous runs with timings yet; this run becomes the baseline._';
+  return `_Change compares it with the median passing time of the last ${history.length} runs; ±${NOTABLE_CHANGE_PCT}% or more is flagged._`;
+}
+
+function resultCell(rec: RunRecord): string {
+  if (rec.kind === 'control') {
+    if (rec.passed) return 'OK — failed as expected';
     return 'FAIL — passed without seeds';
   }
-  if (group.kind === 'info') {
-    if (group.passed) return 'ran';
+  if (rec.kind === 'info') {
+    if (rec.passed) return 'ran';
     return 'crashed';
   }
-  if (group.passed) return 'PASS';
+  if (rec.passed) return 'PASS';
   return 'FAIL';
 }
 
-function passLabel(rec: AttemptRecord): string {
+function passLabel(rec: RunRecord): string {
   if (rec.passed) return 'PASS';
   return 'FAIL';
 }
@@ -79,28 +85,12 @@ function commitLine(): string {
   return `Commit \`${sha7}\` · [run](${server}/${repo}/actions/runs/${runId})`;
 }
 
-function fmtDuration(sec: number): string {
-  if (sec < 60) return `${sec}s`;
-  return `${Math.round(sec / 60)}m`;
-}
-
-export interface AttemptRecord {
+export interface RunRecord {
+  scenario: string;
   label: string;
   kind: 'gate' | 'control' | 'info';
-  attempt: number;
-  maxAttempts: number;
   passed: boolean;
   durationSec: number;
   details: string[];
   analysis?: string | null;
-}
-
-interface Group {
-  label: string;
-  records: AttemptRecord[];
-  passed: boolean;
-  kind: 'gate' | 'control' | 'info';
-  attemptsUsed: number;
-  maxAttempts: number;
-  durationSec: number;
 }

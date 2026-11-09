@@ -1,7 +1,8 @@
+import type { ActionResult } from '../action-result.ts';
 import { clearActivity, setActivity } from '../activity.ts';
 import type { AIConfig } from '../config.ts';
 import { Observability } from '../observability.ts';
-import { createDebug } from '../utils/logger.ts';
+import { createDebug, tag } from '../utils/logger.ts';
 import { JudgeProvider } from './judge-provider.ts';
 
 const debugLog = createDebug('explorbot:judge');
@@ -29,6 +30,8 @@ export class Decision {
 }
 
 export class Judge {
+  private failureReported = false;
+
   constructor(
     private provider: JudgeProvider,
     private enabled: { tool: boolean; direct: boolean },
@@ -93,10 +96,16 @@ export class Judge {
 
   private recordFailure(error: unknown): null {
     debugLog('judge declined: %s', error);
+    if (!this.failureReported) tag('warning').log(`Decision model ${this.provider.model} failed (${error}); continuing without it`);
+    this.failureReported = true;
     const span = Observability.getSpan();
     span?.setAttribute('ai.telemetry.metadata.judgeError', String(error));
     span?.setAttribute('langfuse.observation.level', 'ERROR');
     span?.setAttribute('langfuse.observation.status_message', String(error));
     return null;
   }
+}
+
+export function pageEvidence(actionResult: ActionResult) {
+  return { url: actionResult.url, title: actionResult.title, page: actionResult.getCompactARIA().slice(0, JUDGE_PAGE_CAP) };
 }

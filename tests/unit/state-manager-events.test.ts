@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { existsSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
 import { ActionResult } from '../../src/action-result.js';
 import { ConfigParser } from '../../src/config.js';
 import { ExperienceTracker } from '../../src/experience-tracker.js';
@@ -132,7 +131,7 @@ describe('StateManager Events', () => {
   it('should handle listener errors gracefully', () => {
     const events: any[] = [];
 
-    const unsubscribe1 = stateManager.onStateChange((event) => {
+    const unsubscribe1 = stateManager.onStateChange(() => {
       throw new Error('Listener error');
     });
 

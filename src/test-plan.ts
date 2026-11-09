@@ -1,7 +1,6 @@
 import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
-import figures from 'figures';
 import type { ActionResult } from './action-result.ts';
 import { listSitePlanDirs } from './global-config.ts';
 import { WebPageState } from './state-manager.ts';
@@ -545,7 +544,7 @@ export class Plan {
     if (!plansDir) dirs.push(...listSitePlanDirs());
 
     for (const dir of dirs) {
-      const filePath = names.map((name) => path.resolve(dir, name)).find(existsSync);
+      const filePath = names.map((name) => path.resolve(dir, name)).find((candidate) => existsSync(candidate) && statSync(candidate).isFile());
       if (filePath) return filePath;
     }
     return null;

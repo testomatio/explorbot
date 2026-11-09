@@ -26,6 +26,10 @@ Prefer ARIA locators for reliable element detection.
   I.seeElement('.success-message');
 </example>
 
+To assert text inside element via `has-text` CSS, prefer using I.see() instead:
+
+Prefer `I.see('Collection', '.users')` over `I.seeElement(".users div:has-text("Collection")")` 
+
 ### I.seeInField
 
 I.seeInField(<locator>, <value>, <context>)
@@ -141,7 +145,7 @@ NEVER use `:has-text(...)` inside a seeElement/dontSeeElement locator. Checking 
 NEVER emit two assertions that check the same fact with different shapes. `I.see(text, locator)` and `I.seeElement("<locator>:has-text('text')")` verify the same thing — pick one (prefer I.see). One claim, one assertion.
 </verification_rules>
 
-[DO NEVER USE OTHER CODECEPTJS COMMANDS THAN PROPOSED HERE]
+[Prefer the commands listed here; use other CodeceptJS I.* commands when none of these fits]
 [INTERACT ONLY WITH ELEMENTS THAT ARE ON THE PAGE HTML OR ARIA SNAPSHOT]
 [DO NOT USE WAIT FUNCTIONS]
 

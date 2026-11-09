@@ -17,7 +17,7 @@ import type { KnowledgeTracker } from './knowledge-tracker.js';
 import type { PlaywrightRecorder } from './playwright-recorder.ts';
 import type { Reporter } from './reporter.ts';
 import type { StateManager } from './state-manager.js';
-import { Test, TestResult } from './test-plan.ts';
+import { Test } from './test-plan.ts';
 import { BrowserRecoveryError, browserErrorMessage, isFatalBrowserError, isNavigationTransitionError } from './utils/browser-errors.ts';
 import { createDebug, log, tag } from './utils/logger.js';
 import { sleep, waitForPageReadiness } from './utils/page-readiness.ts';
@@ -190,7 +190,6 @@ class Explorer {
     if (!(await this.recoverOrRestart())) {
       return { ok: false, action: 'stop', message: 'Browser page could not be recovered' };
     }
-    this.watchActiveTestPage();
     return { ok: true, action: 'continue', recovered: true, message: 'Browser page was recovered' };
   }
 
@@ -201,7 +200,7 @@ class Explorer {
 
     this._activeTest = test;
     test.start();
-    await this.reporter.reportTestStart(test);
+    await this.reporter.reportTestStart();
     await this.closeOtherTabs();
     this.stateManager.otherTabs = [];
 
@@ -414,7 +413,7 @@ class Explorer {
 
   private async runWithRecovery<T>(label: string, operation: () => Promise<T>): Promise<T> {
     if (!this.page && !(await this.recoverOrRestart())) {
-      throw new Error(`Browser page is unavailable before ${label}`);
+      throw new BrowserRecoveryError(label, new Error('Browser page is unavailable'), false);
     }
 
     try {
@@ -516,7 +515,6 @@ class Explorer {
       return { ok: false, action: 'stop', recovered: false, message: `Browser could not be recovered after fatal error: ${message}` };
     }
 
-    this.watchActiveTestPage();
     return {
       ok: true,
       action: 'continue',
@@ -531,8 +529,9 @@ class Explorer {
   }
 
   private async recoverOrRestart(): Promise<boolean> {
-    if (await this.recoverPage()) return true;
-    return this.restartBrowser();
+    if (!(await this.recoverPage()) && !(await this.restartBrowser())) return false;
+    this.watchActiveTestPage();
+    return true;
   }
 
   private async recoverPage(): Promise<boolean> {

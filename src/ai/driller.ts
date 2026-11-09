@@ -15,7 +15,6 @@ import { eidxInContainer } from '../utils/web-eidx.ts';
 import { WebElement } from '../utils/web-element.ts';
 import type { Agent, AgentDeps } from './agent.ts';
 import type { Navigator } from './navigator.ts';
-import type { Provider } from './provider.ts';
 import type { Researcher } from './researcher.ts';
 import { drillLocatorRule } from './rules.ts';
 import { TaskAgent, isInteractive } from './task-agent.ts';
@@ -182,7 +181,7 @@ export class Driller extends TaskAgent implements Agent {
     setActivity(`${this.emoji} Capturing annotated page state...`, 'action');
     const action = this.explorer.action();
     try {
-      const annotated = await Promise.race([
+      await Promise.race([
         this.explorer.withPage(annotatePageElements),
         new Promise<never>((_, reject) => {
           setTimeout(() => reject(new Error('annotateElements timeout')), 15000);

@@ -13,16 +13,15 @@ import { type StateManager, normalizeUrl } from '../state-manager.js';
 import { isFatalBrowserError } from '../utils/browser-errors.ts';
 import { getCliName } from '../utils/cli-name.ts';
 import { extractCodeBlocks } from '../utils/code-extractor.js';
-import { isLoginPage } from '../utils/error-page.ts';
+import { NavigationBlockedError, isLoginPage } from '../utils/error-page.ts';
 import { HooksRunner } from '../utils/hooks-runner.ts';
 import { createDebug, pluralize, tag } from '../utils/logger.js';
 import { loop, pause } from '../utils/loop.js';
 import { RulesLoader } from '../utils/rules-loader.ts';
 import { normalizeInlineText } from '../utils/strings.ts';
-import { extractStatePath, isSameHostFamily, matchesNavigationUrl } from '../utils/url-matcher.js';
 import type { UrlFilter } from '../utils/url-filter.ts';
+import { extractStatePath, isSameHostFamily, matchesNavigationUrl } from '../utils/url-matcher.js';
 import type { Agent, AgentDeps } from './agent.js';
-import type { Conversation } from './conversation.js';
 import { type Decision, JUDGE_PAGE_CAP, type Judge, UNDECIDED } from './judge.ts';
 import type { Provider } from './provider.js';
 import { Researcher } from './researcher.ts';
@@ -31,6 +30,7 @@ import { isInteractive } from './task-agent.js';
 import { createLearnExperienceTool } from './tools.ts';
 
 const debugLog = createDebug('explorbot:navigator');
+const MAX_TRIED_STEPS = 5;
 
 class Navigator implements Agent {
   emoji = '🧭';
@@ -138,6 +138,10 @@ class Navigator implements Agent {
     return matchesNavigationUrl(expectedUrl, currentUrl);
   }
 
+  isOn(url: string): boolean {
+    return this.isOnExpectedPage(url, this.stateManager);
+  }
+
   async visit(url: string, opts: { recover?: boolean } = {}): Promise<boolean> {
     return this.visitOnce(url, opts.recover !== false);
   }
@@ -195,8 +199,9 @@ class Navigator implements Agent {
   }
 
   private navigationError(url: string, fallback: string): Error {
-    if (this.lastFailureReason) return new Error(`Navigation to ${url} failed: ${this.lastFailureReason}`);
-    return new Error(`Navigation to ${url} failed: ${fallback}`);
+    const currentUrl = this.stateManager.getCurrentState()?.url || '';
+    const tried = this.executedSteps.slice(-MAX_TRIED_STEPS).map((step) => step.command);
+    return new NavigationBlockedError(url, currentUrl, this.lastFailureReason || fallback, tried);
   }
 
   private failureReason(stopReason: string | null, knowledge: string, url: string): string | null {
@@ -333,6 +338,7 @@ class Navigator implements Agent {
           if (freshHash !== prevHash && (attempt.ok || check.urlMatches)) {
             progressBlocks.push(codeBlock);
           }
+          if (freshHash !== prevHash) codeBlockIndex = codeBlocks.length;
         } else {
           resolved = attempt.ok;
           if (attempt.ok) progressBlocks.push(codeBlock);
@@ -402,7 +408,7 @@ class Navigator implements Agent {
         Propose different solutions to achieve the result.
         Solution should be valid CodeceptJS code.
         Use only data from the <page> context to plan the solution.
-        The page is given as an ARIA snapshot only: use ARIA and text locators from it.
+        The page is given as an ARIA snapshot only: use ARIA and text locators from it; propose CSS/XPath only once <page_html> is provided.
         Full HTML is provided if these solutions fail.
         Try various ways to achieve the result
       </task>
@@ -435,6 +441,8 @@ class Navigator implements Agent {
         .join('\n');
       contextMsg += `<previous_failures>\n${lines}\n</previous_failures>\n\n`;
     }
+
+    contextMsg += `<page>\n${actionResult.toAiContext()}\n</page>\n\n`;
 
     if (includeHtml) {
       contextMsg += `Full HTML context:\n\n<page_html>\n${await actionResult.combinedHtml()}\n</page_html>\n\n`;
@@ -772,7 +780,7 @@ class Navigator implements Agent {
         Do not generate assertions that would pass even if the specific claim is false.
       </task>
 
-      ${RulesLoader.loadRules('navigator', ['verification-actions'], actionResult.url || '')}
+      ${RulesLoader.loadRules('navigator', ['verification-actions', 'verification-output'], actionResult.url || '').replace('{{maxAttempts}}', String(this.verifyAttempts))}
 
       ${experience}
 
@@ -858,7 +866,7 @@ class Navigator implements Agent {
 
     const totalAttempted = Math.min(codeBlocks.length, this.verifyAttempts);
     let verified = successfulCodes.length > 0 && !failures;
-    if (successfulCodes.length && failures) verified = await this.provider.oracle(message, { assertions: results.map(({ code, passed, error }) => ({ code, passed, error })) }, { agentName: 'navigator', telemetry: { functionId: 'navigator.verifyState' } });
+    if (successfulCodes.length && failures) verified = (await this.provider.oracle(message, { assertions: results.map(({ code, passed, error }) => ({ code, passed, error })) }, { agentName: 'navigator', telemetry: { functionId: 'navigator.verifyState' } })) === true;
     if (alreadyVerified) verified = true;
 
     const inexpressible = !alreadyVerified && totalAttempted === 0;

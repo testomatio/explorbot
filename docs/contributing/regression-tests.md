@@ -28,9 +28,25 @@ The plan (`tests/regression/seeds/vault-plan.md`) describes *what* to do but nev
 
 > The code is carried in a knowledge file, not only experience, on purpose. Knowledge is Explorbot's prominent, deterministic channel for page-specific data — the same mechanism scenario A uses for login credentials. Empirically, cheap models followed an experience-only code recipe only occasionally, so an experience-only gate was a coin-flip; knowledge makes the gate reliable while the experience file still exercises recipe reuse.
 
+### Scenario C — late-rendering start page (`regression:slow`)
+
+Runs scenario A again with the fixture's slow start on: on the first visit of a session `/issues` arrives as an empty shell and renders client-side 12 seconds later, longer than the page-readiness wait. Scenario A's assertions must still hold, which proves the Researcher waited for the real page instead of researching the blank shell. It executes one test instead of five (`--max-tests 1`, at least one passing): research and planning are what it checks, and scenario A already covers running the plan.
+
+### Scenario D — sign-in form at the start URL (`regression:gated`)
+
+Runs scenario A's assertions against `explore /workspace`. Signed out, `/workspace` shows the sign-in form at its own URL instead of redirecting to `/login`, and signing in there keeps you on `/workspace`. The planner reports the page blocked by a sign-in form, so explore must hand the report to Captain, sign in with the credentials in `seeds/knowledge/workspace.md` and plan the page again. Like scenario C, it executes one test.
+
+### Scenario E — sign-in split over three pages (`regression:staged-login`)
+
+Runs `explorbot navigate /account` with the credentials in `seeds/knowledge/staged-login.md`. Signed out, `/account` redirects to `/signin`, which asks only for the email; `/signin/password` asks only for the password and `/signin/otp` only for the one-time code. The later fields do not exist until the earlier stage is submitted, so the Navigator has to read each page as it arrives. The run must exit 0 with no Captain handover, since a Captain rescue would hide a Navigator failure. It tests navigation only: no research, planning or test execution.
+
+### Scenario F — sign-in form without credentials (`regression:gated-no-auth`)
+
+Runs `explore /workspace` with no knowledge, so nothing can sign in. Explorbot must give up on its own: the run fails if it is still going after 180 seconds, or if Captain takes over the blocked page more than once (`MAX_CAPTAIN_HANDOVERS` in `tests/regression/lib/assertions.ts`).
+
 ## The fixture app — "Trackly"
 
-A self-contained issue tracker served in-process by `tests/regression/fixture/server.ts` (`Bun.serve`, ephemeral port, fresh in-memory store per attempt). No external network, no database.
+A self-contained issue tracker served in-process by `tests/regression/fixture/server.ts` (`Bun.serve`, ephemeral port, fresh in-memory store per run). No external network, no database.
 
 | Route | Auth | Contents |
 |-------|------|----------|
@@ -40,6 +56,9 @@ A self-contained issue tracker served in-process by `tests/regression/fixture/se
 | `/issues/:id` | yes | detail, change-status menu, comment form, delete modal |
 | `/settings` | yes | Profile/Preferences tabs + an activity iframe |
 | `/vault` | no | scenario B access-code gate |
+| `/workspace` | no / yes | scenario D: the sign-in form when signed out, the issue list when signed in |
+| `/signin`, `/signin/password`, `/signin/otp` | no | scenario E: one sign-in stage per page, each refusing to open before the previous one is done |
+| `/account` | yes | scenario E target: only the code stage signs in |
 | `/api/*` | cookie | REST API over the same store, `+ /api/openapi.json` |
 
 The REST API mirrors the store and is served for a future API-testing scenario; the current scenarios do not exercise it.
@@ -66,12 +85,16 @@ bunx bunosh regression:serve
 
 # Real-AI runs (need a provider key)
 export OPENROUTER_API_KEY=sk-...
-bunx bunosh regression:experience --retries 0   # cheapest AI path
-bunx bunosh regression:basic --retries 0
-bunx bunosh regression:all                       # both scenarios, default retries
+bunx bunosh regression:experience       # cheapest AI path
+bunx bunosh regression:basic
+bunx bunosh regression:slow
+bunx bunosh regression:gated
+bunx bunosh regression:staged-login
+bunx bunosh regression:gated-no-auth
+bunx bunosh regression:all              # all scenarios
 ```
 
-Each attempt runs in an isolated throwaway directory under `tests/regression/.runs/` (gitignored). Inspect `tests/regression/.runs/<scenario>-<variant>-a<n>/output/` for the research, plans, and reporter markdown a run produced, and `tests/regression/.runs/report.md` for the summary.
+Every scenario runs once; there are no retries, so a flaky pass or fail shows up as it happened. Each run uses an isolated throwaway directory under `tests/regression/.runs/` (gitignored). Inspect `tests/regression/.runs/<scenario>-<variant>/output/` for the research, plans, and reporter markdown a run produced, and `tests/regression/.runs/report.md` for the summary.
 
 ### Variant matrix
 
@@ -83,9 +106,13 @@ bunx bunosh regression:variants --scenario basic --variants native,aria,plain
 
 ## CI and the approval gate
 
-`.github/workflows/regression.yml` runs on `pull_request` and `workflow_dispatch`. The job uses the `regression` GitHub environment, which holds `OPENROUTER_API_KEY` behind a **required reviewer**. Every run — including fork PRs — pauses at the environment gate before the secret is exposed. The job runs the PR's own code, so the reviewer must read the PR diff (workflow, Bunoshfile, fixture, lib) before approving; that review is the security boundary. The workflow never uses `pull_request_target`.
+`.github/workflows/regression.yml` runs on `pull_request` and `workflow_dispatch`. `regression:all` runs the scenarios in parallel inside one job, so a run lasts as long as its slowest scenario and needs one approval. The job uses the `regression` GitHub environment, which holds `OPENROUTER_API_KEY` behind a **required reviewer**. Every run — including fork PRs — pauses at the environment gate before the secret is exposed. The job runs the PR's own code, so the reviewer must read the PR diff (workflow, Bunoshfile, fixture, lib) before approving; that review is the security boundary. The workflow never uses `pull_request_target`.
 
-The report is posted as a sticky PR comment (on `pull_request`) or a `Regression Reports` GitHub Discussion (on `workflow_dispatch`). Fork PRs get a read-only token, so comment posting may fail; the report is also written to the job step summary and uploaded as the `regression-runs` artifact.
+Every run writes a `record.json` into its run directory. `regression:report` merges those records and posts the report as a sticky PR comment (on `pull_request`) or a `Regression Reports` GitHub Discussion (on `workflow_dispatch`). Fork PRs get a read-only token, so comment posting may fail; the report is also written to the step summary.
+
+### Speed comparison
+
+The report's `Time` column is the duration of the run. `Previous median` is the median of that scenario's passing time over the last 5 runs, and `Change` flags a difference of 20% or more. The job uploads the run's records as the `regression-summary` artifact (the run directories go to `regression-runs`) (kept 90 days), and the next run downloads the latest five to compare against. Which tests the planner picks changes a run's time, so read one flagged run as a hint and a trend over several as a regression.
 
 The report also embeds the **Session Analysis** from the fresh-explore run — Explorbot's Analyst agent writes a prose summary of what works, defects, UX issues, and execution issues, which the harness reads from `output/reports/<label>.md` and appends to the comment. The Analyst is enabled in the config template (`ai.agents.analyst.enabled: true`); it adds one AI call per basic run.
 
@@ -93,7 +120,7 @@ The report also embeds the **Session Analysis** from the fresh-explore run — E
 
 - **Thresholds** (`MIN_PLANNED_TESTS`, `MIN_PASSED`, `MIN_KEYWORD_HITS`, `MIN_FEATURE_GROUPS`) live at the top of `tests/regression/lib/assertions.ts`.
 - **Models** live in `tests/regression/fixture/explorbot.config.js`. If cheap models are too flaky, promote a stronger model to `ai.model` or lower `MIN_PASSED`.
-- **Run size** — adjust `--max-tests` in `runBasicScenario` and the per-CLI `timeout` values in `Bunoshfile.js`.
+- **Run size** — adjust `maxTests` / `minPassed` on the scenario constants and the per-CLI `timeout` values in `Bunoshfile.js`.
 
 ## Owner prerequisites (one-time)
 

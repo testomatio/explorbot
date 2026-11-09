@@ -327,6 +327,11 @@ function printInitNextSteps(options: { url?: string; siteCommands?: NextStepComm
 
   if (options.siteCommands) sections.push({ label: 'Explore any site', commands: options.siteCommands });
 
+  sections.push({
+    label: 'Log in for one run (kept in memory, never saved)',
+    commands: [{ command: `${cli} explore /dashboard --auth 'login: admin@example.com password: secret123'` }],
+  });
+
   sections.push(
     {
       label: 'Run it from VS Code',
@@ -338,11 +343,13 @@ function printInitNextSteps(options: { url?: string; siteCommands?: NextStepComm
     }
   );
 
+  sections.push({
+    label: 'Add knowledge (logins, credentials) — created on first use in ./knowledge',
+    commands: [{ command: `${cli} learn '*' 'to authorize use these credentials: admin@example.com / secret123'` }],
+  });
+
   printNextSteps(sections);
 
-  log('');
-  log('Add knowledge (logins, credentials) — created on first use in ./knowledge:');
-  tag('substep').log(chalk.yellow(`${cli} learn '*' 'to authorize use these credentials: admin@example.com / secret123'`));
   tag('substep').log('You can use ${env.LOGIN} and ${env.PASSWORD} to reference environment variables.');
 }
 

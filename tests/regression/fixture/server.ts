@@ -1,22 +1,23 @@
 import { handleApi } from './api.ts';
 import { type Variant, type VariantMode, createRegistry } from './components.ts';
-import { activityWidget, issueDetailPage, issuesPage, loginPage, settingsPage, vaultPage } from './pages.ts';
+import { accountPage, activityWidget, issueDetailPage, issuesPage, loginPage, settingsPage, signInStagePage, slowStartShell, vaultPage } from './pages.ts';
 import { type Store, createStore } from './store.ts';
 
 export const VAULT_CODE = 'K7-9284-XRAY-TANGO';
+export const SIGN_IN_OTP = '482913';
 const VAULT_DOCS = ['Quarterly report', 'Design archive', 'Payroll ledger'];
-const PUBLIC_PATHS = ['/login', '/logout', '/vault', '/vault/unlock', '/assets/client.js'];
+const SIGN_IN_TARGETS: Record<string, string> = { '/login': '/issues', '/workspace': '/workspace' };
 
 const CLIENT_JS = await Bun.file(`${import.meta.dir}/client.js`).text();
 
-export function startFixture(opts: { port?: number; variant?: VariantMode; seed?: number } = {}): Fixture {
+export function startFixture(opts: { port?: number; variant?: VariantMode; seed?: number; slowStartMs?: number } = {}): Fixture {
   const variant = opts.variant || 'native';
   const seed = opts.seed || 42;
   const store = createStore();
   const server = Bun.serve({
     port: opts.port || 0,
     idleTimeout: 60,
-    fetch: (req) => handle(req, store, variant, seed),
+    fetch: (req) => handle(req, store, variant, seed, opts.slowStartMs || 0),
   });
   return {
     url: `http://localhost:${server.port}`,
@@ -25,7 +26,7 @@ export function startFixture(opts: { port?: number; variant?: VariantMode; seed?
   };
 }
 
-async function handle(req: Request, store: Store, defaultVariant: VariantMode, defaultSeed: number): Promise<Response> {
+async function handle(req: Request, store: Store, defaultVariant: VariantMode, defaultSeed: number, slowStartMs: number): Promise<Response> {
   const url = new URL(req.url);
   const path = url.pathname;
   const method = req.method;
@@ -54,11 +55,11 @@ async function handle(req: Request, store: Store, defaultVariant: VariantMode, d
   if (apiResponse) return apiResponse;
 
   if (path === '/login' && method === 'GET') return html(loginPage());
-  if (path === '/login' && method === 'POST') {
+  if (SIGN_IN_TARGETS[path] && method === 'POST') {
     const form = await req.formData();
     const token = store.login(String(form.get('email') || ''), String(form.get('password') || ''));
-    if (!token) return html(loginPage('Invalid email or password'), 401);
-    return redirect('/issues', `trackly_session=${token}; Path=/; HttpOnly`);
+    if (!token) return html(loginPage('Invalid email or password', path), 401);
+    return redirect(SIGN_IN_TARGETS[path], `trackly_session=${token}; Path=/; HttpOnly`);
   }
   if (path === '/logout') return redirect('/login', 'trackly_session=; Path=/; Max-Age=0');
 
@@ -70,10 +71,37 @@ async function handle(req: Request, store: Store, defaultVariant: VariantMode, d
   }
   if (path.startsWith('/vault')) return redirect('/vault');
 
+  if (path === '/workspace' && !user) return html(loginPage(undefined, '/workspace'));
+  if (path === '/workspace') return html(issuesPage(reg, store, {}, user));
+
+  if (path === '/signin' && method === 'GET') return html(signInStagePage('email'));
+  if (path === '/signin' && method === 'POST') {
+    const form = await req.formData();
+    return redirect('/signin/password', `trackly_signin_email=${encodeURIComponent(String(form.get('email') || ''))}; Path=/`);
+  }
+  if (path === '/signin/password') {
+    if (!cookies.trackly_signin_email) return redirect('/signin');
+    if (method === 'GET') return html(signInStagePage('password'));
+    const form = await req.formData();
+    const token = store.login(decodeURIComponent(cookies.trackly_signin_email), String(form.get('password') || ''));
+    if (!token) return html(signInStagePage('password', 'Invalid email or password'), 401);
+    return redirect('/signin/otp', `trackly_signin_pending=${token}; Path=/; HttpOnly`);
+  }
+  if (path === '/signin/otp') {
+    if (!cookies.trackly_signin_pending) return redirect('/signin');
+    if (method === 'GET') return html(signInStagePage('otp'));
+    const form = await req.formData();
+    if (String(form.get('code') || '') !== SIGN_IN_OTP) return html(signInStagePage('otp', 'Invalid code'), 401);
+    return redirect('/account', `trackly_session=${cookies.trackly_signin_pending}; Path=/; HttpOnly`);
+  }
+  if (path === '/account' && !user) return redirect('/signin');
+  if (path === '/account') return html(accountPage(user));
+
   if (!user) return redirect('/login');
 
   if (path === '/') return redirect('/issues');
 
+  if (path === '/issues' && method === 'GET' && slowStartMs && !cookies.trackly_started) return html(slowStartShell(slowStartMs));
   if (path === '/issues' && method === 'GET') {
     const filters = { q: url.searchParams.get('q') || undefined, status: url.searchParams.get('status') || undefined, label: url.searchParams.get('label') || undefined };
     return html(issuesPage(reg, store, filters, user, { openDrawer: url.searchParams.get('new') === '1' }));
@@ -132,7 +160,7 @@ async function handle(req: Request, store: Store, defaultVariant: VariantMode, d
 
   if (path === '/settings' && method === 'GET') {
     const saved = url.searchParams.get('saved') === '1';
-    return html(settingsPage(reg, store, user, url.searchParams.get('tab') || 'profile', saved));
+    return html(settingsPage(reg, user, url.searchParams.get('tab') || 'profile', saved));
   }
   if (path === '/settings' && method === 'POST') {
     const form = await req.formData();

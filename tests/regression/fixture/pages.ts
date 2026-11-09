@@ -14,20 +14,47 @@ const PRIORITY_OPTIONS = [
   { value: 'critical', label: 'Critical' },
 ];
 
-export function loginPage(error?: string): string {
+const SIGN_IN_STAGES = {
+  email: { label: 'Email', name: 'email', type: 'email', hint: 'Step 1 of 3. Who is signing in?', action: '/signin', submit: 'Continue' },
+  password: { label: 'Password', name: 'password', type: 'password', hint: 'Step 2 of 3. Enter your password.', action: '/signin/password', submit: 'Continue' },
+  otp: { label: 'One-time code', name: 'code', type: 'text', hint: 'Step 3 of 3. Enter the one-time code.', action: '/signin/otp', submit: 'Verify' },
+};
+
+export function loginPage(error?: string, action = '/login'): string {
   const alert = error ? `<p role="alert" class="alert">${esc(error)}</p>` : '';
   const body = `
     <main class="auth">
       <h1>Trackly</h1>
       <p>Sign in to manage issues.</p>
       ${alert}
-      <form method="post" action="/login">
+      <form method="post" action="${action}">
         <div class="field"><label for="email">Email</label><input id="email" name="email" type="email" required></div>
         <div class="field"><label for="password">Password</label><input id="password" name="password" type="password" required></div>
         <button type="submit">Sign in</button>
       </form>
     </main>`;
   return doc('Sign in · Trackly', body, null, 'login');
+}
+
+export function signInStagePage(stage: keyof typeof SIGN_IN_STAGES, error?: string): string {
+  const { label, name, type, hint, action, submit } = SIGN_IN_STAGES[stage];
+  let alert = '';
+  if (error) alert = `<p role="alert" class="alert">${esc(error)}</p>`;
+  const body = `
+    <main class="auth">
+      <h1>${esc(label)}</h1>
+      <p>${esc(hint)}</p>
+      ${alert}
+      <form method="post" action="${action}">
+        <div class="field"><label for="${name}">${esc(label)}</label><input id="${name}" name="${name}" type="${type}" required></div>
+        <button type="submit">${esc(submit)}</button>
+      </form>
+    </main>`;
+  return doc(`${label} · Trackly`, body, null, 'login');
+}
+
+export function accountPage(user: PublicUser): string {
+  return doc('Account · Trackly', `<h1>Account</h1><p>Signed in as ${esc(user.name)}.</p>`, user, 'account');
 }
 
 export function issuesPage(reg: Registry, store: Store, filters: { q?: string; status?: string; label?: string }, user: PublicUser, opts: { openDrawer?: boolean; error?: string } = {}): string {
@@ -44,7 +71,7 @@ export function issuesPage(reg: Registry, store: Store, filters: { q?: string; s
     </form>
     ${reg.dropdownMenu({ label: 'Filter by label', items: labelItems })}`;
 
-  const rows = issues.map((issue) => issueRow(issue, labels, users)).join('');
+  const rows = issues.map((issue) => issueRow(issue, labels)).join('');
   const table = `
     <table>
       <thead><tr><th>#</th><th>Title</th><th>Status</th><th>Priority</th><th>Labels</th></tr></thead>
@@ -136,7 +163,7 @@ export function issueDetailPage(reg: Registry, store: Store, issue: Issue, user:
   return doc(`${issue.title} · Trackly`, body, user, 'issues');
 }
 
-export function settingsPage(reg: Registry, store: Store, user: PublicUser, activeTab: string, saved?: boolean): string {
+export function settingsPage(reg: Registry, user: PublicUser, activeTab: string, saved?: boolean): string {
   const notice = saved ? '<p role="status" class="notice">Settings saved</p>' : '';
   const profile = `
     ${notice}
@@ -221,7 +248,19 @@ export function vaultPage(state: { error?: boolean; unlocked?: boolean; docs?: s
   return doc('Archive · Trackly', body, null, 'vault');
 }
 
-function issueRow(issue: Issue, labels: { id: number; name: string }[], users: { id: number; name: string }[]): string {
+export function slowStartShell(delayMs: number): string {
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Trackly</title></head><body><div id="app"></div><script>
+    setTimeout(async () => {
+      document.cookie = 'trackly_started=1; Path=/';
+      const page = await (await fetch(location.href)).text();
+      document.open();
+      document.write(page);
+      document.close();
+    }, ${delayMs});
+  </script></body></html>`;
+}
+
+function issueRow(issue: Issue, labels: { id: number; name: string }[]): string {
   const labelNames = issue.labels
     .map((id) => labels.find((l) => l.id === id)?.name)
     .filter(Boolean)

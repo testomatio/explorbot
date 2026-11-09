@@ -52,7 +52,7 @@ export class PlansCommand extends BaseCommand {
     }
     tag('info').log('');
     tag('info').log('Run test from this plan as:');
-    tag('info').log(`${getCliName()} test 1 --from-plan ${file.name}`);
+    tag('info').log(`${getCliName()} test ${file.name} 1`);
   }
 
   private resolvePlanFile(target: string, files: PlanFile[]): { plan: Plan; file: PlanFile } {

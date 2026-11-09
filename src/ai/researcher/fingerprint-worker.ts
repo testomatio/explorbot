@@ -2,20 +2,20 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { parentPort } from 'node:worker_threads';
 import { computeHtmlFingerprint } from '../../utils/html-diff.ts';
+import { similarityScore } from '../../utils/similarity.ts';
 import { isSamePageFamily } from '../../utils/url-matcher.ts';
-import { diceSimilarity } from '../../utils/similarity.ts';
 
 parentPort!.on('message', (data: FingerprintRequest) => {
-  const { html, statesDir, maxAgeMs, threshold, url } = data;
+  const { id, html, statesDir, maxAgeMs, threshold, url } = data;
 
   if (!existsSync(statesDir)) {
-    parentPort!.postMessage({ matchHash: null, similarity: 0 });
+    parentPort!.postMessage({ id, matchHash: null, similarity: 0 });
     return;
   }
 
   const currentFingerprint = new Set(computeHtmlFingerprint(html));
   if (currentFingerprint.size === 0) {
-    parentPort!.postMessage({ matchHash: null, similarity: 0 });
+    parentPort!.postMessage({ id, matchHash: null, similarity: 0 });
     return;
   }
 
@@ -34,7 +34,7 @@ parentPort!.on('message', (data: FingerprintRequest) => {
     const record = readFingerprint(filePath);
     if (url && record.url && !isSamePageFamily(url, record.url)) continue;
     const storedFingerprint = new Set(record.entries);
-    const similarity = diceSimilarity(currentFingerprint, storedFingerprint);
+    const similarity = similarityScore(currentFingerprint, storedFingerprint);
 
     if (similarity > bestSimilarity) {
       bestSimilarity = similarity;
@@ -44,7 +44,7 @@ parentPort!.on('message', (data: FingerprintRequest) => {
   }
 
   const matched = bestSimilarity >= threshold;
-  parentPort!.postMessage({ matchHash: matched ? bestHash : null, similarity: bestSimilarity, url: matched ? bestUrl : undefined });
+  parentPort!.postMessage({ id, matchHash: matched ? bestHash : null, similarity: bestSimilarity, url: matched ? bestUrl : undefined });
 });
 
 function readFingerprint(filePath: string): FingerprintRecord {
@@ -59,4 +59,4 @@ function readFingerprint(filePath: string): FingerprintRecord {
 }
 
 type FingerprintRecord = { entries: string[]; url?: string };
-type FingerprintRequest = { html: string; statesDir: string; maxAgeMs: number; threshold: number; url?: string };
+type FingerprintRequest = { id: number; html: string; statesDir: string; maxAgeMs: number; threshold: number; url?: string };

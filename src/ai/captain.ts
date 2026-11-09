@@ -7,6 +7,7 @@ import type { ExplorBot } from '../explorbot.ts';
 import type { WebPageState } from '../state-manager.ts';
 import { Task, Test } from '../test-plan.ts';
 import { formatHeadings } from '../utils/context-formatter.ts';
+import { BlockedError } from '../utils/error-page.ts';
 import { HooksRunner } from '../utils/hooks-runner.ts';
 import { startLogCapture, stopLogCapture, tag } from '../utils/logger.js';
 import { loop } from '../utils/loop.js';
@@ -21,6 +22,7 @@ import type { Navigator } from './navigator.ts';
 import type { Provider } from './provider.ts';
 import { Researcher } from './researcher.ts';
 import { TaskAgent } from './task-agent.ts';
+import type { SupervisorAction } from './tester.ts';
 import { createLearnExperienceTool, withdrawVisionTools } from './tools.ts';
 
 const MAX_STEPS = 15;
@@ -35,6 +37,8 @@ export class Captain extends CaptainBase implements Agent {
   private hooksRunner: HooksRunner | null = null;
   private commandExecutor: ((cmd: string) => Promise<void>) | null = null;
   private commandDescriptions: { name: string; description: string; options: string }[] = [];
+  private handling = false;
+  private blocker: BlockedError | null = null;
 
   constructor(explorBot: ExplorBot) {
     super();
@@ -123,6 +127,7 @@ export class Captain extends CaptainBase implements Agent {
     - After a successful action, if the pageDiff confirms the goal, call done() immediately — do not verify with see() or context() unless the user explicitly asked for verification
     - Prefer completing in fewer tool calls over thoroughness
     - NEVER run tests unless the user explicitly asks
+    - When an agent reports it is blocked, decide which agent can resolve it and delegate to that agent
     - If you are answering with information rather than completing a browser action, include the actual user-facing answer in done({ details }). Do not only say that it was shown or explained.
     ${mode === 'web' || mode === 'heal' ? this.webModeRules() : ''}
     ${mode === 'test' || mode === 'heal' ? this.testModeRules() : ''}
@@ -304,7 +309,7 @@ export class Captain extends CaptainBase implements Agent {
 
   private async tools(task: Task, onDone: (summary: string) => void) {
     const mode = this.getMode();
-    const ctx: ModeContext = { explorBot: this.explorBot, task };
+    const ctx: ModeContext = { explorBot: this.explorBot, task, blocker: this.blocker };
     const core = this.coreTools(task, onDone);
     const idle = await this.idleModeTools(ctx);
 
@@ -437,6 +442,7 @@ export class Captain extends CaptainBase implements Agent {
 
     conversation.addUserText(initialPrompt);
 
+    this.handling = true;
     await loop(
       async ({ stop, iteration, userInput }) => {
         debugLog(`Captain iteration ${iteration}`);
@@ -510,7 +516,9 @@ export class Captain extends CaptainBase implements Agent {
           stop();
         },
       }
-    );
+    ).finally(() => {
+      this.handling = false;
+    });
 
     const finalUrl = stateManager.getCurrentState()?.url || startUrl;
     await this.getHooksRunner().runAfterHook('captain', finalUrl);
@@ -523,14 +531,24 @@ export class Captain extends CaptainBase implements Agent {
 
     return null;
   }
+
+  async resolveBlocker(error: unknown, resolved: () => boolean | Promise<boolean>): Promise<boolean> {
+    if (!(error instanceof BlockedError) || this.handling) return false;
+    const stateManager = this.explorBot.stateManager();
+    const blockedState = stateManager.getCurrentState();
+    if (stateManager.isPageBlocked(blockedState)) return false;
+    tag('info').log(`Captain takes over: ${error.message}`);
+    this.blocker = error;
+    await this.handle(error.request, { reset: true }).finally(() => {
+      this.blocker = null;
+    });
+    if (await resolved()) return true;
+    if (blockedState) stateManager.markBlocked(blockedState, error.blocker);
+    return false;
+  }
 }
 
 export default Captain;
-
-interface SupervisorAction {
-  action: 'inject' | 'stop' | 'pass' | 'skip';
-  message: string;
-}
 
 interface ExecutionRecoveryAction {
   action: 'continue' | 'stop';

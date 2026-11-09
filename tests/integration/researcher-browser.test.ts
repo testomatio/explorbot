@@ -8,7 +8,6 @@ import { Provider } from '../../src/ai/provider.ts';
 import { Researcher } from '../../src/ai/researcher.ts';
 import { clearResearchCache } from '../../src/ai/researcher/cache.ts';
 import { ConfigParser } from '../../src/config.ts';
-import { annotatePageElements } from '../../src/utils/web-annotate.ts';
 
 const TASK_BOARD_URL = `file://${join(process.cwd(), 'test-data', 'task-board.html')}`;
 

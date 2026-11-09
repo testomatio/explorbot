@@ -146,7 +146,7 @@ mock.module('codeceptjs', () => {
     accessibility: {
       snapshot: async () => null,
     },
-    locator: (selector: string) => ({
+    locator: () => ({
       ariaSnapshot: async (_opts?: { forAI?: boolean }) => '- heading "Explorer Test" [level=1]',
     }),
   };

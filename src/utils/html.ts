@@ -1,4 +1,3 @@
-import dedent from 'dedent';
 import { minify } from 'html-minifier-next';
 import { parse, parseFragment, serialize } from 'parse5';
 import type * as parse5TreeAdapter from 'parse5/lib/tree-adapters/default';

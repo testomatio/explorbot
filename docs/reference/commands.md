@@ -34,7 +34,7 @@ Inside the TUI, use the matching slash command: `/explore`, `/research`, `/plan`
 | List saved plans | `npx explorbot plans [plan]` | `/plans [plan]` | Show plans and their tests |
 | Navigate to a URL | `npx explorbot navigate <url>` | `/navigate <target>` | Reachability probe + session capture |
 | Drill page components | `npx explorbot drill <url>` | `/drill [--save-knowledge <path>] [--max-components <n>]` | Learn interactions |
-| Execute plan tests | `npx explorbot test <planfile> [index]` | `/test [scenario\|number\|*]` | Run scenarios |
+| Execute plan tests | `npx explorbot test <planfile> [index]` | `/test [planfile] [scenario\|number\|*]` | Run scenarios |
 | Re-run generated tests | `npx explorbot rerun <file> [index]` | `/rerun <file> [index]` | With AI auto-healing |
 | List generated tests | `npx explorbot runs [file]` | `/runs [file]` | Index + dry-run |
 | Store domain knowledge | `npx explorbot learn [url] [note]` | `/learn [note]` | Persisted to `knowledge/` |
@@ -93,6 +93,17 @@ npx explorbot explore /pay --knowledge 'Test card 4111 1111 1111 1111, any futur
 
 Like `--ws`, it is a program-level option rather than a per-command one: it works on every command — including `api`, `docs` and `prima` — and can go anywhere on the line. It is listed under `npx explorbot --help` rather than in each command's own help.
 
+### `--auth`
+
+Passes login details to the run in free form — credentials, a token, whatever the app asks for. It joins the run's knowledge on every page and API endpoint, stays in memory, and is never written to disk. `EXPLORBOT_AUTH` does the same from the environment; the flag wins when both are set.
+
+```bash
+npx explorbot explore /dashboard --auth 'login: admin@example.com password: secret123'
+npx explorbot api explore /orders --auth 'Bearer: eyJhbGciOi...'
+```
+
+Like `--knowledge`, it works on every command of `explorbot`, `api`, `docs` and `prima`, and can go anywhere on the line.
+
 ### `--session`
 
 Saves browser state (cookies, localStorage, sessionStorage) to a JSON file. The next run restores the session, so you skip login and setup steps.
@@ -129,6 +140,7 @@ EXPLORBOT_AI_PROVIDER=openrouter \
 | `EXPLORBOT_EPHEMERAL` | Keep no state between runs — output goes to a fresh temp directory instead of the site dir |
 | `EXPLORBOT_KNOWLEDGE` | Inline knowledge text, applied to every page |
 | `EXPLORBOT_KNOWLEDGE_FILE` | Path to a knowledge markdown file |
+| `EXPLORBOT_AUTH` | Auth details in free form (credentials, a token), kept in memory for the run and never written to disk; same as --auth |
 | `EXPLORBOT_SPEC` | Docbot application spec directory or index.md, used as page knowledge |
 | `EXPLORBOT_API_SPEC` | OpenAPI spec path for the API boat |
 | `EXPLORBOT_API_HEADERS` | Headers sent with every API request, one "Name: value" per line |
@@ -442,6 +454,8 @@ Execute test scenarios using the Tester agent.
 ```bash
 # CLI
 npx explorbot test output/plans/login.md          # run all enabled tests
+npx explorbot test login                          # same, plan looked up in output/plans
+npx explorbot test login --path example           # plan looked up in example/output/plans
 npx explorbot test output/plans/login.md 3        # run test #3
 npx explorbot test output/plans/login.md 1-5      # range
 npx explorbot test output/plans/login.md 1,3,7    # selection
@@ -451,9 +465,11 @@ npx explorbot test 3 --from-plan output/plans/login.md   # index first, plan via
 
 ```
 # TUI
-/test              # Run next pending test
+/test              # Run next pending test of the current plan
 /test *            # Run all pending tests
 /test 2            # Run test #2 from plan
+/test login.md     # Load plan file and run all its tests
+/test login.md 2   # Load plan file and run test #2
 /test login        # Run tests matching "login"
 /test User can logout successfully   # Create and run ad-hoc test
 ```

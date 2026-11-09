@@ -1,6 +1,7 @@
+import dedent from 'dedent';
 import { ActionResult } from '../action-result.js';
 import type { WebPageState } from '../state-manager.js';
-import { isBodyEmpty } from './html.js';
+import { isBodyEmpty, sanitizeHtmlString } from './html.js';
 import { extractStatePath } from './url-matcher.js';
 
 const HTTP_ERRORS = ['400 Bad Request', '401 Unauthorized', '403 Forbidden', '404 Not Found', '405 Method Not Allowed', '408 Request Timeout', '500 Internal Server Error', '502 Bad Gateway', '503 Service Unavailable', '504 Gateway Timeout'];
@@ -33,7 +34,7 @@ export function detectPageCondition(actionResult: ActionResult): PageCondition {
 
   if (!actionResult.html || isBodyEmpty(actionResult.html)) return 'loading';
 
-  const bodyMatch = actionResult.html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+  const bodyMatch = sanitizeHtmlString(actionResult.html).match(/<body[^>]*>([\s\S]*?)<\/body>/i);
   if (bodyMatch && bodyMatch[1].trim().length < SMALL_PAGE_THRESHOLD) return 'loading';
 
   return 'ok';
@@ -65,5 +66,66 @@ export class ErrorPageError extends Error {
     const details = [status, title].filter(Boolean).join(', ');
     super(`Error page detected at ${url}${details ? ` (${details})` : ''}`);
     this.name = 'ErrorPageError';
+  }
+}
+
+export class BlockedError extends Error {
+  constructor(
+    message: string,
+    public readonly url: string,
+    public readonly blocker: string,
+    public readonly request: string
+  ) {
+    super(message);
+    this.name = 'BlockedError';
+  }
+}
+
+export class PlanningBlockedError extends BlockedError {
+  constructor(
+    url: string,
+    prerequisite: string,
+    public readonly feature?: string,
+    public readonly style?: string
+  ) {
+    let focus = '';
+    if (feature) focus = ` focused on "${feature}"`;
+    let styleNote = '';
+    if (style) styleNote = ` in ${style} style`;
+    super(
+      `Planner could not plan ${url}: ${prerequisite}`,
+      url,
+      prerequisite,
+      dedent`
+        Planner was asked to plan tests for ${url}${focus}${styleNote} but stopped: ${prerequisite}.
+        Look at the current page to find out what blocks planning, resolve it, then call plan() to re-plan this page. If it cannot be resolved, finish without planning.
+      `
+    );
+    this.name = 'PlanningBlockedError';
+  }
+}
+
+export class NavigationBlockedError extends BlockedError {
+  constructor(url: string, currentUrl: string, reason: string, tried: string[]) {
+    const lines = [`Navigator was asked to open ${url} but stopped on ${currentUrl}: ${reason}.`];
+    if (tried.length) lines.push(`Already tried: ${tried.join('; ')}.`);
+    lines.push(`Look at the current page to find out what keeps it from ${url}, resolve it, then open ${url}. If it cannot be resolved, finish without opening it.`);
+    super(`Navigation to ${url} failed: ${reason}`, url, reason, lines.join('\n'));
+    this.name = 'NavigationBlockedError';
+  }
+}
+
+export class TestStartBlockedError extends BlockedError {
+  constructor(scenario: string, url: string, currentUrl: string) {
+    super(
+      `Test "${scenario}" could not start: ${currentUrl} is not the page it starts on`,
+      url,
+      'not the start page of this test',
+      dedent`
+        Tester was asked to start the test "${scenario}" at ${url}, but the page open at ${currentUrl} is not where this test can start.
+        Look at the current page to find out what keeps the test from starting, resolve it, then open ${url}. When you finish, the test runs again from ${url}. If it cannot be resolved, finish and the test is skipped.
+      `
+    );
+    this.name = 'TestStartBlockedError';
   }
 }

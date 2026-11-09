@@ -1,6 +1,7 @@
 import { tool } from 'ai';
 import dedent from 'dedent';
 import { z } from 'zod';
+import { pageEvidence } from '../judge.ts';
 import { actionRule, locatorRule, sectionContextRule } from '../rules.ts';
 import { createAgentTools, createCodeceptJSTools } from '../tools.ts';
 import { type Constructor, type ModeContext, debugLog } from './mixin.ts';
@@ -34,6 +35,16 @@ export function WithWebMode<T extends Constructor>(Base: T) {
             } catch (error: any) {
               return { success: false, message: `Navigation failed: ${error.message}` };
             }
+          },
+        }),
+
+        oracle: tool({
+          description: 'Ask a yes/no question about the current page. Much cheaper than see or context.',
+          inputSchema: z.object({ question: z.string() }),
+          execute: async ({ question }) => {
+            const captured = await ctx.explorBot.getExplorer().capture({ screenshot: true });
+            const holds = await ctx.explorBot.getProvider().oracle(question, pageEvidence(captured), { agentName: 'captain', screenshot: captured.screenshot, telemetry: { functionId: 'captain.oracle' } });
+            return { success: holds !== null, question, answer: holds };
           },
         }),
 
@@ -157,6 +168,7 @@ export function WithWebMode<T extends Constructor>(Base: T) {
         - click() accepts array of commands to try in order — include ARIA, CSS, XPath variants
         - If click() fails with all provided commands, use visualClick() tool as fallback
         - When an action fails or result is unexpected, investigate or inform the user instead of retrying silently
+        - For a quick yes/no question about the page, use oracle instead of see or context
       `;
     }
   };

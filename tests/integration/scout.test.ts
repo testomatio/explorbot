@@ -47,6 +47,7 @@ describe('Scout with aimock', () => {
   });
 
   beforeEach(() => {
+    ConfigParser.setupTestConfig();
     mock.clearRequests();
     mock.resetMatchCounts();
     mock.clearFixtures();

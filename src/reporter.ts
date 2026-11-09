@@ -1,4 +1,3 @@
-import { join } from 'node:path';
 import { Client } from '@testomatio/reporter';
 import type { Step } from '@testomatio/reporter/types/types.js';
 import { outputPath } from './config.js';
@@ -132,14 +131,14 @@ export class Reporter {
     process.env.TESTOMATIO_STEPS_PASSED = 'true';
   }
 
-  async reportTestStart(test: Test): Promise<void> {
+  async reportTestStart(): Promise<void> {
     await this.startRun();
   }
 
   protected combineStepsAndNotes(test: Test, lastScreenshotFile?: string): Step[] {
     const noteEntries = Object.entries(test.notes)
       .filter(([, note]) => !note.observation)
-      .map(([timestampKey, note]) => ({
+      .map(([, note]) => ({
         startTime: note.startTime,
         endTime: note.endTime,
         message: note.message,
@@ -150,7 +149,7 @@ export class Reporter {
       .sort((a, b) => a.startTime - b.startTime);
 
     const stepEntries = Object.entries(test.steps)
-      .map(([timestampKey, stepData]) => ({
+      .map(([, stepData]) => ({
         noteStartTime: stepData.noteStartTime,
         text: stepData.text,
         duration: stepData.duration,

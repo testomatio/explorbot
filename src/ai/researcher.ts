@@ -1,7 +1,7 @@
 import dedent from 'dedent';
 import { ActionResult } from '../action-result.js';
 import { setActivity } from '../activity.ts';
-import { ConfigParser, type ExplorbotConfig, type ResearcherAgentConfig, agentSettings, outputPath } from '../config.ts';
+import { type ExplorbotConfig, type ResearcherAgentConfig, agentSettings, outputPath } from '../config.ts';
 import { executionController } from '../execution-controller.ts';
 import type { ExperienceTracker } from '../experience-tracker.ts';
 import type Explorer from '../explorer.ts';
@@ -10,13 +10,15 @@ import type { StateManager } from '../state-manager.js';
 import { WebPageState } from '../state-manager.js';
 import { Stats } from '../stats.ts';
 import { diffAriaSnapshots } from '../utils/aria.ts';
-import { ErrorPageError, detectPageCondition } from '../utils/error-page.ts';
+import { ErrorPageError, type PageCondition, detectPageCondition } from '../utils/error-page.ts';
 import { isBodyEmpty } from '../utils/html.ts';
 import { createDebug, tag } from '../utils/logger.js';
 import { mdq } from '../utils/markdown-query.ts';
+import { waitForDomChange, waitForPageReadiness } from '../utils/page-readiness.ts';
 import { RulesLoader } from '../utils/rules-loader.ts';
 import { annotatePageElements } from '../utils/web-annotate.ts';
 import type { Agent, AgentDeps } from './agent.js';
+import { UNDECIDED, pageEvidence } from './judge.ts';
 import type { Navigator } from './navigator.ts';
 import { ContextLengthError, type Provider } from './provider.js';
 import { findSimilarResearch, getCachedResearch, getPreviousResearch, reportResearch, saveResearch } from './researcher/cache.ts';
@@ -28,12 +30,14 @@ import { type PaginationMethods, WithPagination } from './researcher/pagination.
 import { extractValidContainers, formatResearchSummary, parseResearchSections } from './researcher/parser.ts';
 import { ResearchResult } from './researcher/research-result.ts';
 import { type SectionMethods, WithSections } from './researcher/sections.ts';
+import { type WallMethods, WithWalls } from './researcher/walls.ts';
 import { locatorRule as generalLocatorRuleText } from './rules.js';
 import { TaskAgent } from './task-agent.ts';
 
 export type { Locator } from './researcher/locators.ts';
 
 const debugLog = createDebug('explorbot:researcher');
+const HIDDEN_CONTENT_STATEMENT = 'The page has collapsed or hidden content behind controls that open or expand it.';
 
 export const POSSIBLE_SECTIONS = {
   overlay: 'dialog, modal, drawer, popup, or active form overlay',
@@ -45,9 +49,9 @@ export const POSSIBLE_SECTIONS = {
   navigation: 'main navigation (top bar, sidebar, breadcrumbs)',
 };
 
-const ResearcherBase = WithSections(WithPagination(WithDeepAnalysis(WithCoordinates(WithLocators(TaskAgent as unknown as new (...args: any[]) => TaskAgent)))));
+const ResearcherBase = WithWalls(WithSections(WithPagination(WithDeepAnalysis(WithCoordinates(WithLocators(TaskAgent as unknown as new (...args: any[]) => TaskAgent))))));
 
-export interface Researcher extends LocatorMethods, CoordinateMethods, DeepAnalysisMethods, SectionMethods, PaginationMethods {}
+export interface Researcher extends LocatorMethods, CoordinateMethods, DeepAnalysisMethods, SectionMethods, PaginationMethods, WallMethods {}
 
 export class Researcher extends ResearcherBase implements Agent {
   protected readonly ACTION_TOOLS = ['click'];
@@ -136,7 +140,8 @@ export class Researcher extends ResearcherBase implements Agent {
       if (light) tag('info').log('Light research: single pass, locator verification skipped');
       setActivity(`${this.emoji} Researching...`, 'action');
 
-      await this.ensureNavigated(displayUrl, screenshot && this.provider.hasVision());
+      const retrying = opts._retriesLeft !== undefined;
+      if (!retrying) await this.ensureNavigated(displayUrl, screenshot && this.provider.hasVision());
       await this.hooksRunner.runBeforeHook('researcher', state.url);
 
       const { elements: annotatedElements } = await this.explorer.withPage(annotatePageElements);
@@ -148,12 +153,13 @@ export class Researcher extends ResearcherBase implements Agent {
         tag('warning').log(`Detected error page at ${state.url}`);
         throw new ErrorPageError(state.url, this.actionResult!.title, this.actionResult!.httpStatus);
       }
-      if (condition === 'loading') {
+      if (condition === 'loading' && !retrying) {
         const settled = await this.waitUntilSettled(screenshot);
         if (!settled) {
           tag('warning').log(`Page at ${state.url} did not finish loading within timeout, continuing with best-effort research`);
         }
       }
+      if (this.actionResult!.overlay.isModal) await this.closeWall(screenshot);
 
       debugLog('Researching web page:', this.actionResult!.url);
 
@@ -290,7 +296,7 @@ export class Researcher extends ResearcherBase implements Agent {
         if (fallback) markSectionAsFocused(result, fallback);
       }
 
-      if (!interrupted() && deep) {
+      if (!interrupted() && deep && (await this.hasHiddenContent())) {
         try {
           await this.performDeepAnalysis(researchState, result);
         } catch (err) {
@@ -365,35 +371,47 @@ export class Researcher extends ResearcherBase implements Agent {
 
   private async waitUntilSettled(screenshot: boolean): Promise<boolean> {
     const errorPageTimeout = this.settings.errorPageTimeout ?? 10;
-    if (errorPageTimeout <= 0) return false;
+    const deadline = Date.now() + errorPageTimeout * 1000;
 
-    const includeScreenshot = screenshot && this.provider.hasVision();
-
-    try {
-      await this.explorer.withPage((page) => page.waitForLoadState('networkidle', { timeout: errorPageTimeout * 1000 }));
-    } catch {}
-
-    await this.explorer.withPage(annotatePageElements);
-    this.actionResult = await this.explorer.capture({ screenshot: includeScreenshot });
-
-    let condition = detectPageCondition(this.actionResult!);
-    if (condition === 'error') {
-      throw new ErrorPageError(this.actionResult!.url, this.actionResult!.title, this.actionResult!.httpStatus);
-    }
-    if (condition === 'ok') return true;
-
-    for (let i = 0; i < 3; i++) {
-      await new Promise((r) => setTimeout(r, 1000));
+    for (let remaining = errorPageTimeout * 1000; remaining > 0; remaining = deadline - Date.now()) {
+      const rendered = await this.explorer.withPage((page) => waitForPageReadiness(page, { timeout: remaining, spinnerSelectors: this.config.playwright.spinnerSelectors }));
       await this.explorer.withPage(annotatePageElements);
-      this.actionResult = await this.explorer.capture({ screenshot: includeScreenshot });
-      condition = detectPageCondition(this.actionResult!);
-      if (condition === 'error') {
-        throw new ErrorPageError(this.actionResult!.url, this.actionResult!.title, this.actionResult!.httpStatus);
-      }
+      this.actionResult = await this.explorer.capture({ screenshot: screenshot && this.provider.hasVision() });
+      const condition = await this.pageCondition(rendered);
+      if (condition === 'error') throw new ErrorPageError(this.actionResult!.url, this.actionResult!.title, this.actionResult!.httpStatus);
       if (condition === 'ok') return true;
+
+      tag('step').log('Page is still loading, waiting for content...');
+      if (!(await this.explorer.withPage((page) => waitForDomChange(page, deadline - Date.now())))) return false;
     }
 
     return false;
+  }
+
+  private async pageCondition(rendered: boolean): Promise<PageCondition> {
+    const condition = detectPageCondition(this.actionResult!);
+    if (condition !== 'loading') return condition;
+    if (!this.judge && rendered) return 'ok';
+    if (!this.judge) return condition;
+
+    const conditions: Record<string, PageCondition> = {
+      'still loading: blank, splash screen, skeleton or loading placeholder': 'loading',
+      'error page: shows an error instead of the requested content': 'error',
+      'loaded: the main content is rendered': 'ok',
+    };
+    const decision = await this.judge.decide('The page was blank or barely rendered when it opened. What state is it in now?', [...Object.keys(conditions), UNDECIDED], pageEvidence(this.actionResult!));
+    return conditions[decision.value ?? ''] || 'ok';
+  }
+
+  private async hasHiddenContent(): Promise<boolean> {
+    const captured = await this.explorer.capture({ screenshot: true });
+    const hidden = await this.provider.oracle(HIDDEN_CONTENT_STATEMENT, pageEvidence(captured), { agentName: 'researcher', screenshot: captured.screenshot, telemetry: { functionId: 'researcher.hasHiddenContent' } });
+    if (hidden === null) {
+      tag('warning').log('Could not check the page for hidden content, running deep analysis');
+      return true;
+    }
+    if (!hidden) tag('step').log('Nothing to expand on this page, skipping deep analysis');
+    return hidden;
   }
 
   private getConfiguredSections(): Record<string, string> {

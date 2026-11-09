@@ -88,6 +88,12 @@ Send X-Api-Key: ${env.API_KEY} on every request'
 
 For runs driven from the environment — config-free, or on the global configuration — `EXPLORBOT_KNOWLEDGE` does the same job for the length of one run. See [Agentic usage](./agentic-usage.md).
 
+For credentials alone, `--auth` (or `EXPLORBOT_AUTH`) takes free-form text, applies it everywhere, and never writes it to disk:
+
+```bash
+npx explorbot explore /dashboard --auth 'login: admin@example.com password: secret123'
+```
+
 ## URL Patterns
 
 | Pattern | Matches |

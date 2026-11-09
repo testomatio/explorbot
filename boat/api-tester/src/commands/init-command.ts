@@ -64,6 +64,8 @@ export async function runInit(options: InitOptions): Promise<void> {
   tag('substep').log(chalk.yellow(`${options.prefix} know /users "CRUD endpoint for user management"`));
   log('3. Plan and run tests for one endpoint');
   tag('substep').log(chalk.yellow(`${options.prefix} explore /users`));
+  log('4. Pass auth for one run, kept in memory and never saved');
+  tag('substep').log(chalk.yellow(`${options.prefix} explore /users --auth 'Bearer: <token>'`));
 
   if (process.cwd() !== originalCwd) process.chdir(originalCwd);
 }

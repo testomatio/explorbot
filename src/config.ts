@@ -7,8 +7,8 @@ import dedent from 'dedent';
 import matter from 'gray-matter';
 import { EXPLORBOT_CONFIG_PATHS, type SiteRecord, findGlobalConfig, globalEnvPath, isGlobalConfigPath, loadSiteConfig, registerSite, resolveSiteTarget } from './global-config.js';
 import { getCliName } from './utils/cli-name.js';
-import { deepMerge } from './utils/merge.js';
 import { log, tag } from './utils/logger.js';
+import { deepMerge } from './utils/merge.js';
 
 export const PROVIDERS: Record<string, ProviderInfo> = {
   openai: { envKey: 'OPENAI_API_KEY', keyUrl: 'https://platform.openai.com/api-keys', load: async () => (await import('@ai-sdk/openai')).createOpenAI() },
@@ -132,6 +132,8 @@ interface PlannerAgentConfig extends AgentConfig {
   styles?: string[];
   stylesDir?: string;
   docsWeight?: number;
+  minTests?: number;
+  maxTests?: number;
 }
 
 interface ScoutAgentConfig extends AgentConfig {
@@ -245,7 +247,7 @@ interface ExplorbotConfig {
     knowledge: string;
     experience: string;
     output: string;
-    spec?: string;
+    spec?: string | string[];
   };
   experience?: {
     maxReadLines?: number;
@@ -257,17 +259,6 @@ interface ExplorbotConfig {
   files?: Record<string, string>;
   dynamicPageRegex?: string;
 }
-
-const config: ExplorbotConfig = {
-  playwright: {
-    browser: 'chromium',
-    url: 'http://localhost:3000',
-  },
-
-  ai: {
-    model: null as any,
-  },
-};
 
 type RuleEntry = string | Record<string, string>;
 
@@ -284,6 +275,7 @@ export const EXPLORBOT_ENV_VARS: EnvVar[] = [
   { name: 'EXPLORBOT_EPHEMERAL', description: 'Keep no state between runs — output goes to a fresh temp directory instead of the site dir' },
   { name: 'EXPLORBOT_KNOWLEDGE', description: 'Inline knowledge text, applied to every page' },
   { name: 'EXPLORBOT_KNOWLEDGE_FILE', description: 'Path to a knowledge markdown file' },
+  { name: 'EXPLORBOT_AUTH', description: 'Auth details in free form (credentials, a token), kept in memory for the run and never written to disk; same as --auth', secret: true },
   { name: 'EXPLORBOT_SPEC', description: 'Docbot application spec directory or index.md, used as page knowledge' },
   { name: 'EXPLORBOT_API_SPEC', description: 'OpenAPI spec path for the API boat' },
   { name: 'EXPLORBOT_API_HEADERS', description: 'Headers sent with every API request, one "Name: value" per line', secret: true },
@@ -762,10 +754,6 @@ export class ConfigParser {
     }
   }
 
-  private getNestedValue(obj: any, path: string): any {
-    return path.split('.').reduce((current, key) => current?.[key], obj);
-  }
-
   public mergeWithDefaults(config: Partial<ExplorbotConfig>): ExplorbotConfig {
     const defaults = {
       playwright: {
@@ -878,6 +866,7 @@ export function configuredModels(ai?: AIConfig): Record<string, ConfiguredModel>
   const models: Record<string, ConfiguredModel> = { model: describe(ai.model) };
   if (ai.agenticModel) models.agenticModel = describe(ai.agenticModel);
   if (ai.visionModel) models.visionModel = describe(ai.visionModel);
+  if (ai.decisionModel) models.decisionModel = { name: ai.decisionModel.model, provider: ai.decisionModel.provider };
   for (const [agent, agentConfig] of Object.entries(ai.agents || {})) {
     if (agentConfig?.model) models[agent] = describe(agentConfig.model);
   }

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
-import { existsSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, rmSync } from 'node:fs';
 import { ConfigParser } from '../../src/config.js';
 import { type TaggedLogEntry, createDebug, getMethodsOfObject, isVerboseMode, log, logError, logSubstep, logSuccess, logWarning, registerLogPane, setPreserveConsoleLogs, setVerboseMode, tag, unregisterLogPane } from '../../src/utils/logger';
 
@@ -172,7 +172,7 @@ describe('Logger', () => {
 
   describe('log pane registration', () => {
     it('should register and unregister log panes', () => {
-      const mockLogPane = (entry: TaggedLogEntry) => {};
+      const mockLogPane = () => {};
       registerLogPane(mockLogPane);
       unregisterLogPane(mockLogPane);
       expect(true).toBe(true);
