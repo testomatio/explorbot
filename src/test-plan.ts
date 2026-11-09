@@ -259,6 +259,7 @@ export class Test extends Task {
   artifacts: Record<string, string>;
   generatedCode?: string;
   style?: string;
+  explicitTools: string[] = [];
   planIteration = 0;
   enabled = true;
   startTime?: number;

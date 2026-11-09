@@ -506,18 +506,6 @@ export const actionRule = dedent`
 
   ### I.dragAndDrop
 
-  Drags an element and drops it onto another element. Run via the dragAndDrop() tool, not form().
-  The tool takes visual descriptions of what to grab and where to drop it, locates both points
-  on the screenshot, and drags between them with a real mouse — this also covers sliders and canvas
-  drawing, where nothing can be addressed by a locator. When items look alike, describe the position
-  ("the second card in the first column"). When a drag starts from a handle, describe the handle
-  as the grab point, not the whole card. For a drag with a modifier held (a copy-drag that
-  duplicates the item), pass the modifier to the dragAndDrop() tool.
-
-  <example>
-    dragAndDrop(from: "card labeled Bug 5 in the first column", to: "column labeled Done")
-  </example>
-
   When form() must drag directly, I.dragAndDrop(<source>, <target>) takes Playwright locators
   as written: a bare string is read as CSS and an object locator loses its text filter.
   Write text as 'text=...' and prefer CSS or XPath.
@@ -540,4 +528,35 @@ export const actionRule = dedent`
   [DO NOT USE WAIT FUNCTIONS]
 
   </actions>
+  `;
+
+export const explicitToolsRule = dedent`
+  <explicit_tools>
+  These tools are present only when the plan enables them or the Pilot requests them mid-run.
+  They cover interactions click() and form() cannot express.
+
+  ### dragAndDrop() tool
+
+  Drags an element and drops it onto another element. Run via the dragAndDrop() tool, not form().
+  The tool takes visual descriptions of what to grab and where to drop it, locates both points
+  on the screenshot, and drags between them with a real mouse — this also covers sliders and canvas
+  drawing, where nothing can be addressed by a locator. When items look alike, describe the position
+  ("the second card in the first column"). When a drag starts from a handle, describe the handle
+  as the grab point, not the whole card. For a drag with a modifier held (a copy-drag that
+  duplicates the item), pass the modifier to the dragAndDrop() tool.
+
+  <example>
+    dragAndDrop(from: "card labeled Bug 5 in the first column", to: "column labeled Done")
+  </example>
+
+  ### rightClick() tool
+
+  Opens a context menu on an element with a right-click. Run via the rightClick() tool, not form().
+  All commands in one call must target the SAME element, ordered by locator reliability like click().
+  After the menu opens, act on its items with click() — the menu items are not part of this tool.
+
+  <example>
+    rightClick(commands: ['I.rightClick("Bug 5", ".board")'])
+  </example>
+  </explicit_tools>
   `;

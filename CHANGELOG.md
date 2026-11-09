@@ -238,6 +238,11 @@
 - An `explore` run ends with an "Explore more" section suggesting `explorbot explore /` to cover the whole site, plus a link to the docs.
 - Init makes it explicit how to connect the AI: the `.env` template and the missing-key warning point to the provider's key page (e.g. `https://openrouter.ai/keys`) and show the exact line to paste — `OPENROUTER_API_KEY=<your-key>`; the setup wizard shows where to create the key too.
 
+## 2026-11-09
+
+### Changes
+- [Tester] Non-standard interaction tools — `dragAndDrop()` and `rightClick()` — are now explicit tools: off by default, so they never grow the Tester's context for ordinary scenarios. The Planner decides per scenario (via the decision model) whether a drag or a context menu is needed and arms the tools for exactly those scenarios; the choice is stored in the plan file (`tools:` line in the `<!-- test -->` comment) and survives re-runs. Mid-run, the Pilot can also arm the tools by including `ENABLE_TOOLS: <names>` in its instruction when a scenario turns out to need an interaction `click()`/`form()` cannot express.
+
 ## 2026-10-08
 
 ### Changes

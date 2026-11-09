@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { join } from 'node:path';
 import { type Browser, type Page, chromium } from 'playwright';
-import { type DragPoints, syntheticDragDrop } from '../../src/ai/tools.ts';
+import { type DragPoints, syntheticDragDrop } from '../../src/ai/explicit-tools.ts';
 
 let browser: Browser;
 

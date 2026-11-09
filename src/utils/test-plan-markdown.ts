@@ -132,6 +132,7 @@ export function parsePlansFromMarkdownText(content: string): Plan[] {
   let inSteps = false;
   let inExpected = false;
   let priority: 'critical' | 'important' | 'high' | 'normal' | 'low' = 'normal';
+  let explicitTools: string[] = [];
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
@@ -142,6 +143,7 @@ export function parsePlansFromMarkdownText(content: string): Plan[] {
       inSteps = false;
       inExpected = false;
       priority = 'normal';
+      explicitTools = [];
       const title = lines[i + 1]?.replace(/^#\s+/, '') || '';
       currentPlan = new Plan(title);
       plans.push(currentPlan);
@@ -161,6 +163,11 @@ export function parsePlansFromMarkdownText(content: string): Plan[] {
       }
       const priorityMatch = block.match(/priority:\s*(\w+)/);
       priority = (priorityMatch?.[1] as 'critical' | 'important' | 'high' | 'normal' | 'low') || 'normal';
+      const toolsMatch = block.match(/tools:\s*(.+)/);
+      explicitTools = (toolsMatch?.[1] || '')
+        .split(',')
+        .map((name) => name.trim().toLowerCase())
+        .filter(Boolean);
       i = j;
       continue;
     }
@@ -168,6 +175,7 @@ export function parsePlansFromMarkdownText(content: string): Plan[] {
     if (line.startsWith('# ') && currentTest === null) {
       const scenario = line.replace(/^#\s+/, '');
       currentTest = new Test(scenario, priority, [], '');
+      currentTest.explicitTools = explicitTools;
       currentPlan.addTest(currentTest);
       inRequirements = false;
       inSteps = false;
@@ -274,7 +282,9 @@ function formatPlanSuite(plan: Plan): string {
   }
 
   for (const test of plan.tests) {
-    content += `<!-- test\npriority: ${test.priority}\n-->\n`;
+    let testHeader = `<!-- test\npriority: ${test.priority}`;
+    if (test.explicitTools.length > 0) testHeader += `\ntools: ${test.explicitTools.join(', ')}`;
+    content += `${testHeader}\n-->\n`;
     content += `# ${test.scenario}\n\n`;
     content += '## Requirements\n';
     content += `${test.startUrl || CURRENT_PAGE}\n\n`;

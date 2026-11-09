@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'bun:test';
-import { createCodeceptJSTools, dragPoints } from '../../src/ai/tools.ts';
+import { createExplicitTools, dragPoints } from '../../src/ai/explicit-tools.ts';
+import { createCodeceptJSTools } from '../../src/ai/tools.ts';
 import { ConfigParser } from '../../src/config.ts';
 
 const ANALYSIS = 'The first card and the Done column are visible. grab 10X, 20Y; drop 30X, 40Y';
@@ -52,6 +53,11 @@ describe('dragPoints parsing', () => {
     });
   });
 
+  it('keeps dragAndDrop out of the default CodeceptJS tools', () => {
+    const tools = createCodeceptJSTools(fakeDeps().deps as any, fakeTask());
+    expect(tools.dragAndDrop).toBeUndefined();
+  });
+
   it('reads the points from a sentence', () => {
     expect(dragPoints('The card is in the first column. grab 5X, 6Y; drop 7X, 8Y')).toEqual({
       from: { x: 5, y: 6 },
@@ -74,7 +80,7 @@ describe('dragAndDrop tool', () => {
   it('drags between the located points with a real mouse and records replayable code', async () => {
     const { deps, action, holder } = fakeDeps();
     succeedWithReorder(action, holder);
-    const tools = createCodeceptJSTools(deps, fakeTask());
+    const tools = createExplicitTools(deps, fakeTask());
 
     const result = await tools.dragAndDrop.execute({ from: 'first card', to: 'Done column', explanation: 'move the card' }, {} as any);
 
@@ -90,7 +96,7 @@ describe('dragAndDrop tool', () => {
   it('wraps the drag between pressKeyDown and pressKeyUp for a modifier', async () => {
     const { deps, action, holder } = fakeDeps();
     succeedWithReorder(action, holder);
-    const tools = createCodeceptJSTools(deps, fakeTask());
+    const tools = createExplicitTools(deps, fakeTask());
 
     const result = await tools.dragAndDrop.execute({ from: 'first card', to: 'Done column', modifier: 'Control', explanation: 'copy the card' }, {} as any);
 
@@ -103,7 +109,7 @@ describe('dragAndDrop tool', () => {
   it('fails without browser action when vision cannot locate both points', async () => {
     const { deps, action } = fakeDeps();
     deps.researcher.checkDragPoints = async () => 'The drop target was not found';
-    const tools = createCodeceptJSTools(deps, fakeTask());
+    const tools = createExplicitTools(deps, fakeTask());
 
     const result = await tools.dragAndDrop.execute({ from: 'first card', to: 'Done column', explanation: 'move the card' }, {} as any);
 
@@ -132,7 +138,7 @@ describe('dragAndDrop tool', () => {
         return true;
       },
     };
-    const tools = createCodeceptJSTools(deps, fakeTask());
+    const tools = createExplicitTools(deps, fakeTask());
 
     const result = await tools.dragAndDrop.execute({ from: 'first card', to: 'Done column', explanation: 'move the card' }, {} as any);
 
@@ -149,7 +155,7 @@ describe('dragAndDrop tool', () => {
       return command.startsWith('I.pressKeyUp');
     };
     deps.explorer.withPage = async () => false;
-    const tools = createCodeceptJSTools(deps, fakeTask());
+    const tools = createExplicitTools(deps, fakeTask());
 
     const result = await tools.dragAndDrop.execute({ from: 'first card', to: 'Done column', modifier: 'Control', explanation: 'copy the card' }, {} as any);
 
@@ -160,7 +166,7 @@ describe('dragAndDrop tool', () => {
 
   it('reports drag as unavailable when there is no researcher', async () => {
     const { deps, action } = fakeDeps();
-    const tools = createCodeceptJSTools({ ...deps, researcher: undefined }, fakeTask());
+    const tools = createExplicitTools({ ...deps, researcher: undefined }, fakeTask());
 
     const result = await tools.dragAndDrop.execute({ from: 'first card', to: 'Done column', explanation: 'move the card' }, {} as any);
 
