@@ -149,6 +149,7 @@ function syncProviderDocs(check) {
     const config = Object.entries(roles)
       .map(([role, id]) => {
         if (role === 'decisionModel') return `    decisionModel: { provider: '${provider}', model: '${id}' },`;
+        if (role === 'toolChoice') return `    toolChoice: '${id}',`;
         return `    ${role}: ${provider}('${id}'),`;
       })
       .join('\n');

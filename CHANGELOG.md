@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-11-10
+
+### Configuration
+- **`ai.toolChoice`** — Sets how every agent picks tools: `'auto'`, `'required'` or `'none'`. Use `'auto'` for a model whose provider accepts no other mode. When unset, each agent keeps its own choice. `recommendedModels: 'openrouter'` and `EXPLORBOT_AI_PROVIDER=openrouter` set it to `'auto'`, and `explorbot init` writes it for OpenRouter.
+- **`ai.agents.<agent>.toolChoice`** — The same setting for one agent, for example `agents: { tester: { toolChoice: 'auto' } }`. Takes priority over `ai.toolChoice`.
+
+### Changes
+- OpenRouter's recommended models are now `meta/muse-ember` for the main and vision models, with `anthropic/claude-haiku-5.5` kept as the agentic model. Against the previous defaults on the regression scenario, with muse-ember in the main slot (vision stayed on gpt-5.6-luna), it passed 10/10, ran about 20% more checks, and was about 20% faster and 25% cheaper per check.
+- OpenAI's recommended models are now `gpt-6-luna` for all three roles, replacing `gpt-5-nano` as the main model.
+- [Tester] The `reasoning` and `providerOptions` settings under `ai.agents.tester` now apply to the Tester's test steps too.
+
 ## 2026-11-07
 
 ### Changes
