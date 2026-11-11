@@ -18,6 +18,7 @@ import { HooksRunner } from '../utils/hooks-runner.ts';
 import { createDebug, pluralize, tag } from '../utils/logger.js';
 import { loop, pause } from '../utils/loop.js';
 import { RulesLoader } from '../utils/rules-loader.ts';
+import { waitForAppRequest, waitForDomChange } from '../utils/page-readiness.ts';
 import { normalizeInlineText } from '../utils/strings.ts';
 import { extractStatePath, isSameHostFamily, matchesNavigationUrl } from '../utils/url-matcher.js';
 import type { UrlFilter } from '../utils/url-filter.ts';
@@ -31,6 +32,7 @@ import { createLearnExperienceTool } from './tools.ts';
 
 const debugLog = createDebug('explorbot:navigator');
 const MAX_TRIED_STEPS = 5;
+const SETTLE_MS = 1000;
 
 class Navigator implements Agent {
   emoji = '🧭';
@@ -339,8 +341,10 @@ class Navigator implements Agent {
             progressBlocks.push(codeBlock);
           }
         } else if (attempt.ok) {
-          const freshState = await this.explorer.capture();
-          resolved = (await freshState.diff(prevActionResult)).hasChanges();
+          const baseOrigin = URL.parse(this.config.playwright.url)?.origin || '';
+          resolved = action.sentRequests > 0 || (await this.pageChangedSince(prevActionResult));
+          if (!resolved) resolved = await this.explorer.withPage((page) => Promise.race([waitForAppRequest(page, baseOrigin, SETTLE_MS), waitForDomChange(page, SETTLE_MS).then(() => false)]));
+          if (!resolved) resolved = await this.pageChangedSince(prevActionResult);
           if (resolved) progressBlocks.push(codeBlock);
           if (!resolved) {
             lastFailure = 'Ran without error but nothing on the page changed';
@@ -514,6 +518,11 @@ class Navigator implements Agent {
 
   private targetUrlReached(action: Action, expectedUrl: string, state: ActionResult): boolean {
     return this.isSameExpectedOrigin(expectedUrl, action.stateManager) && matchesNavigationUrl(expectedUrl, this.comparableUrl(state, expectedUrl));
+  }
+
+  private async pageChangedSince(previous: ActionResult): Promise<boolean> {
+    const freshState = await this.explorer.capture();
+    return (await freshState.diff(previous)).hasChanges();
   }
 
   private async ariaDiff(freshState: ActionResult, previous: ActionResult): Promise<string | null> {

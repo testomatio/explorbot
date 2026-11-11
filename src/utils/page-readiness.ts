@@ -1,3 +1,5 @@
+import { isAppRequest } from './url-matcher.ts';
+
 export async function waitForPageReadiness(page: any, options: PageReadinessOptions = {}): Promise<boolean> {
   if (!page) return false;
 
@@ -28,6 +30,15 @@ export function waitForDomChange(page: any, timeout: number): Promise<boolean> {
       timeout
     )
     .catch(() => true);
+}
+
+export function waitForAppRequest(page: any, baseOrigin: string, timeout: number): Promise<boolean> {
+  if (!page?.waitForRequest) return Promise.resolve(false);
+
+  return page
+    .waitForRequest((request: any) => isAppRequest(request, baseOrigin), { timeout })
+    .then(() => true)
+    .catch(() => false);
 }
 
 const DOM_QUIET_MS = 350;
