@@ -56,10 +56,11 @@ Set the recommended models in the exported config:
 ```javascript
 export default {
   ai: {
-    model: openrouter('openai/gpt-oss-20b:nitro'),
-    visionModel: openrouter('openai/gpt-5.6-luna'),
+    model: openrouter('meta/muse-ember'),
+    visionModel: openrouter('meta/muse-ember'),
     agenticModel: openrouter('anthropic/claude-haiku-5.5'),
     decisionModel: { provider: 'openrouter', model: '~typesafe/jev-latest' },
+    toolChoice: 'auto',
   },
 };
 ```
@@ -125,7 +126,7 @@ Set the recommended models in the exported config:
 ```javascript
 export default {
   ai: {
-    model: openai('gpt-5-nano'),
+    model: openai('gpt-6-luna'),
     visionModel: openai('gpt-6-luna'),
     agenticModel: openai('gpt-6-luna'),
   },

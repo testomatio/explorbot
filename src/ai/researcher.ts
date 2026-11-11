@@ -30,6 +30,7 @@ import { type PaginationMethods, WithPagination } from './researcher/pagination.
 import { extractValidContainers, formatResearchSummary, parseResearchSections } from './researcher/parser.ts';
 import { ResearchResult } from './researcher/research-result.ts';
 import { type SectionMethods, WithSections } from './researcher/sections.ts';
+import { type WallMethods, WithWalls } from './researcher/walls.ts';
 import { locatorRule as generalLocatorRuleText } from './rules.js';
 import { TaskAgent } from './task-agent.ts';
 
@@ -48,9 +49,9 @@ export const POSSIBLE_SECTIONS = {
   navigation: 'main navigation (top bar, sidebar, breadcrumbs)',
 };
 
-const ResearcherBase = WithSections(WithPagination(WithDeepAnalysis(WithCoordinates(WithLocators(TaskAgent as unknown as new (...args: any[]) => TaskAgent)))));
+const ResearcherBase = WithWalls(WithSections(WithPagination(WithDeepAnalysis(WithCoordinates(WithLocators(TaskAgent as unknown as new (...args: any[]) => TaskAgent))))));
 
-export interface Researcher extends LocatorMethods, CoordinateMethods, DeepAnalysisMethods, SectionMethods, PaginationMethods {}
+export interface Researcher extends LocatorMethods, CoordinateMethods, DeepAnalysisMethods, SectionMethods, PaginationMethods, WallMethods {}
 
 export class Researcher extends ResearcherBase implements Agent {
   protected readonly ACTION_TOOLS = ['click'];
@@ -158,6 +159,7 @@ export class Researcher extends ResearcherBase implements Agent {
           tag('warning').log(`Page at ${state.url} did not finish loading within timeout, continuing with best-effort research`);
         }
       }
+      if (this.actionResult!.overlay.isModal) await this.closeWall(screenshot);
 
       debugLog('Researching web page:', this.actionResult!.url);
 
