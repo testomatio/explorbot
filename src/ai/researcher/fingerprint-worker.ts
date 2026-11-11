@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { parentPort } from 'node:worker_threads';
 import { computeHtmlFingerprint } from '../../utils/html-diff.ts';
 import { isSamePageFamily } from '../../utils/url-matcher.ts';
-import { diceSimilarity } from '../../utils/similarity.ts';
+import { similarityScore } from '../../utils/similarity.ts';
 
 parentPort!.on('message', (data: FingerprintRequest) => {
   const { id, html, statesDir, maxAgeMs, threshold, url } = data;
@@ -34,7 +34,7 @@ parentPort!.on('message', (data: FingerprintRequest) => {
     const record = readFingerprint(filePath);
     if (url && record.url && !isSamePageFamily(url, record.url)) continue;
     const storedFingerprint = new Set(record.entries);
-    const similarity = diceSimilarity(currentFingerprint, storedFingerprint);
+    const similarity = similarityScore(currentFingerprint, storedFingerprint);
 
     if (similarity > bestSimilarity) {
       bestSimilarity = similarity;

@@ -472,6 +472,9 @@ export class Provider {
     setActivity(`🤖 Asking ${modelName} with dynamic tools`, 'ai');
     promptLog(`Using model: ${modelName}`);
 
+    const agentToolChoice = this.config.agents?.[options.agentName as keyof typeof this.config.agents]?.toolChoice || this.config.toolChoice;
+    if (agentToolChoice) options = { ...options, toolChoice: agentToolChoice };
+
     let toolsWithCommentary = tools;
     if (options.toolChoice !== 'required') toolsWithCommentary = withHarmonyChannelFallback(tools);
     const toolNames = Object.keys(toolsWithCommentary || {});

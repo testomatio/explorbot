@@ -206,6 +206,7 @@ agents: {
 | `systemPrompt` | `string` | Additional instructions appended to the agent's prompt (inline fallback) |
 | `beforeHook` | `Hook \| HookPatternMap` | Code to run before agent execution |
 | `afterHook` | `Hook \| HookPatternMap` | Code to run after agent execution |
+| `toolChoice` | `'auto' \| 'required' \| 'none'` | Forces this tool-choice mode on every tool call the agent makes, replacing the agent's own choice and `ai.toolChoice`. Set `'auto'` for a model whose provider accepts no other mode |
 
 Some agents take extra options: `pilot` accepts `stepsToReview` (recent steps reviewed per check, default 5); `planner` accepts `styles` (see [Planning styles](#planning-styles)) and `docsWeight` (share of scenarios grounded in documentation when Scout is enabled, default 70); `scout` accepts `dirs` (see [Scout agent](#scout-agent)); `rerunner` accepts `healLimit` (max heal attempts, default 3) and `recipes` (custom heal recipes, see [Rerunning Tests](../web-testing/rerun.md)). Researcher and Historian options are documented below.
 
@@ -539,6 +540,7 @@ export default {
     recommendedModels: 'openrouter',     // Fills every unset role from this provider's bundled recommendations; explicit roles win
     visionModel: groq('meta-llama/llama-4-scout-17b-16e-instruct'),  // Model for screenshot analysis; setting it enables vision features
     decisionModel: { provider: 'openrouter', model: 'typesafe/jev-1.13' }, // Optional; see providers docs
+    toolChoice: 'auto',            // Optional; forces this tool-choice mode for every agent. recommendedModels sets it when the provider needs it
     config: {},                    // Additional provider config
     langfuse: {                    // Observability settings
       enabled: true,
