@@ -19,6 +19,7 @@ function createHarness(
     responses?: string[];
     knowledge?: string;
     ariaChanged?: string;
+    unchanged?: boolean;
     stopAt?: number;
     stopReason?: string;
     attempt?: (code: string, page: { url: string; hash: string }) => boolean;
@@ -35,7 +36,7 @@ function createHarness(
     url: page.url,
     fullUrl: `${BASE_URL}${page.url}`,
     getStateHash: () => page.hash,
-    diff: async () => ({ ariaChanged: options.ariaChanged ?? null }),
+    diff: async () => ({ ariaChanged: options.ariaChanged ?? null, hasChanges: () => !options.unchanged }),
   });
 
   const action: any = {
@@ -142,6 +143,19 @@ describe('Navigator resolveState', () => {
     const resolved = await harness.navigator.resolveState('click Save', fakeActionResult());
 
     expect(resolved).toBe(true);
+  });
+
+  it('does not resolve on a step that changed nothing on the page', async () => {
+    const harness = createHarness({
+      responses: ["```js\nI.click('Project')\n```", ''],
+      unchanged: true,
+    });
+
+    const resolved = await harness.navigator.resolveState('open project settings', fakeActionResult());
+
+    expect(resolved).toBe(false);
+    expect(harness.sent[1]).toContain('Ran without error but nothing on the page changed');
+    expect(harness.flows).toHaveLength(0);
   });
 
   it('treats code blocks as alternatives when no URL is expected', async () => {

@@ -338,9 +338,15 @@ class Navigator implements Agent {
           if (freshHash !== prevHash && (attempt.ok || check.urlMatches)) {
             progressBlocks.push(codeBlock);
           }
-        } else {
-          resolved = attempt.ok;
-          if (attempt.ok) progressBlocks.push(codeBlock);
+        } else if (attempt.ok) {
+          const freshState = await this.explorer.capture();
+          resolved = (await freshState.diff(prevActionResult)).hasChanges();
+          if (resolved) progressBlocks.push(codeBlock);
+          if (!resolved) {
+            lastFailure = 'Ran without error but nothing on the page changed';
+            tag('warning').log(lastFailure);
+            batchFailures.push({ code: codeBlock, error: lastFailure });
+          }
         }
 
         if (!resolved) return;

@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-11-11
+
+### Changes
+- [Navigator] A step the Tester hands over with `interact` no longer counts as done just because its code ran without an error. If nothing on the page changed, the Navigator tries the next solution instead of reporting success, so a click on the wrong element is no longer reported back as the step being done.
+
 ## 2026-10-31
 
 ### New CLI Options
