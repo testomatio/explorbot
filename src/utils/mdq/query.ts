@@ -106,19 +106,11 @@ export class MarkdownQuery {
     return results;
   }
 
-  entries(): Record<string, string> {
-    const entries: Record<string, string> = {};
-
-    for (const range of this.matches) {
-      for (const line of this.tokenText(range.token).split('\n')) {
-        const separator = line.indexOf(':');
-        if (separator < 1) continue;
-        const value = line.slice(separator + 1).trim();
-        if (value) entries[line.slice(0, separator).trim().toLowerCase()] = value;
-      }
-    }
-
-    return entries;
+  entries(): Record<string, string>;
+  entries(key: string): string | undefined;
+  entries(key?: string): Record<string, string> | string | undefined {
+    if (key) return this.entriesOf(this.plainText().split('\n'))[key.trim().toLowerCase()];
+    return this.entriesOf(this.matches.flatMap((range) => this.tokenText(range.token).split('\n')));
   }
 
   frontmatter(): Record<string, unknown> {
@@ -257,7 +249,10 @@ export class MarkdownQuery {
     return this.rows();
   }
 
-  keyValue(): Record<string, string> {
+  keyValue(): Record<string, string>;
+  keyValue(key: string): string | undefined;
+  keyValue(key?: string): Record<string, string> | string | undefined {
+    if (key) return this.entries(key);
     return this.entries();
   }
 
@@ -434,6 +429,17 @@ export class MarkdownQuery {
     if (token.type === 'html') return value.raw || '';
     if (token.type === 'table') return [...(value.header || []).map((cell: any) => cell.text), ...(value.rows || []).flatMap((row: any) => row.map((cell: any) => cell.text))].join(', ');
     return value.text || '';
+  }
+
+  private entriesOf(lines: string[]): Record<string, string> {
+    const entries: Record<string, string> = {};
+    for (const line of lines) {
+      const separator = line.indexOf(':');
+      if (separator < 1) continue;
+      const value = line.slice(separator + 1).trim();
+      if (value) entries[line.slice(0, separator).trim().toLowerCase()] = value;
+    }
+    return entries;
   }
 
   private plainTextOf(token: Token): string {
