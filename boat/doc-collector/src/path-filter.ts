@@ -1,5 +1,5 @@
 import { normalizeUrl } from '../../../src/state-manager.ts';
-import { matchesUrl, generalizeUrl } from '../../../src/utils/url-matcher.ts';
+import { generalizeUrl, matchesUrl } from '../../../src/utils/url-matcher.ts';
 import type { DocbotConfig } from './config.ts';
 
 const DEFAULT_DENIED_PATH_SEGMENTS = ['callback', 'callbacks', 'logout', 'signout', 'sign_out', 'destroy', 'delete', 'remove'];

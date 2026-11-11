@@ -440,7 +440,7 @@ export class Rerunner extends TaskAgent implements Agent {
       <tools>
       - You MUST execute the replacement action — not just diagnose
       - Use click() for buttons, links — commands array is FALLBACK LOCATORS for the SAME element
-      - Use form() for text input, dropdown selection, file uploads
+      - Use form() for text input, dropdown selection, file uploads; drag steps are recorded as plain I.usePlaywrightTo mouse code
       - Use pressKey() for special keys or key combinations
       - Use wait() when page is loading — returns fresh ARIA automatically
       - Use research() to understand page structure, sections, and available UI elements

@@ -4,8 +4,8 @@ import dedent from 'dedent';
 import { z } from 'zod';
 import { ConfigParser } from '../../config.ts';
 import { Plan, Test } from '../../test-plan.ts';
-import { getStyles } from '../planner/styles.ts';
 import { PlanningBlockedError } from '../../utils/error-page.ts';
+import { getStyles } from '../planner/styles.ts';
 import { listRecentArtifacts, readCaptainFile } from './file-tools.ts';
 import { type Constructor, type ModeContext, resolveProjectRoot } from './mixin.ts';
 

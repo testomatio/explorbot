@@ -1,5 +1,5 @@
-import { createRequire } from 'node:module';
 import { readFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import { createDebug } from './utils/logger.ts';
 
 const debugLog = createDebug('explorbot:playwright-recorder');

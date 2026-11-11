@@ -1,0 +1,67 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Drag board</title>
+</head>
+<body>
+  <h1>Drag board</h1>
+
+  <h2>Reorderable list</h2>
+  <ul id="mouse-list" aria-label="Reorderable list">
+    <li>Item 1</li>
+    <li>Item 2</li>
+    <li>Item 3</li>
+  </ul>
+
+  <h2>HTML5 drop zone</h2>
+  <div id="html5-chip" class="html5-item" draggable="true">Chip</div>
+  <div id="drop-zone" aria-label="Drop zone" style="margin-top:16px;padding:40px;border:2px dashed #888">Drop here</div>
+
+  <h2>Guarded HTML5 drop zone</h2>
+  <div id="guarded-chip" class="html5-item" draggable="true">Guarded chip</div>
+  <div id="guarded-zone" aria-label="Guarded drop zone" style="margin-top:16px;padding:40px;border:2px dashed #888">Guarded drop here</div>
+
+  <script>
+    const list = document.getElementById('mouse-list');
+    let dragging = null;
+
+    list.addEventListener('mousedown', (e) => {
+      dragging = e.target.closest('li');
+    });
+
+    document.addEventListener('mouseup', (e) => {
+      if (!dragging) return;
+      const over = document.elementFromPoint(e.clientX, e.clientY);
+      const target = over ? over.closest('li') : null;
+      if (target && target !== dragging && list.contains(target)) {
+        if (e.ctrlKey) {
+          const copy = dragging.cloneNode(true);
+          copy.textContent = `${copy.textContent} (copy)`;
+          target.before(copy);
+        } else {
+          target.before(dragging);
+        }
+      }
+      dragging = null;
+    });
+
+    const acceptDrop = (chipId, zone) => {
+      const chip = document.getElementById(chipId);
+      chip.addEventListener('dragstart', (e) => {
+        e.dataTransfer.setData('text/plain', chipId);
+      });
+      zone.addEventListener('dragover', (e) => e.preventDefault());
+      zone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        zone.appendChild(chip);
+      });
+    };
+
+    acceptDrop('html5-chip', document.getElementById('drop-zone'));
+    acceptDrop('guarded-chip', document.getElementById('guarded-zone'));
+
+    document.getElementById('guarded-chip').addEventListener('mousedown', (e) => e.preventDefault());
+  </script>
+</body>
+</html>

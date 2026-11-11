@@ -1,6 +1,6 @@
-import codeceptjs from 'codeceptjs';
 import { describe, expect, it } from 'bun:test';
-import { attachStepLogger, type ExecutedStep } from '../../src/action.ts';
+import codeceptjs from 'codeceptjs';
+import { type ExecutedStep, attachStepLogger } from '../../src/action.ts';
 import { formatExecutedSteps } from '../../src/ai/tools.ts';
 
 function step(code: string) {
@@ -33,6 +33,18 @@ describe('executed steps', () => {
     detachSteps();
 
     expect(steps[0]?.command).toBe('I.click("Manual", step.opts({"elementIndex":2}))');
+  });
+
+  it('escapes a locator containing quotes so the recorded command stays valid code', () => {
+    const steps: ExecutedStep[] = [];
+    const detachSteps = attachStepLogger(steps);
+
+    const drag = { prefix: '', suffix: '', actor: 'I', name: 'dragAndDrop', args: ['li:has-text("Item 2")', 'li:has-text("Item 1")'], humanizeArgs: () => '"li:has-text("Item 2")"', toCode: () => 'I.dragAndDrop("li:has-text("Item 2")", "li:has-text("Item 1")")' };
+    codeceptjs.event.dispatcher.emit(codeceptjs.event.step.passed, drag);
+
+    detachSteps();
+
+    expect(steps[0]?.command).toBe('I.dragAndDrop("li:has-text(\\"Item 2\\")", "li:has-text(\\"Item 1\\")")');
   });
 
   it('reports a successful command even when a later one fails', () => {

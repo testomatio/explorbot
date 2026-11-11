@@ -1270,8 +1270,13 @@ export class Pilot implements Agent {
 
       To request more context, mention ATTACH_ARIA, ATTACH_SUMMARY, or ATTACH_UI_MAP — only when recent actions show failures.
 
-      Tester tools: click, pressKey, form, see, verify, interact, context, research, xpathCheck,
-      visualClick, back, getVisitedStates, reset, stop, finish, record.
+      dragAndDrop and rightClick are extra tools: Tester has them only when the plan enables them or after you request them.
+      Request by including a line "ENABLE_TOOLS: <comma-separated tool names>" in your instruction — when the scenario needs
+      dragging an element or opening a context menu and click()/form() cannot achieve it (for example, repeated failed
+      attempts to move an item).
+
+      Tester tools: click, hover, pressKey, form, see, verify, interact, context, research, xpathCheck,
+      visualClick, back, getVisitedStates, reset, stop, finish, record; extra when enabled: dragAndDrop, rightClick.
       Use tool names exactly as listed. Do not invent combined names or aliases.
       Reloading is not a tool: to re-read a page from the server, instruct Tester to run I.refreshPage() through form.
 

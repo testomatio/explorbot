@@ -2,9 +2,9 @@ import { describe, expect, it } from 'bun:test';
 import { ActionResult } from '../../src/action-result.ts';
 import { Captain } from '../../src/ai/captain.ts';
 import type { ExperienceTracker } from '../../src/experience-tracker.ts';
+import { ExplorBot } from '../../src/explorbot.ts';
 import type { KnowledgeTracker } from '../../src/knowledge-tracker.ts';
 import { StateManager } from '../../src/state-manager.ts';
-import { ExplorBot } from '../../src/explorbot.ts';
 import { Plan, Test } from '../../src/test-plan.ts';
 import { NavigationBlockedError, PlanningBlockedError } from '../../src/utils/error-page.ts';
 

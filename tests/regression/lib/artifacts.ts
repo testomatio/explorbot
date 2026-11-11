@@ -1,9 +1,9 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import stripAnsi from 'strip-ansi';
-import { parsePlansFromMarkdown } from '../../../src/utils/test-plan-markdown.ts';
-import { mdq } from '../../../src/utils/markdown-query.ts';
 import type { Plan } from '../../../src/test-plan.ts';
+import { mdq } from '../../../src/utils/markdown-query.ts';
+import { parsePlansFromMarkdown } from '../../../src/utils/test-plan-markdown.ts';
 
 export function findResearchFiles(runDir: string): string[] {
   return listMarkdown(join(runDir, 'output', 'research'));

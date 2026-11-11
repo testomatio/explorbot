@@ -13,9 +13,11 @@ import { createDebug, tag } from '../utils/logger.js';
 import { loop } from '../utils/loop.ts';
 import { jsonToTable } from '../utils/markdown-parser.ts';
 import { mdq } from '../utils/markdown-query.js';
+import { RulesLoader } from '../utils/rules-loader.ts';
 import { findPlanMarkdownProblems, parsePlansFromMarkdownText, planToCompactAiContext, readPlanMarkdownComment } from '../utils/test-plan-markdown.ts';
 import type { Agent, AgentDeps } from './agent.js';
 import { Conversation } from './conversation.ts';
+import { EXPLICIT_TOOL_NAMES } from './explicit-tools.ts';
 import type { Fisherman } from './fisherman.ts';
 import { WithSessionDedup } from './planner/session-dedup.ts';
 import { getActiveStyle } from './planner/styles.ts';
@@ -24,9 +26,8 @@ import type { Provider } from './provider.js';
 import { POSSIBLE_SECTIONS, type Researcher } from './researcher.ts';
 import { findSimilarStateHash } from './researcher/cache.ts';
 import { hasFocusedSection } from './researcher/focus.ts';
-import { RulesLoader } from '../utils/rules-loader.ts';
 import { capabilityGroundingRule, dataProtectionRules, fileUploadRule } from './rules.ts';
-import { ScoutQuery, type Scout } from './scout.ts';
+import { type Scout, ScoutQuery } from './scout.ts';
 
 const debugLog = createDebug('explorbot:planner');
 
@@ -244,6 +245,10 @@ export class Planner extends PlannerBase implements Agent {
     const tests = result.tests;
     debugLog('Created tests:', tests);
 
+    for (const test of tests) {
+      if (await this.needsExplicitTools(test)) test.explicitTools = [...EXPLICIT_TOOL_NAMES];
+    }
+
     if (!this.currentPlan) {
       const cached = state.url ? getRegisteredPlan(state.url) : null;
       const planName = feature || cached?.plan.title || result.planName || state.url;
@@ -280,6 +285,15 @@ export class Planner extends PlannerBase implements Agent {
 
   getSuite(): Suite | null {
     return this.lastSuite;
+  }
+
+  private async needsExplicitTools(test: Test): Promise<boolean> {
+    const needs = await this.provider.oracle(
+      'Performing the steps of this test scenario or verifying its expected outcomes requires a non-standard interaction: dragging an element to a new position, or opening a context menu with a right-click.',
+      { scenario: test.scenario, steps: test.plannedSteps, expectedOutcomes: test.expected },
+      { agentName: 'planner', telemetry: { functionId: 'planner.explicitTools' } }
+    );
+    return needs === true;
   }
 
   private addNewTests(tests: Test[], defaultStartUrl: string): Test[] {

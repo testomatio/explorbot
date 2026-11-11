@@ -1,7 +1,7 @@
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { mkdtempSync, rmSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { CommandHandler } from '../../src/command-handler.js';
 import type { ExplorBot } from '../../src/explorbot.js';
 import { Plan, Test } from '../../src/test-plan.js';

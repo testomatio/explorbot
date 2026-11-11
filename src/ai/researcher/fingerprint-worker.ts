@@ -2,8 +2,8 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { parentPort } from 'node:worker_threads';
 import { computeHtmlFingerprint } from '../../utils/html-diff.ts';
-import { isSamePageFamily } from '../../utils/url-matcher.ts';
 import { similarityScore } from '../../utils/similarity.ts';
+import { isSamePageFamily } from '../../utils/url-matcher.ts';
 
 parentPort!.on('message', (data: FingerprintRequest) => {
   const { id, html, statesDir, maxAgeMs, threshold, url } = data;

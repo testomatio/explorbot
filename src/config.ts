@@ -7,8 +7,8 @@ import dedent from 'dedent';
 import matter from 'gray-matter';
 import { EXPLORBOT_CONFIG_PATHS, type SiteRecord, findGlobalConfig, globalEnvPath, isGlobalConfigPath, loadSiteConfig, registerSite, resolveSiteTarget } from './global-config.js';
 import { getCliName } from './utils/cli-name.js';
-import { deepMerge } from './utils/merge.js';
 import { log, tag } from './utils/logger.js';
+import { deepMerge } from './utils/merge.js';
 
 export const PROVIDERS: Record<string, ProviderInfo> = {
   openai: { envKey: 'OPENAI_API_KEY', keyUrl: 'https://platform.openai.com/api-keys', load: async () => (await import('@ai-sdk/openai')).createOpenAI() },
