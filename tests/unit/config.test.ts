@@ -191,6 +191,18 @@ describe('ConfigParser environment mode', () => {
     expect(parser.getProjectRoot()).toBe(join(scratchDir, '.explorbot', 'sites', 'flag.example.com'));
   });
 
+  it('treats a path and query in EXPLORBOT_URL as the base path and query', async () => {
+    process.env.EXPLORBOT_AI_MODEL = 'openrouter/openai/gpt-oss-120b';
+    process.env.EXPLORBOT_OUTPUT = scratchDir;
+    process.env.EXPLORBOT_URL = 'https://env.example.com/projects/demo/?preview=pr-42';
+
+    const config = await parser.loadConfig();
+
+    expect(config.playwright.url).toBe('https://env.example.com');
+    expect(parser.getBasePath()).toBe('/projects/demo');
+    expect(parser.getBaseQuery()).toBe('?preview=pr-42');
+  });
+
   it('splits the model spec on the first slash only', async () => {
     const model = await resolveModel('openrouter/openai/gpt-oss-120b:nitro');
     expect(model.modelId).toBe('openai/gpt-oss-120b:nitro');
