@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-11
+
+### Changes
+- **Pilot sees notifications when it decides pass/fail** — A toast, alert or other message that appeared after an action is now part of the action log Pilot reads for its final verdict and for reset decisions. A test whose confirmation closed before it could be checked is no longer failed for showing "no confirmation".
 ## 2026-11-10
 
 ### Configuration
