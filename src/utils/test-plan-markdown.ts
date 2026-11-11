@@ -224,7 +224,7 @@ export function parsePlansFromMarkdownText(content: string): Plan[] {
     const firstItem = mdq(suiteContent).query('section[0] item[0]').nodes()[0]?.text.trim() || '';
     const urlMatch = firstItem.match(/^URL:\s*(.+)/);
     if (urlMatch) {
-      plan.url = urlMatch[1].replace(/\*\*|`|\*|_|~~?/g, '').trim();
+      plan.url = urlMatch[1].trim().replace(/^[*_`~]+|[*_`~]+$/g, '');
       for (const test of plan.tests) {
         if (!test.startUrl) test.startUrl = plan.url;
       }

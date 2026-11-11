@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-11-11
+
+### Changes
+- Test plans: the Prerequisite URL of a plan keeps underscores (`?assets_host=…`, `/my_project/`). They were stripped before, so tests opened a different URL than the one written in the plan.
+
 ## 2026-10-31
 
 ### New CLI Options
