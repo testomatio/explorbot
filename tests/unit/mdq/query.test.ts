@@ -757,6 +757,10 @@ Not a section.
     it('joins blocks of a section with new lines', () => {
       expect(mdq('## Steps\n\nFirst **step**\n\n* one\n* _two_\n').query('section("Steps")').plainText()).toBe('Steps\nFirst step\none\ntwo');
     });
+
+    it('keeps every match on its own line', () => {
+      expect(mdq('## A\n\nRun **this**.\n\n## B\n\nThen *that*.\n').query('paragraph').plainText()).toBe('Run this.\nThen that.');
+    });
   });
 
   describe('keyValue', () => {

@@ -66,18 +66,18 @@ const startUrl = mdq(plan).section('Prerequisite').entry('url');
 const testComments = mdq(doc).comment(/^test/).nodes();
 ```
 
-`entries()` returns every `Key: value` line of a blockquote or paragraph, with lowercase keys and values exactly as written. `entry(key)` returns one value with Markdown markup removed; the key matches regardless of case, spacing or markup, and the block can be any block, list items included:
+Read `Key: value` lines:
 
 ```js
-const note = "> Container: '.rows'\n> Pagination: infinite";
-mdq(note).query('blockquote').entries();            // { container: "'.rows'", pagination: 'infinite' }
-mdq(note).query('blockquote').entry('PAGINATION');  // 'infinite'
+const note = mdq('> Owner: QA\n> Status: draft');
+note.query('blockquote').entries();        // { owner: 'QA', status: 'draft' }
+note.query('blockquote').entry('STATUS');  // 'draft'
 
-const list = '* **URL:** `https://app.example.com/my_app/?preview=pr_1`\n* Owner: QA';
-mdq(list).query('item[0]').entry('url');            // 'https://app.example.com/my_app/?preview=pr_1'
-mdq(list).query('list').entry('owner');             // 'QA'
-mdq(list).query('list').entry('title');             // undefined
-mdq(list).query('item[0]').plainText();             // 'URL: https://app.example.com/my_app/?preview=pr_1'
+const list = mdq('* **URL:** `https://app.example.com/my_app/`\n* Owner: QA');
+list.query('item[0]').entry('url');        // 'https://app.example.com/my_app/'
+list.query('list').entry('owner');         // 'QA'
+list.query('list').entry('title');         // undefined
+list.query('list').entries();              // {} — entries() reads blockquotes and paragraphs only
 ```
 
 ### Update data in Markdown
@@ -138,7 +138,12 @@ mdq(source)
   .toString();
 ```
 
-`toString()` always returns the whole document. `text()` returns the raw Markdown for only the current selection, and `plainText()` the same selection with all Markdown markup removed.
+```js
+const doc = mdq('## Install\n\nRun **npm install**.\n');
+doc.query('paragraph').text();       // 'Run **npm install**.\n' — the selection, raw
+doc.query('paragraph').plainText();  // 'Run npm install.'       — the selection, markup removed
+doc.query('paragraph').toString();   // the whole document
+```
 
 ## CLI reference
 
@@ -169,10 +174,20 @@ Only one edit option can be used per invocation. `--in-place` requires a file be
 | --- | --- |
 | `-j, --json` | Output selected table rows as JSON |
 | `-c, --count` | Print the number of matches |
-| `-t, --text` | Print unwrapped node text |
+| `-t, --text` | Print each match without its block markers (`*`, `>`, `#`) |
 | `--frontmatter` | Print YAML frontmatter as JSON; no selector is required |
 
 Without a read option, mdq prints the raw Markdown for the selection.
+
+```bash
+$ printf '* one\n* two\n' | npx mdq-cli 'item'
+* one
+* two
+$ printf '* one\n* two\n' | npx mdq-cli 'item' --text
+one
+
+two
+```
 
 ### Edit options
 
@@ -250,6 +265,16 @@ To replace the original file, prefer `--in-place`. Do not redirect output back t
 | `hr` | A thematic break |
 | `html` | An HTML block, matched against its raw text |
 | `comment` | An HTML comment, matched against its **inner** body |
+
+```js
+const doc = mdq('## Install\n\nRun it.\n\n### From source\n\nClone.\n\n## Usage\n');
+doc.section('Install').plainText();  // 'Install\nRun it.\nFrom source\nClone.' — stops at ## Usage
+doc.heading('Install').plainText();  // 'Install'
+
+const note = mdq('<!-- test priority: high -->\n');
+note.query('comment(/^test/)').count();  // 1
+note.query('comment(/^<!--/)').count();  // 0 — the <!-- --> markers are not part of the text
+```
 
 ### Match text
 
@@ -334,12 +359,20 @@ mdq(doc).heading(/^summary/i, { depth: 3 });
 | `plainText()` | The text of every match with all Markdown markup removed, blocks on separate lines |
 | `nodes()` | One `{ type, depth, text }` object per match |
 | `rows()` | Table rows as objects keyed by table header |
-| `entries()` | All `Key: value` lines of a blockquote or paragraph, with lowercase keys and raw values |
-| `entry(key)` | One entry's value from any block, markup removed; the key matches regardless of case, spacing or markup (`**URL:**`), `undefined` when absent |
+| `entries()` | All `Key: value` lines of a blockquote or paragraph |
+| `entry(key)` | One `Key: value` value, markup removed |
 | `count()` / `exists()` | The number of matches / whether any match exists |
 | `first()` / `last()` / `at(n)` / `slice(from, to)` | A narrowed selection |
 | `each()` | One single-match `MarkdownQuery` per match |
 | `preceding()` / `following()` | Everything before the first / after the last match |
+
+```js
+const doc = mdq('## Install\n\n## Usage\n');
+doc.query('h2').nodes();                                  // [{ type: 'heading', depth: 2, text: 'Install' }, { …, text: 'Usage' }]
+doc.query('h2').each().map((h) => h.plainText());         // ['Install', 'Usage']
+doc.section('Usage').preceding().query('h2').plainText(); // 'Install'
+doc.section('Install').following().query('h2').plainText(); // 'Usage'
+```
 
 ## Writing with the JavaScript API
 
@@ -356,6 +389,18 @@ Every write returns a new `MarkdownQuery` over the complete edited document.
 | `addItem(text)` | Append a list item using the existing list marker |
 | `setEntry(key, value)` | Set a `Key: value` line; pass `null` to delete it |
 | `setFrontmatter(key, value)` | Set a YAML frontmatter value |
+
+```js
+const note = mdq('> Owner: QA\n> Status: draft\n').query('blockquote');
+note.setEntry('Status', 'done').toString();  // '> Owner: QA\n> Status: done'
+note.setEntry('Status', null).toString();    // '> Owner: QA'
+
+mdq('1. one\n2. two\n').query('list').addItem('three').toString();
+// '1. one\n2. two\n3. three\n'
+
+mdq('| A | B |\n| - | - |\n| 1 | 2 |\n').query('table').addRow({ A: '10', B: '20' }).toString();
+// '| A   | B   |\n| --- | --- |\n| 1   | 2   |\n| 10  | 20  |\n'
+```
 
 `prepend` and `append` require a section or list. Using either method on another block raises `MdqOperationError`.
 

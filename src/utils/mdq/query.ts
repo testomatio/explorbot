@@ -71,8 +71,8 @@ export class MarkdownQuery {
   }
 
   plainText(): string {
-    return marked
-      .lexer(this.text())
+    return this.each()
+      .flatMap((match) => marked.lexer(match.text()))
       .map((token) => this.plainTextOf(token))
       .filter(Boolean)
       .join('\n');
