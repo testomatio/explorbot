@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-11-11
+
+### Changes
+- **`EXPLORBOT_URL`** with a path or query (`https://app.example.com/projects/demo/?preview=pr-42`) now sets the base path and pinned query, the same as `web.url` in a config file or `--base-url`. Before, relative navigation was appended to the whole URL and opened pages like `/projects/demo/?preview=pr-42/projects/demo/settings`.
+
 ## 2026-10-31
 
 ### New CLI Options
