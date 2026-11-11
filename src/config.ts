@@ -410,6 +410,7 @@ export class ConfigParser {
         }
         const outputRoot = resolveOutputRoot(options?.baseUrl || process.env.EXPLORBOT_URL || envUrl);
         loadedConfig = await this.buildEnvConfig(envUrl, outputRoot);
+        if (!this.runBase && URL.canParse(process.env.EXPLORBOT_URL || '')) this.runBase = parseRunBase(process.env.EXPLORBOT_URL);
         sourcePath = join(outputRoot, 'explorbot.config.js');
 
         log(`Configuration built from EXPLORBOT_* environment variables. Output: ${outputRoot}`);
