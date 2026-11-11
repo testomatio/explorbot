@@ -62,7 +62,44 @@ import { mdq } from 'mdq-cli';
 
 const endpoints = mdq(readme).query('section("API") table').rows();
 const metadata = mdq(plan).section('Metadata').entries();
+const startUrl = mdq(plan).section('Prerequisite').entry('url');
 const testComments = mdq(doc).comment(/^test/).nodes();
+```
+
+#### Read `Key: value` entries
+
+```md
+> Owner: QA
+> Status: draft
+```
+
+```js
+mdq(doc).query('blockquote').entries();
+// { owner: 'QA', status: 'draft' }
+
+mdq(doc).query('blockquote').entry('STATUS');
+// 'draft'
+```
+
+`entry()` also reads list items, and ignores key case and markup:
+
+```md
+* **URL:** `https://app.example.com/my_app/`
+* Owner: QA
+```
+
+```js
+mdq(doc).query('item[0]').entry('url');
+// 'https://app.example.com/my_app/'
+
+mdq(doc).query('list').entry('owner');
+// 'QA'
+
+mdq(doc).query('list').entry('title');
+// undefined
+
+mdq(doc).query('list').entries();
+// {}  — entries() reads blockquotes and paragraphs only
 ```
 
 ### Update data in Markdown
@@ -123,7 +160,22 @@ mdq(source)
   .toString();
 ```
 
-`toString()` always returns the whole document. `text()` returns the raw Markdown for only the current selection.
+```md
+## Install
+
+Run **npm install**.
+```
+
+```js
+mdq(doc).query('paragraph').text();
+// 'Run **npm install**.\n'  — the selection, raw
+
+mdq(doc).query('paragraph').plainText();
+// 'Run npm install.'  — the selection, markup removed
+
+mdq(doc).query('paragraph').toString();
+// the whole document
+```
 
 ## CLI reference
 
@@ -154,10 +206,26 @@ Only one edit option can be used per invocation. `--in-place` requires a file be
 | --- | --- |
 | `-j, --json` | Output selected table rows as JSON |
 | `-c, --count` | Print the number of matches |
-| `-t, --text` | Print unwrapped node text |
+| `-t, --text` | Print each match without its block markers (`*`, `>`, `#`) |
 | `--frontmatter` | Print YAML frontmatter as JSON; no selector is required |
 
 Without a read option, mdq prints the raw Markdown for the selection.
+
+```md
+* one
+* two
+```
+
+```bash
+$ npx mdq-cli 'item' list.md
+* one
+* two
+
+$ npx mdq-cli 'item' --text list.md
+one
+
+two
+```
 
 ### Edit options
 
@@ -235,6 +303,38 @@ To replace the original file, prefer `--in-place`. Do not redirect output back t
 | `hr` | A thematic break |
 | `html` | An HTML block, matched against its raw text |
 | `comment` | An HTML comment, matched against its **inner** body |
+
+```md
+## Install
+
+Run it.
+
+### From source
+
+Clone.
+
+## Usage
+```
+
+```js
+mdq(doc).section('Install').plainText();
+// 'Install\nRun it.\nFrom source\nClone.'  — keeps ### From source, stops at ## Usage
+
+mdq(doc).heading('Install').plainText();
+// 'Install'
+```
+
+```md
+<!-- test priority: high -->
+```
+
+```js
+mdq(doc).query('comment(/^test/)').count();
+// 1
+
+mdq(doc).query('comment(/^<!--/)').count();
+// 0  — the <!-- --> markers are not part of the text
+```
 
 ### Match text
 
@@ -316,13 +416,35 @@ mdq(doc).heading(/^summary/i, { depth: 3 });
 | Method | Returns |
 | --- | --- |
 | `text()` | Raw Markdown from every match, joined together |
+| `plainText()` | The text of every match with all Markdown markup removed, blocks on separate lines |
 | `nodes()` | One `{ type, depth, text }` object per match |
 | `rows()` | Table rows as objects keyed by table header |
-| `entries()` | `Key: value` lines from a block, with lowercase keys |
+| `entries()` | All `Key: value` lines of a blockquote or paragraph |
+| `entry(key)` | One `Key: value` value, markup removed |
 | `count()` / `exists()` | The number of matches / whether any match exists |
 | `first()` / `last()` / `at(n)` / `slice(from, to)` | A narrowed selection |
 | `each()` | One single-match `MarkdownQuery` per match |
 | `preceding()` / `following()` | Everything before the first / after the last match |
+
+```md
+## Install
+
+## Usage
+```
+
+```js
+mdq(doc).query('h2').nodes();
+// [{ type: 'heading', depth: 2, text: 'Install' }, { type: 'heading', depth: 2, text: 'Usage' }]
+
+mdq(doc).query('h2').each().map((h) => h.plainText());
+// ['Install', 'Usage']
+
+mdq(doc).section('Usage').preceding().query('h2').plainText();
+// 'Install'
+
+mdq(doc).section('Install').following().query('h2').plainText();
+// 'Usage'
+```
 
 ## Writing with the JavaScript API
 
@@ -339,6 +461,64 @@ Every write returns a new `MarkdownQuery` over the complete edited document.
 | `addItem(text)` | Append a list item using the existing list marker |
 | `setEntry(key, value)` | Set a `Key: value` line; pass `null` to delete it |
 | `setFrontmatter(key, value)` | Set a YAML frontmatter value |
+
+```md
+> Owner: QA
+> Status: draft
+```
+
+```js
+mdq(doc).query('blockquote').setEntry('Status', 'done').toString();
+```
+
+```md
+> Owner: QA
+> Status: done
+```
+
+```js
+mdq(doc).query('blockquote').setEntry('Status', null).toString();
+```
+
+```md
+> Owner: QA
+```
+
+`addItem` keeps the list's marker:
+
+```md
+1. one
+2. two
+```
+
+```js
+mdq(doc).query('list').addItem('three').toString();
+```
+
+```md
+1. one
+2. two
+3. three
+```
+
+`addRow` realigns the columns:
+
+```md
+| A | B |
+| - | - |
+| 1 | 2 |
+```
+
+```js
+mdq(doc).query('table').addRow({ A: '10', B: '20' }).toString();
+```
+
+```md
+| A   | B   |
+| --- | --- |
+| 1   | 2   |
+| 10  | 20  |
+```
 
 `prepend` and `append` require a section or list. Using either method on another block raises `MdqOperationError`.
 
