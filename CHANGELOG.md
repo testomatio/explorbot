@@ -3,6 +3,7 @@
 ## 2026-11-11
 
 ### Changes
+- [Pilot] The action history Pilot reviews before a pass/fail verdict is now in the order things happened. Returning to a page shows it as a new visit instead of merging it into the first one, and checks made right after a navigation appear under the page they ran on. Actions are numbered across the whole log. A check from an earlier visit is no longer mistaken for the final state.
 - **Pilot sees notifications when it decides pass/fail** — A toast, alert or other message that appeared after an action is now part of the action log Pilot reads for its final verdict and for reset decisions. A test whose confirmation closed before it could be checked is no longer failed for showing "no confirmation".
 ## 2026-11-10
 

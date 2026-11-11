@@ -1055,26 +1055,25 @@ export class Pilot implements Agent {
     const initialUrl = stateHistory[0]?.toState?.url || '';
     let currentUrl = initialUrl;
 
-    const groups = new Map<string, { title?: string; h1?: string; h3?: string; lines: string[] }>();
+    const groups: { url: string; title?: string; h1?: string; h3?: string; lines: string[] }[] = [];
 
-    const ensureGroup = (url: string) => {
-      if (!groups.has(url)) {
-        const matchingState = stateHistory.find((t) => t.toState.url === url)?.toState;
-        groups.set(url, {
-          title: matchingState?.title,
-          h1: matchingState?.h1,
-          h3: matchingState?.h3,
-          lines: [],
-        });
-      }
+    const startGroup = (url: string) => {
+      currentUrl = url;
+      const matchingState = stateHistory.find((t) => t.toState.url === url)?.toState;
+      groups.push({
+        url,
+        title: matchingState?.title,
+        h1: matchingState?.h1,
+        h3: matchingState?.h3,
+        lines: [],
+      });
     };
 
-    ensureGroup(currentUrl);
+    startGroup(currentUrl);
 
-    for (const exec of executions) {
+    for (const [index, exec] of executions.entries()) {
       if (!CHECK_TOOLS.includes(exec.toolName) && exec.output?.url && exec.output.url !== currentUrl) {
-        currentUrl = exec.output.url;
-        ensureGroup(currentUrl);
+        startGroup(exec.output.url);
       }
 
       const description = exec.input?.explanation || exec.input?.assertion || exec.input?.request || truncateJson(exec.input);
@@ -1094,7 +1093,8 @@ export class Pilot implements Agent {
       if (resultMessage && (CHECK_TOOLS.includes(exec.toolName) || !exec.wasSuccessful)) {
         line += `\n    result: ${resultMessage}`;
       }
-
+      
+      groups[groups.length - 1].lines.push(`${index + 1}. ${line}`);
       const messages = this.formatPageMessages(exec.output);
       if (messages) line += `\n    messages: ${messages}`;
 
@@ -1103,8 +1103,8 @@ export class Pilot implements Agent {
 
     const PER_GROUP_CAP = 25;
     const parts: string[] = [];
-    for (const [url, group] of groups) {
-      const header = [url];
+    for (const group of groups) {
+      const header = [group.url];
       if (group.title) header.push(`  title: ${group.title}`);
       if (group.h1) header.push(`  h1: ${group.h1}`);
       if (group.h3) header.push(`  h3: ${group.h3}`);
