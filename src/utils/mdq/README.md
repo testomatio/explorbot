@@ -316,6 +316,7 @@ mdq(doc).heading(/^summary/i, { depth: 3 });
 | Method | Returns |
 | --- | --- |
 | `text()` | Raw Markdown from every match, joined together |
+| `plainText()` | The text of every match with all Markdown markup removed, blocks on separate lines |
 | `nodes()` | One `{ type, depth, text }` object per match |
 | `rows()` | Table rows as objects keyed by table header |
 | `entries()` | `Key: value` lines from a block, with lowercase keys |

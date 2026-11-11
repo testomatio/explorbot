@@ -376,7 +376,7 @@ https://app.example.com/projects/demo/runs
 
 ### Prerequisite
 
-* URL: https://app.example.com/projects/demo_app/?assets_host=preview_1
+* URL: **https://app.example.com/projects/demo_app/?assets_host=preview_1**
 
 <!-- test
 priority: critical

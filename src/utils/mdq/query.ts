@@ -70,6 +70,14 @@ export class MarkdownQuery {
     return this.matches.map((range) => this.source.slice(range.start, range.start + range.length)).join('');
   }
 
+  plainText(): string {
+    return marked
+      .lexer(this.text())
+      .map((token) => this.plainTextOf(token))
+      .filter(Boolean)
+      .join('\n');
+  }
+
   nodes(): NodeInfo[] {
     return this.matches.map((range) => {
       const token = range.token as any;
@@ -426,6 +434,21 @@ export class MarkdownQuery {
     if (token.type === 'html') return value.raw || '';
     if (token.type === 'table') return [...(value.header || []).map((cell: any) => cell.text), ...(value.rows || []).flatMap((row: any) => row.map((cell: any) => cell.text))].join(', ');
     return value.text || '';
+  }
+
+  private plainTextOf(token: Token): string {
+    const value = token as any;
+    if (token.type === 'html') return '';
+    if (token.type === 'list') return value.items.map((item: Token) => this.plainTextOf(item)).join('\n');
+    if (token.type === 'table') return [value.header, ...value.rows].map((row: Token[]) => row.map((cell) => this.plainTextOf(cell)).join(' ')).join('\n');
+    if (!value.tokens) return value.text || '';
+
+    let separator = '';
+    if (token.type === 'blockquote' || token.type === 'list_item') separator = '\n';
+    return value.tokens
+      .map((child: Token) => this.plainTextOf(child))
+      .filter(Boolean)
+      .join(separator);
   }
 
   private isComment(token: Token): boolean {

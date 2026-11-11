@@ -743,6 +743,22 @@ Not a section.
     });
   });
 
+  describe('plainText', () => {
+    it('drops emphasis, code and link markup but keeps underscores inside words', () => {
+      const doc = '* URL: **https://app.example.com/my_app/?assets_host=pr_1**\n* Open `settings` and *[the docs](https://docs.example.com)*\n';
+      expect(mdq(doc).query('item[0]').plainText()).toBe('URL: https://app.example.com/my_app/?assets_host=pr_1');
+      expect(mdq(doc).query('item[1]').plainText()).toBe('Open settings and the docs');
+    });
+
+    it('reads escaped characters as text and drops inline html', () => {
+      expect(mdq('Use \\*literal\\* stars and <b>bold</b> tags\n').query('paragraph').plainText()).toBe('Use *literal* stars and bold tags');
+    });
+
+    it('joins blocks of a section with new lines', () => {
+      expect(mdq('## Steps\n\nFirst **step**\n\n* one\n* _two_\n').query('section("Steps")').plainText()).toBe('Steps\nFirst step\none\ntwo');
+    });
+  });
+
   describe('keyValue', () => {
     const block = "## S\n\n> Container: '.rows'\n> Pagination: infinite\n\ntext\n";
 
