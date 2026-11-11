@@ -29,6 +29,9 @@ describe('Pilot session log', () => {
     expect(headers).toEqual(['/items', '/items/edit/1', '/items/1', '/items/edit/1']);
     expect(log.indexOf('Filter section is empty')).toBeLessThan(log.indexOf('Reopen edit form'));
     expect(log.indexOf('Reopen edit form')).toBeLessThan(log.indexOf('Filter section shows one filter'));
+    expect(log).toContain("1. click 'Open edit form'");
+    expect(log).toContain("4. click 'Reopen edit form'");
+    expect(log).toContain("5. see 'Filters'");
   });
 
   it('files checks made after a navigation under the page they ran on', () => {

@@ -3,7 +3,7 @@
 ## 2026-11-11
 
 ### Changes
-- [Pilot] The action history Pilot reviews before a pass/fail verdict is now in the order things happened. Returning to a page shows it as a new visit instead of merging it into the first one, and checks made right after a navigation appear under the page they ran on. A check from an earlier visit is no longer mistaken for the final state.
+- [Pilot] The action history Pilot reviews before a pass/fail verdict is now in the order things happened. Returning to a page shows it as a new visit instead of merging it into the first one, and checks made right after a navigation appear under the page they ran on. Actions are numbered across the whole log. A check from an earlier visit is no longer mistaken for the final state.
 
 ## 2026-10-31
 

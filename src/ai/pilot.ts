@@ -1071,7 +1071,7 @@ export class Pilot implements Agent {
 
     startGroup(currentUrl);
 
-    for (const exec of executions) {
+    for (const [index, exec] of executions.entries()) {
       if (!CHECK_TOOLS.includes(exec.toolName) && exec.output?.url && exec.output.url !== currentUrl) {
         startGroup(exec.output.url);
       }
@@ -1094,7 +1094,7 @@ export class Pilot implements Agent {
         line += `\n    result: ${resultMessage}`;
       }
 
-      groups[groups.length - 1].lines.push(line);
+      groups[groups.length - 1].lines.push(`${index + 1}. ${line}`);
 
       const landedUrl = exec.output?.pageDiff?.currentUrl;
       if (landedUrl && landedUrl !== currentUrl) startGroup(landedUrl);
