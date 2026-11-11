@@ -83,6 +83,7 @@ interface AgentConfig extends HooksConfig {
   rules?: RuleEntry[];
   providerOptions?: Record<string, any>;
   reasoning?: 'provider-default' | 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+  toolChoice?: ToolChoice;
 }
 
 interface ResearcherAgentConfig extends AgentConfig {
@@ -192,6 +193,7 @@ interface AIConfig {
   retryAttempts?: number;
   retryDelay?: number;
   maxParallelRequests?: number;
+  toolChoice?: ToolChoice;
   agents?: AgentsConfig;
 }
 
@@ -408,6 +410,7 @@ export class ConfigParser {
         }
         const outputRoot = resolveOutputRoot(options?.baseUrl || process.env.EXPLORBOT_URL || envUrl);
         loadedConfig = await this.buildEnvConfig(envUrl, outputRoot);
+        if (!this.runBase && URL.canParse(process.env.EXPLORBOT_URL || '')) this.runBase = parseRunBase(process.env.EXPLORBOT_URL);
         sourcePath = join(outputRoot, 'explorbot.config.js');
 
         log(`Configuration built from EXPLORBOT_* environment variables. Output: ${outputRoot}`);
@@ -674,6 +677,7 @@ export class ConfigParser {
     if (!agenticSpec && recommended.agenticModel) ai.agenticModel = await resolveModel(provider!, 'agenticModel');
 
     if (recommended.decisionModel) ai.decisionModel = { provider: provider!, model: recommended.decisionModel };
+    ai.toolChoice = recommended.toolChoice as ToolChoice;
 
     const dirs = { knowledge: 'knowledge', experience: 'experience', output: 'output' };
     if (process.env.EXPLORBOT_OUTPUT) dirs.output = '.';
@@ -903,6 +907,7 @@ async function fillRecommendedModels(ai: AIConfig): Promise<void> {
   }
 
   if (!ai.decisionModel && recommended.decisionModel) ai.decisionModel = { provider, model: recommended.decisionModel };
+  ai.toolChoice ??= recommended.toolChoice as ToolChoice;
 
   const missing = missingModelRoles(provider);
   if (missing.length) tag('warning').log(`No recommended ${missing.join(' and ')} for ${provider} — set them explicitly as "provider/model-id"`);
@@ -993,6 +998,8 @@ function parseRunBase(baseUrl?: string): RunBase | null {
 }
 
 type ModelRole = 'model' | 'visionModel' | 'agenticModel';
+
+type ToolChoice = 'auto' | 'required' | 'none';
 
 interface RunBase {
   origin: string;
