@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-11-12
+
+### Changes
+- **`verify()` can check the clipboard** — A claim about copied content is now checked with `I.seeInClipboard` / `I.seeClipboardEquals` against the real system clipboard, instead of a copy notification that may already have closed. A passing check is saved into the generated test.
+
 ## 2026-10-31
 
 ### New CLI Options
