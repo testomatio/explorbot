@@ -66,6 +66,20 @@ const startUrl = mdq(plan).section('Prerequisite').entry('url');
 const testComments = mdq(doc).comment(/^test/).nodes();
 ```
 
+`entries()` returns every `Key: value` line of a blockquote or paragraph, with lowercase keys and values exactly as written. `entry(key)` returns one value with Markdown markup removed; the key matches regardless of case, spacing or markup, and the block can be any block, list items included:
+
+```js
+const note = "> Container: '.rows'\n> Pagination: infinite";
+mdq(note).query('blockquote').entries();            // { container: "'.rows'", pagination: 'infinite' }
+mdq(note).query('blockquote').entry('PAGINATION');  // 'infinite'
+
+const list = '* **URL:** `https://app.example.com/my_app/?preview=pr_1`\n* Owner: QA';
+mdq(list).query('item[0]').entry('url');            // 'https://app.example.com/my_app/?preview=pr_1'
+mdq(list).query('list').entry('owner');             // 'QA'
+mdq(list).query('list').entry('title');             // undefined
+mdq(list).query('item[0]').plainText();             // 'URL: https://app.example.com/my_app/?preview=pr_1'
+```
+
 ### Update data in Markdown
 
 Append a row to a table and save the file in place:
@@ -124,7 +138,7 @@ mdq(source)
   .toString();
 ```
 
-`toString()` always returns the whole document. `text()` returns the raw Markdown for only the current selection.
+`toString()` always returns the whole document. `text()` returns the raw Markdown for only the current selection, and `plainText()` the same selection with all Markdown markup removed.
 
 ## CLI reference
 
@@ -320,8 +334,8 @@ mdq(doc).heading(/^summary/i, { depth: 3 });
 | `plainText()` | The text of every match with all Markdown markup removed, blocks on separate lines |
 | `nodes()` | One `{ type, depth, text }` object per match |
 | `rows()` | Table rows as objects keyed by table header |
-| `entries()` | All `Key: value` lines from a block, with lowercase keys and raw values |
-| `entry(key)` | One entry's value as plain text; the key matches regardless of case, spacing or markup (`**URL:**`), `undefined` when absent |
+| `entries()` | All `Key: value` lines of a blockquote or paragraph, with lowercase keys and raw values |
+| `entry(key)` | One entry's value from any block, markup removed; the key matches regardless of case, spacing or markup (`**URL:**`), `undefined` when absent |
 | `count()` / `exists()` | The number of matches / whether any match exists |
 | `first()` / `last()` / `at(n)` / `slice(from, to)` | A narrowed selection |
 | `each()` | One single-match `MarkdownQuery` per match |
