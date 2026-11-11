@@ -165,19 +165,21 @@ export class ApibotConfigParser {
   }
 
   resolveEndpointPath(endpoint: string): string {
-    if (!this.site && !isAbsoluteEndpoint(endpoint)) return endpoint;
-
     const base = new URL(this.getConfig().api.baseEndpoint);
-    const origin = this.site?.url || base.origin;
+    let endpointPath = endpoint;
 
-    const resolved = resolveSiteTarget(endpoint, origin);
-    if (resolved.baseUrl !== origin) return endpoint;
+    if (this.site || isAbsoluteEndpoint(endpoint)) {
+      const origin = this.site?.url || base.origin;
+      const resolved = resolveSiteTarget(endpoint, origin);
+      if (resolved.baseUrl !== origin) return endpoint;
+      endpointPath = resolved.path;
+    }
 
     const basePath = base.pathname.replace(/\/$/, '');
-    if (!basePath) return resolved.path;
-    if (resolved.path === basePath) return '/';
-    if (resolved.path.startsWith(`${basePath}/`)) return resolved.path.slice(basePath.length);
-    return resolved.path;
+    if (!basePath) return endpointPath;
+    if (endpointPath === basePath) return '/';
+    if (endpointPath.startsWith(`${basePath}/`)) return endpointPath.slice(basePath.length);
+    return endpointPath;
   }
 
   getPlansDir(): string {

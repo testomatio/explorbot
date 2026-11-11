@@ -236,9 +236,9 @@ describe('Tester stalled execution', () => {
     const tester = buildTester();
     const task = new Test('filter items', 'normal', 'filtered items appear', '/page');
 
-    expect((tester as any).shouldStopAfterStalledLoopError(task)).toBe(false);
-    expect((tester as any).shouldStopAfterStalledLoopError(task)).toBe(false);
-    expect((tester as any).shouldStopAfterStalledLoopError(task)).toBe(true);
+    expect((tester as any).shouldStopAfterStall(task, 'stalled')).toBe(false);
+    expect((tester as any).shouldStopAfterStall(task, 'stalled')).toBe(false);
+    expect((tester as any).shouldStopAfterStall(task, 'stalled')).toBe(true);
     expect(task.hasFinished).toBe(false);
     expect(task.result).toBe(null);
   });
