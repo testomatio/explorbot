@@ -1095,6 +1095,9 @@ export class Pilot implements Agent {
         line += `\n    result: ${resultMessage}`;
       }
 
+      const messages = this.formatPageMessages(exec.output);
+      if (messages) line += `\n    messages: ${messages}`;
+
       groups.get(currentUrl)!.lines.push(line);
     }
 
@@ -1195,10 +1198,8 @@ export class Pilot implements Agent {
           line += `\n   requests: ${requests.map((r: any) => `${r.method} ${r.path} → ${r.status}`).join(', ')}`;
         }
 
-        const messages = (t.output?.pageDiff?.messages ?? []).slice(0, PILOT_MESSAGE_LIMIT);
-        if (messages.length > 0) {
-          line += `\n   messages: ${messages.map((m: string) => m.slice(0, PILOT_MESSAGE_MAX_LENGTH)).join(' | ')}`;
-        }
+        const messages = this.formatPageMessages(t.output);
+        if (messages) line += `\n   messages: ${messages}`;
 
         const consoleError = t.output?.pageDiff?.consoleErrors?.[0];
         if (consoleError) line += `\n   console: ${consoleError.slice(0, PILOT_MESSAGE_MAX_LENGTH)}`;
@@ -1209,6 +1210,11 @@ export class Pilot implements Agent {
         return line;
       })
       .join('\n\n');
+  }
+
+  private formatPageMessages(output: any): string {
+    const messages = (output?.pageDiff?.messages ?? []).slice(0, PILOT_MESSAGE_LIMIT);
+    return messages.map((m: string) => m.slice(0, PILOT_MESSAGE_MAX_LENGTH)).join(' | ');
   }
 
   private getSystemPrompt(task: Test, initialState: ActionResult): string {
