@@ -221,7 +221,7 @@ export function parsePlansFromMarkdownText(content: string): Plan[] {
     if (suiteStart === -1) continue;
     const nextSuite = content.indexOf('<!-- suite -->', suiteStart + 1);
     const suiteContent = nextSuite === -1 ? content.slice(suiteStart) : content.slice(suiteStart, nextSuite);
-    const url = mdq(suiteContent).query('section[0] item[0]').keyValue('url');
+    const url = mdq(suiteContent).query('section[0] item[0]').entry('url');
     if (!url) continue;
     plan.url = url;
     for (const test of plan.tests) {

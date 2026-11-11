@@ -62,7 +62,7 @@ import { mdq } from 'mdq-cli';
 
 const endpoints = mdq(readme).query('section("API") table').rows();
 const metadata = mdq(plan).section('Metadata').entries();
-const startUrl = mdq(plan).section('Prerequisite').entries('url');
+const startUrl = mdq(plan).section('Prerequisite').entry('url');
 const testComments = mdq(doc).comment(/^test/).nodes();
 ```
 
@@ -320,8 +320,8 @@ mdq(doc).heading(/^summary/i, { depth: 3 });
 | `plainText()` | The text of every match with all Markdown markup removed, blocks on separate lines |
 | `nodes()` | One `{ type, depth, text }` object per match |
 | `rows()` | Table rows as objects keyed by table header |
-| `entries()` | `Key: value` lines from a block, with lowercase keys |
-| `entries(key)` | The value of one entry as plain text; the key matches regardless of case, spacing or markup (`**URL:**`), `undefined` when absent |
+| `entries()` | All `Key: value` lines from a block, with lowercase keys and raw values |
+| `entry(key)` | One entry's value as plain text; the key matches regardless of case, spacing or markup (`**URL:**`), `undefined` when absent |
 | `count()` / `exists()` | The number of matches / whether any match exists |
 | `first()` / `last()` / `at(n)` / `slice(from, to)` | A narrowed selection |
 | `each()` | One single-match `MarkdownQuery` per match |

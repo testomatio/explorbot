@@ -778,18 +778,20 @@ Not a section.
       expect(mdq('> just prose').query('blockquote[0]').keyValue()).toEqual({});
     });
 
+    it('returns nothing when the block is absent', () => {
+      expect(mdq('## S\n\ntext\n').query('blockquote[0]').keyValue()).toEqual({});
+    });
+  });
+
+  describe('entry', () => {
     it('reads one entry by key, whatever the key casing, spacing or markup', () => {
       for (const item of ['* url: https://a.example/my_app', '* URL: https://a.example/my_app', '* uRl : https://a.example/my_app', '* **URL:** https://a.example/my_app', '* URL: `https://a.example/my_app`']) {
-        expect(mdq(item).query('item[0]').keyValue('url')).toBe('https://a.example/my_app');
+        expect(mdq(item).query('item[0]').entry('url')).toBe('https://a.example/my_app');
       }
     });
 
     it('returns undefined for a key the block does not have', () => {
-      expect(mdq('* Title: Login').query('item[0]').keyValue('url')).toBeUndefined();
-    });
-
-    it('returns nothing when the block is absent', () => {
-      expect(mdq('## S\n\ntext\n').query('blockquote[0]').keyValue()).toEqual({});
+      expect(mdq('* Title: Login').query('item[0]').entry('url')).toBeUndefined();
     });
   });
 

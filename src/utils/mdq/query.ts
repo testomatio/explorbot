@@ -106,11 +106,12 @@ export class MarkdownQuery {
     return results;
   }
 
-  entries(): Record<string, string>;
-  entries(key: string): string | undefined;
-  entries(key?: string): Record<string, string> | string | undefined {
-    if (key) return this.entriesOf(this.plainText().split('\n'))[key.trim().toLowerCase()];
+  entries(): Record<string, string> {
     return this.entriesOf(this.matches.flatMap((range) => this.tokenText(range.token).split('\n')));
+  }
+
+  entry(key: string): string | undefined {
+    return this.entriesOf(this.plainText().split('\n'))[key.trim().toLowerCase()];
   }
 
   frontmatter(): Record<string, unknown> {
@@ -249,10 +250,7 @@ export class MarkdownQuery {
     return this.rows();
   }
 
-  keyValue(): Record<string, string>;
-  keyValue(key: string): string | undefined;
-  keyValue(key?: string): Record<string, string> | string | undefined {
-    if (key) return this.entries(key);
+  keyValue(): Record<string, string> {
     return this.entries();
   }
 
