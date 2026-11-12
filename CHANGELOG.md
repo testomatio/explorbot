@@ -3,6 +3,9 @@
 ## 2026-11-12
 
 ### Changes
+
+- Updated CodeceptJS to 4.2.4, which ships chained step options. When a locator matches several elements, the agent now picks one as `I.click('Delete').at(2)` instead of `I.click('Delete', step.opts({ elementIndex: 2 }))` — same behavior, modern syntax.
+- Generated tests now record the element picked for an ambiguous click as `I.click('Delete').at(2)`, so they stay short and replay without failing on multiple matches.
 - [Prima] `do` and `check` now see the knowledge for the current page: knowledge files, `--knowledge` and `--auth`. Before, a sign-in step blocked with "no auth details" even when `--auth` was given.
 ## 2026-11-11
 
@@ -19,6 +22,7 @@
 - **`EXPLORBOT_URL`** with a path or query (`https://app.example.com/projects/demo/?preview=pr-42`) now sets the base path and pinned query, the same as `web.url` in a config file or `--base-url`. Before, relative navigation was appended to the whole URL and opened pages like `/projects/demo/?preview=pr-42/projects/demo/settings`.
 - [Pilot] The action history Pilot reviews before a pass/fail verdict is now in the order things happened. Returning to a page shows it as a new visit instead of merging it into the first one, and checks made right after a navigation appear under the page they ran on. Actions are numbered across the whole log. A check from an earlier visit is no longer mistaken for the final state.
 - **Pilot sees notifications when it decides pass/fail** — A toast, alert or other message that appeared after an action is now part of the action log Pilot reads for its final verdict and for reset decisions. A test whose confirmation closed before it could be checked is no longer failed for showing "no confirmation".
+
 ## 2026-11-10
 
 ### Configuration

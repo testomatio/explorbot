@@ -46,12 +46,12 @@ export function createCodeceptJSTools({ explorer, stateManager, judge }: ToolDep
           Container narrows search area. Use when page has multiple matching elements.
           Example: Page has 3 "Delete" buttons in different rows:
           I.click("Delete", ".row-1") - clicks Delete inside element with class row-1
-        I.click(locator, step.opts({ elementIndex: N })) - click the Nth element the locator matches
+        I.click(locator).at(N) - click the Nth element the locator matches
           Use after a result reported several matches. N is the "Element N" number from that list.
-          step.opts() always goes LAST, after the container when there is one.
+          .at() chains to the command, after the container when there is one.
           Example: the result listed 3 "Delete" buttons and you want the second:
-          I.click("Delete", step.opts({ elementIndex: 2 }))
-          I.click("Delete", ".table", step.opts({ elementIndex: 2 })) - same, narrowed to a container
+          I.click("Delete").at(2)
+          I.click("Delete", ".table").at(2) - same, narrowed to a container
 
         IMPORTANT: This tool ONLY accepts click commands. For typing text, use form() tool.
         CRITICAL: All commands MUST target the SAME element using different locators.
@@ -69,7 +69,7 @@ export function createCodeceptJSTools({ explorer, stateManager, judge }: ToolDep
           2. I.click(text, container) - when the container is verified - e.g. I.click("Save", ".modal")
           3. I.click(CSS, container) - e.g. I.click("#btn", ".modal")
           4. I.click(CSS) or I.click(XPath) - when locator already includes context (ID, XPath)
-          After a result reporting multiple matches, reuse that locator with step.opts({ elementIndex: N }) as the last argument.
+          After a result reporting multiple matches, reuse that locator with .at(N) chained to the command.
         `),
         explanation: z.string().describe('Why you are clicking this element'),
       }),
@@ -1332,7 +1332,7 @@ export async function failedToolResult(action: string, message: string, data?: R
       { intent }
     );
     if (!index) return result;
-    result.suggestion = `Element ${index} is the one meant. Repeat the action with step.opts({ elementIndex: ${index} }) as the last argument.`;
+    result.suggestion = `Element ${index} is the one meant. Repeat the action with the same locator and .at(${index}) chained to it.`;
     return result;
   }
 
@@ -1349,7 +1349,7 @@ function getMultipleElementsSuggestion(): string {
   return dedent`
     Multiple elements matched your locator, so that command did nothing — it selected no element and acted on none.
     Read the numbered elements list and act on the one you meant by its number:
-    reuse the same locator with step.opts({ elementIndex: N }) as the last argument.
+    reuse the same locator with .at(N) chained to the command.
     A match reported as not visible can never be acted on — pick one that is.
     If none of them is the element you want, narrow the locator with a container or its full unique text.
     If the matches cannot be told apart, click the one you mean by appearance with visualClick().
