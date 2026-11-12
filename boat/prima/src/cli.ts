@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { Command } from 'commander';
 import { RecommendedModelsCommand } from '../../../src/commands/recommended-models-command.ts';
 import { browserErrorMessage } from '../../../src/utils/browser-errors.ts';
@@ -6,6 +7,8 @@ import { clearActivityLine, trackActivityLine } from './activity-line.ts';
 import { type EnvelopeData, renderEnvelope } from './envelope.ts';
 import { askHelp, checkHelp, doHelp, helpContract, reportHelp, researchHelp, sessionHelp, statusHelp, uxHelp, verifyHelp } from './help.ts';
 import { Prima, type PrimaOptions } from './prima.ts';
+
+export const { version } = JSON.parse(readFileSync(new URL('../../../package.json', import.meta.url), 'utf8'));
 
 let rootOptions: () => any = () => ({});
 
@@ -89,6 +92,7 @@ async function runPrima(options: any, command: string, run: (prima: Prima) => Pr
 export function createPrimaCommands(name = 'prima'): Command {
   const cmd = new Command(name);
   cmd.description('Drives a web app through described behaviour, not locators');
+  cmd.version(version, '-V, --version');
   cmd.option('--pw-session <title>', 'Title of the playwright-cli session to attach to');
   cmd.option('--url <url>', 'Page to open when the session has no page yet');
   cmd.addHelpText('after', `\n${helpContract}`);

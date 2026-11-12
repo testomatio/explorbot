@@ -1,5 +1,5 @@
 import { ariaTemplateSignature } from '../../../src/utils/aria.ts';
-import { diceSimilarity } from '../../../src/utils/similarity.ts';
+import { similarityScore } from '../../../src/utils/similarity.ts';
 
 const TEMPLATE_MIN_SIGNATURE_SIZE = 8;
 const TEMPLATE_SIMILARITY_THRESHOLD = 90;
@@ -16,7 +16,7 @@ export function findTemplateMatch(snapshot: string | null, known: TemplateRecord
   let bestUrl: string | null = null;
   let bestScore = 0;
   for (const record of known) {
-    const score = diceSimilarity(signature, record.signature);
+    const score = similarityScore(signature, record.signature);
     if (score < bestScore) continue;
     bestScore = score;
     bestUrl = record.url;

@@ -451,14 +451,17 @@ describe('Planner with aimock', () => {
     expect(order).toEqual(['research', 'scout']);
   });
 
-  it('propagates scout setup errors', async () => {
+  it('plans without documentation when scout fails', async () => {
     planner.setScout({
       collectDocs: async () => {
-        throw new Error('Scout requires ripgrep or grep on PATH — neither was found');
+        throw new Error('scout crashed');
       },
     } as any);
 
-    await expect(planner.plan()).rejects.toThrow('Scout requires ripgrep or grep on PATH');
+    const plan = await planner.plan();
+
+    expect(plan.tests.length).toBeGreaterThan(0);
+    expect(extractPromptText(mock.getLastRequest())).not.toContain('<docs_context>');
   });
 
   it('passes the already injected spec URLs to the scout', async () => {
