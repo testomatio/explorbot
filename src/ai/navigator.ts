@@ -341,10 +341,7 @@ class Navigator implements Agent {
             progressBlocks.push(codeBlock);
           }
         } else if (attempt.ok) {
-          const baseOrigin = URL.parse(this.config.playwright.url)?.origin || '';
-          resolved = action.sentRequests > 0 || (await this.pageChangedSince(prevActionResult));
-          if (!resolved) resolved = await this.explorer.withPage((page) => Promise.race([waitForAppRequest(page, baseOrigin, SETTLE_MS), waitForDomChange(page, SETTLE_MS).then(() => false)]));
-          if (!resolved) resolved = await this.pageChangedSince(prevActionResult);
+          resolved = await this.attemptChangedPage(action, prevActionResult);
           if (resolved) progressBlocks.push(codeBlock);
           if (!resolved) {
             lastFailure = 'Ran without error but nothing on the page changed';
@@ -518,6 +515,21 @@ class Navigator implements Agent {
 
   private targetUrlReached(action: Action, expectedUrl: string, state: ActionResult): boolean {
     return this.isSameExpectedOrigin(expectedUrl, action.stateManager) && matchesNavigationUrl(expectedUrl, this.comparableUrl(state, expectedUrl));
+  }
+
+  private async attemptChangedPage(action: Action, previous: ActionResult): Promise<boolean> {
+    if (action.sentRequests > 0) return true;
+    if (await this.pageChangedSince(previous)) return true;
+
+    const baseOrigin = URL.parse(this.config.playwright.url)?.origin || '';
+    const requestSent = await this.explorer.withPage((page) => {
+      const appRequest = waitForAppRequest(page, baseOrigin, SETTLE_MS);
+      const domChangeEndsWait = waitForDomChange(page, SETTLE_MS).then(() => false);
+      return Promise.race([appRequest, domChangeEndsWait]);
+    });
+    if (requestSent) return true;
+
+    return this.pageChangedSince(previous);
   }
 
   private async pageChangedSince(previous: ActionResult): Promise<boolean> {
