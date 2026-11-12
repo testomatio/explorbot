@@ -1093,12 +1093,14 @@ export class Pilot implements Agent {
       if (resultMessage && (CHECK_TOOLS.includes(exec.toolName) || !exec.wasSuccessful)) {
         line += `\n    result: ${resultMessage}`;
       }
-      
-      groups[groups.length - 1].lines.push(`${index + 1}. ${line}`);
+
       const messages = this.formatPageMessages(exec.output);
       if (messages) line += `\n    messages: ${messages}`;
 
-      groups.get(currentUrl)!.lines.push(line);
+      groups[groups.length - 1].lines.push(`${index + 1}. ${line}`);
+
+      const landedUrl = exec.output?.pageDiff?.currentUrl;
+      if (landedUrl && landedUrl !== currentUrl) startGroup(landedUrl);
     }
 
     const PER_GROUP_CAP = 25;

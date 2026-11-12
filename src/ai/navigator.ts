@@ -18,6 +18,7 @@ import { HooksRunner } from '../utils/hooks-runner.ts';
 import { createDebug, pluralize, tag } from '../utils/logger.js';
 import { loop, pause } from '../utils/loop.js';
 import { RulesLoader } from '../utils/rules-loader.ts';
+import { waitForAppRequest, waitForDomChange } from '../utils/page-readiness.ts';
 import { normalizeInlineText } from '../utils/strings.ts';
 import { extractStatePath, isSameHostFamily, matchesNavigationUrl } from '../utils/url-matcher.js';
 import type { UrlFilter } from '../utils/url-filter.ts';
@@ -31,6 +32,7 @@ import { createLearnExperienceTool } from './tools.ts';
 
 const debugLog = createDebug('explorbot:navigator');
 const MAX_TRIED_STEPS = 5;
+const SETTLE_MS = 1000;
 
 class Navigator implements Agent {
   emoji = '🧭';
@@ -339,9 +341,14 @@ class Navigator implements Agent {
             progressBlocks.push(codeBlock);
           }
           if (freshHash !== prevHash) codeBlockIndex = codeBlocks.length;
-        } else {
-          resolved = attempt.ok;
-          if (attempt.ok) progressBlocks.push(codeBlock);
+        } else if (attempt.ok) {
+          resolved = await this.attemptChangedPage(action, prevActionResult);
+          if (resolved) progressBlocks.push(codeBlock);
+          if (!resolved) {
+            lastFailure = 'Ran without error but nothing on the page changed';
+            tag('warning').log(lastFailure);
+            batchFailures.push({ code: codeBlock, error: lastFailure });
+          }
         }
 
         if (!resolved) return;
@@ -511,6 +518,26 @@ class Navigator implements Agent {
 
   private targetUrlReached(action: Action, expectedUrl: string, state: ActionResult): boolean {
     return this.isSameExpectedOrigin(expectedUrl, action.stateManager) && matchesNavigationUrl(expectedUrl, this.comparableUrl(state, expectedUrl));
+  }
+
+  private async attemptChangedPage(action: Action, previous: ActionResult): Promise<boolean> {
+    if (action.sentRequests > 0) return true;
+    if (await this.pageChangedSince(previous)) return true;
+
+    const baseOrigin = URL.parse(this.config.playwright.url)?.origin || '';
+    const requestSent = await this.explorer.withPage((page) => {
+      const appRequest = waitForAppRequest(page, baseOrigin, SETTLE_MS);
+      const domChangeEndsWait = waitForDomChange(page, SETTLE_MS).then(() => false);
+      return Promise.race([appRequest, domChangeEndsWait]);
+    });
+    if (requestSent) return true;
+
+    return this.pageChangedSince(previous);
+  }
+
+  private async pageChangedSince(previous: ActionResult): Promise<boolean> {
+    const freshState = await this.explorer.capture();
+    return (await freshState.diff(previous)).hasChanges();
   }
 
   private async ariaDiff(freshState: ActionResult, previous: ActionResult): Promise<string | null> {

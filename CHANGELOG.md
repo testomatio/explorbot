@@ -7,6 +7,7 @@
 ## 2026-11-11
 
 ### Changes
+- [Navigator] A step the Tester hands over with `interact` no longer counts as done just because its code ran without an error. If nothing on the page changed and the app sent no request of its own, the Navigator tries the next solution instead of reporting success, so a click on the wrong element is no longer reported back as the step being done. A change that shows up late, or a request to the app's own domain or subdomains, still counts; third-party calls such as analytics do not.
 - Test plans: the Prerequisite URL of a plan keeps underscores (`?assets_host=…`, `/my_project/`). They were stripped before, so tests opened a different URL than the one written in the plan.
 ## 2026-11-12
 
