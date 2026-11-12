@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-12
+
+### Changes
+- [Prima] `do` and `check` now see the knowledge for the current page: knowledge files, `--knowledge` and `--auth`. Before, a sign-in step blocked with "no auth details" even when `--auth` was given.
 ## 2026-11-11
 
 ### Changes

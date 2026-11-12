@@ -985,6 +985,7 @@ export class Prima {
 
   private async pageContext(result: ActionResult): Promise<string> {
     const experience = this.bot.experienceTracker?.()?.renderExperienceTocFor?.(result) || '';
+    const knowledge = this.bot.knowledgeTracker?.()?.renderRelevantContext(result) || '';
     const map = getPreviousResearch(result.baseHash);
     let uiMap = '';
     if (map) {
@@ -1001,6 +1002,8 @@ export class Prima {
       <page url="${result.url}" title="${result.title}">
       ${compactAriaSnapshot(await this.refAriaSnapshot(result), true, (value) => this.offloadValue(value))}
       </page>
+
+      ${knowledge}
 
       ${uiMap}
 
