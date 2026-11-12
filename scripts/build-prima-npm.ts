@@ -7,7 +7,7 @@ const DIST = path.join(ROOT, 'dist');
 const STAGE = path.join(ROOT, 'dist-prima');
 const TEMPLATE = path.join(ROOT, 'boat', 'prima', 'package.json');
 const README = path.join(ROOT, 'boat', 'prima', 'README.md');
-const PAYLOAD = ['src', 'boat/prima', 'models.json', 'rules', 'assets/sample-files'];
+const PAYLOAD = ['src', 'boat/prima', 'package.json', 'models.json', 'rules', 'assets/sample-files'];
 
 function distPath(entry: string): string {
   const source = path.join(DIST, entry);

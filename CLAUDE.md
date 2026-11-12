@@ -61,7 +61,8 @@ Private methods must be placed after public methods
 Never place a private module-level function above the exported class or functions of that file — function declarations hoist, so a private helper always goes below what it serves, next to the file's other private helpers
 Avoid `=== null` / `=== undefined` comparisons when not needed — prefer shorter `if (...)` or `if (!...)` when applicable
 Use dedent when formatting prompts
-Use `mdq()` from `src/utils/markdown-query.ts` for all markdown manipulation (find sections, replace tables, extract text). Never do manual line-splitting/counting on markdown.
+Use `mdq()` from `src/utils/markdown-query.ts` for all markdown manipulation (find sections, replace tables, extract text, `plainText()` for text without markup). Never do manual line-splitting/counting on markdown. If mdq lacks what you need, add it to mdq (`src/utils/mdq/`, part of this repo).
+A parser beats a regex — see "Parsers First, Regex Last" below.
 Put types into the end of file
 Introduce new types and interfaces only for module-to-module collaboration, do not add types when dealing inside one module
 
@@ -176,9 +177,25 @@ When a feature request arrives, ask in order:
 5. Site-specific anything? → never code; redirect to `knowledge/`.
 6. None of the above → reject.
 
+## Parsers First, Regex Last
+
+If the solution is a regex, you are probably doing something wrong. Before writing one, use the parser that already understands the format:
+
+| Input | Use |
+|---|---|
+| URL, path, query, hash, origin | `URL.parse()` / `new URL(x, base)`, `URLSearchParams` |
+| Markdown | `mdq()` — sections, items, tables, `plainText()` |
+| YAML frontmatter | `gray-matter` / `mdq().frontmatter()` |
+| HTML / DOM | the DOM or existing `src/utils/html.ts` helpers |
+| JSON | `JSON.parse` |
+| CodeceptJS tests and steps | the CodeceptJS API |
+| Short fixed prefix or separator | `startsWith` / `slice` / `split` / `includes` |
+
+A regex is the last resort: only when no parser exists for the format and plain string methods can't express the rule. Never use regex to strip or "clean" characters from structured values — the parser knows which characters are syntax and which are data.
+
 ## Regex vs AI Judgment
 
-Regex answers questions about **form** — how something is *written*. AI answers questions about **meaning** — what something is *for*.
+Regex answers questions about **form** — how something is *written*. AI answers questions about **meaning** — what something is *for*. "Regex" below means any deterministic structural check, and that check uses a parser first (see above).
 
 | | Regex / structural | AI judgment |
 |---|---|---|
@@ -190,7 +207,7 @@ Regex answers questions about **form** — how something is *written*. AI answer
 
 Decision procedure (ask in order):
 
-1. Closed grammar? → regex/table. No exceptions.
+1. Closed grammar? → its parser, or a table lookup; regex only if no parser exists. No AI.
 2. Repeats must be reproducible (state hash, dedup, loop detection)? → deterministic, always.
 3. Wrong answer verifiable downstream (act and observe)? → AI allowed: generate-then-verify.
 4. Reducing volume before an AI call? → deterministic prefilter; narrows but never decides.
@@ -198,19 +215,19 @@ Decision procedure (ask in order):
 
 Litmus tests:
 
-- **Spec sentence:** can you state the rule without examples? "Match the path segment after the host" → regex. "Looks like a primary action button" → needs examples → AI.
+- **Spec sentence:** can you state the rule without examples? "Match the path segment after the host" → deterministic (`URL.parse().pathname`). "Looks like a primary action button" → needs examples → AI.
 - **Two sites:** would the same rule survive on different markup? If it only works because one site writes forms a certain way, it's memorized accident, not grammar → AI.
 
 Escalation ladder — deterministic first, AI as cache-miss, persistence converts judgment back into structure:
 
 ```
-regex/table lookup
+parser / table lookup (regex last)
   └─ miss or ambiguous → AI judgment
        └─ resolved → persist to experience/knowledge
             └─ next run hits the deterministic path again
 ```
 
-Guardrail: composes with "Prompts & Rules — General, Not Example-Driven". A regex is legitimate only when it encodes a convention existing independently of any single failure (ARIA attributes, URL anatomy, envelope formats). A regex written because "the model once did X with input Y" is a memorized bug — reject it like a hardcoded locator.
+Guardrail: composes with "Prompts & Rules — General, Not Example-Driven". A regex is legitimate only when no parser covers the format and it encodes a convention existing independently of any single failure (ARIA attributes, envelope formats). A regex written because "the model once did X with input Y" is a memorized bug — reject it like a hardcoded locator.
 
 ## Architecture Overview
 
