@@ -14,4 +14,6 @@ empty • very long (10000+ chars) • boundary (zero, negative, unicode, HTML, 
 
 End each scenario with the state **committed** (saved, applied, sent, triggered). A scenario that enters bad data then cancels or navigates away reveals nothing — the application never received the payload.
 
+Accepting a strange value and showing it as plain text is correct; only a crash, an error, lost data or executed markup is a bug.
+
 Skip the Menu/Navigation section — we are testing THIS page.
