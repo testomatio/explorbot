@@ -1744,9 +1744,54 @@ describe('Prima browser instances', () => {
     expect(await prima.browserCheck()).toBe('browser: playwright-cli session "auth" at ws://127.0.0.1:4321/auth');
   });
 
-  test('browserCheck fails proposing playwright-cli open when no session is open', async () => {
+  test('browserCheck opens a playwright-cli session when none is open', async () => {
     const { prima } = fakePrima({ url: 'https://app.example.com' });
     (prima as any).loadConfig = async () => ({});
+    let opened = false;
+    (prima as any).openPlaywrightSession = () => {
+      opened = true;
+    };
+    (prima as any).discover = () => {
+      if (!opened) return { candidates: [] };
+      return { match: { title: 'default', endpoint: 'ws://127.0.0.1:4321/default', workspaceDir: '' }, candidates: [] };
+    };
+
+    expect(await prima.browserCheck()).toBe('browser: playwright-cli session "default" at ws://127.0.0.1:4321/default');
+  });
+
+  test('browserCheck opens a named session that is not open yet beside other sessions', async () => {
+    const { prima } = fakePrima({ pwSession: 'mine' });
+    (prima as any).loadConfig = async () => ({});
+    let opened = false;
+    (prima as any).openPlaywrightSession = () => {
+      opened = true;
+    };
+    (prima as any).discover = () => {
+      const other = { title: 'other', endpoint: 'ws://127.0.0.1:4321/other', workspaceDir: '' };
+      if (!opened) return { candidates: [other] };
+      return { match: { title: 'mine', endpoint: 'ws://127.0.0.1:4321/mine', workspaceDir: '' }, candidates: [other] };
+    };
+
+    expect(await prima.browserCheck()).toBe('browser: playwright-cli session "mine" at ws://127.0.0.1:4321/mine');
+  });
+
+  test('browserCheck asks to pick a session when several are open and none is named', async () => {
+    const { prima } = fakePrima();
+    (prima as any).loadConfig = async () => ({});
+    let opened = false;
+    (prima as any).openPlaywrightSession = () => {
+      opened = true;
+    };
+    (prima as any).discover = () => ({ candidates: [{ title: 'a' }, { title: 'b' }] });
+
+    await expect(prima.browserCheck()).rejects.toThrow(/--pw-session/);
+    expect(opened).toBe(false);
+  });
+
+  test('browserCheck fails proposing playwright-cli open when the launch opened nothing', async () => {
+    const { prima } = fakePrima({ url: 'https://app.example.com' });
+    (prima as any).loadConfig = async () => ({});
+    (prima as any).openPlaywrightSession = () => {};
     (prima as any).discover = () => ({ candidates: [] });
 
     await expect(prima.browserCheck()).rejects.toThrow(/playwright-cli open https:\/\/app.example.com/);

@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -581,7 +582,12 @@ export class Prima {
 
   async browserCheck(): Promise<string> {
     await this.loadConfig();
-    const { match, candidates, browser } = await this.discover();
+    let discovery = await this.discover();
+    if (!discovery.match && (this.pwSessionTitle() || !discovery.candidates.length)) {
+      this.openPlaywrightSession();
+      discovery = await this.discover();
+    }
+    const { match, candidates, browser } = discovery;
     await browser?.close().catch(() => {});
     if (!match) throw this.missingSessionError(candidates);
     return `browser: ${this.attachmentLabel(match)} at ${match.endpoint}`;
@@ -722,9 +728,25 @@ export class Prima {
     `);
   }
 
+  private openPlaywrightSession(): void {
+    const args = ['open'];
+    const title = this.pwSessionTitle();
+    if (title) args.unshift(`-s=${title}`);
+    const url = this.options.url || this.configBaseUrl();
+    if (url) args.push(url);
+
+    const stdio: any = ['ignore', 'ignore', 'inherit'];
+    const local = spawnSync('playwright-cli', args, { stdio });
+    if (!local.error) return;
+    spawnSync('npx', ['-y', '@playwright/cli', ...args], { stdio });
+  }
+
+  private pwSessionTitle(): string | undefined {
+    return this.options.pwSession ?? process.env.PLAYWRIGHT_CLI_SESSION;
+  }
+
   private async discover(descriptors = readDescriptors()): Promise<Discovery> {
-    const title = this.options.pwSession ?? process.env.PLAYWRIGHT_CLI_SESSION;
-    const opts = { title };
+    const opts = { title: this.pwSessionTitle() };
 
     const alive = new Map<PwServerDescriptor, Browser>();
     for (const candidate of selectDescriptor(descriptors, opts).candidates) {
