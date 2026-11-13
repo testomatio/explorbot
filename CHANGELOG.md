@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-13
+
+### Changes
+- [Planner] Stress tests in the `psycho` style no longer expect the app to reject strange values such as SQL-like text. Saving the value and showing it as plain text passes; a crash, an error, lost data or executed markup fails.
 ## 2026-11-12
 
 ### Changes
