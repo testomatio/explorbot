@@ -593,8 +593,12 @@ export const attachStepLogger = (target: ExecutedStep[], assertionsTarget?: Arra
 
     const executed: ExecutedStep = { command: step.toCode(), success: !error };
     if (Object.keys(step.opts || {}).length) {
-      const args = [step.humanizeArgs(), `step.opts(${JSON.stringify(step.opts)})`].filter(Boolean).join(', ');
-      executed.command = `${step.prefix}${step.actor}.${step.title}(${args})${step.suffix}`;
+      const { elementIndex, ...rest } = step.opts;
+      const args = [step.humanizeArgs()];
+      if (Object.keys(rest).length) args.push(`step.opts(${JSON.stringify(rest)})`);
+      let command = `${step.prefix}${step.actor}.${step.title}(${args.filter(Boolean).join(', ')})`;
+      if (elementIndex !== undefined) command += `.at(${JSON.stringify(elementIndex)})`;
+      executed.command = `${command}${step.suffix}`;
     }
     if (error) {
       executed.error = errorToString(error);
