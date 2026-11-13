@@ -4,6 +4,11 @@
 
 ### Changes
 - [Planner] Stress tests in the `psycho` style no longer expect the app to reject strange values such as SQL-like text. Saving the value and showing it as plain text passes; a crash, an error, lost data or executed markup fails.
+- [Prima] `prima browser` opens a playwright-cli session when none is open, instead of only printing the command to start one. It runs `playwright-cli open`, or `npx @playwright/cli open` when playwright-cli is not installed, at `--url` or the configured base URL. A `--pw-session` name that is not open yet is opened under that name. When several sessions are open and none is named, it still asks you to pick one.
+  ```bash
+  prima browser --url https://app.example.com   # browser: playwright-cli session "default" at ...
+  prima browser --pw-session staging            # opens or reuses the "staging" session
+  ```
 ## 2026-11-12
 
 ### Changes
