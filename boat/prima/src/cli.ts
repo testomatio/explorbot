@@ -174,7 +174,7 @@ export function createPrimaCommands(name = 'prima'): Command {
       process.exit(0);
     });
 
-  addBrowserOptions(cmd.command('browser').description('Check that a playwright-cli session is open for prima to drive')).action(async (options) => {
+  addBrowserOptions(cmd.command('browser').description('Open a playwright-cli session for prima to drive, or report the one already open')).action(async (options) => {
     try {
       console.log(await primaFor(options).browserCheck());
     } catch (error) {
