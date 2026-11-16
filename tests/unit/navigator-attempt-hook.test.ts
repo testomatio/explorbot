@@ -30,7 +30,7 @@ describe('Navigator resolveState attempt hook', () => {
       getActor: () => ({ wait: async () => {} }),
     };
 
-    navigator.explorer = { action: () => action };
+    navigator.explorer = { action: () => action, capture: async () => ({ diff: async () => ({ hasChanges: () => true }) }) };
     navigator.stateManager = action.stateManager;
     return navigator;
   }

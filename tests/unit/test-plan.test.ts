@@ -370,6 +370,30 @@ https://app.example.com/projects/demo/runs
       expect(plan.startUrl).toBe('https://app.example.com/projects/demo/runs');
     });
 
+    test('should keep underscores inside the prerequisite URL and backfill it into tests', () => {
+      const markdown = `<!-- suite -->
+# Test Suite
+
+### Prerequisite
+
+* URL: **https://app.example.com/projects/demo_app/?assets_host=preview_1**
+
+<!-- test
+priority: critical
+-->
+# Test Scenario
+
+## Expected
+* Page is rendered
+`;
+
+      writeFileSync(testFilePath, markdown, 'utf-8');
+      const plan = Plan.fromMarkdown(testFilePath);
+
+      expect(plan.url).toBe('https://app.example.com/projects/demo_app/?assets_host=preview_1');
+      expect(plan.tests[0].startUrl).toBe('https://app.example.com/projects/demo_app/?assets_host=preview_1');
+    });
+
     test('should fall back to the first test URL when suite has no prerequisite', () => {
       const markdown = `<!-- suite -->
 # Test Suite

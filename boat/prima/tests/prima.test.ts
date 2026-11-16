@@ -1746,6 +1746,7 @@ describe('Prima browser instances', () => {
 
   test('browserCheck fails proposing playwright-cli open when no session is open', async () => {
     const { prima } = fakePrima({ url: 'https://app.example.com' });
+    (prima as any).loadConfig = async () => ({});
     (prima as any).discover = () => ({ candidates: [] });
 
     await expect(prima.browserCheck()).rejects.toThrow(/playwright-cli open https:\/\/app.example.com/);

@@ -20,6 +20,7 @@ export interface TaggedLogEntry {
   originalArgs?: any[];
   namespace?: string;
   maxLines?: number;
+  emphasize?: boolean;
 }
 
 type LogEntry = TaggedLogEntry;
@@ -82,6 +83,7 @@ class ConsoleDestination implements LogDestination {
   private quiet = false;
   private recentSteps = new RecentStepFilter();
   private width: number;
+  private endsWithBlankLine = false;
 
   constructor() {
     this.width = process.stdout.columns || 80;
@@ -133,7 +135,11 @@ class ConsoleDestination implements LogDestination {
     } else if (entry.type === 'substep') {
       content = this.prefixLines(content, '   > ', chalk.gray);
     }
+    if (entry.emphasize) content = `\n${content.trimEnd()}\n`;
+    if (this.endsWithBlankLine) content = content.replace(/^\n+/, '');
+    if (!content && this.endsWithBlankLine) return;
     console.log(content);
+    this.endsWithBlankLine = !content || content.endsWith('\n');
   }
 
   private prefixLines(content: string, prefix: string, style: (s: string) => string, strip = true): string {
@@ -489,7 +495,7 @@ class Logger {
       return;
     }
 
-    const options = this.extractLogOptions(type, args);
+    const options = this.extractLogOptions(args);
     let content = this.processArgs(args);
     if (type === 'step' && args[0]?.toCode) {
       content = args[0].toCode();
@@ -500,6 +506,7 @@ class Logger {
       timestamp: new Date(),
       originalArgs: args,
       maxLines: options?.maxLines,
+      emphasize: options?.emphasize,
     };
 
     if (this.file.isEnabled()) this.file.write(entry);
@@ -543,16 +550,17 @@ class Logger {
     this.log('multiline', ...args);
   }
 
-  private extractLogOptions(type: LogType, args: any[]): { maxLines?: number } | null {
-    if (type !== 'multiline') return null;
+  private extractLogOptions(args: any[]): { maxLines?: number; emphasize?: boolean } | null {
     const last = args[args.length - 1];
     if (!last || typeof last !== 'object' || Array.isArray(last)) return null;
-    if (!('maxLines' in last)) return null;
+    if (!('maxLines' in last) && !('emphasize' in last)) return null;
 
     args.pop();
+    const options: { maxLines?: number; emphasize?: boolean } = {};
     const maxLines = Number(last.maxLines);
-    if (!Number.isFinite(maxLines) || maxLines <= 0) return null;
-    return { maxLines };
+    if (Number.isFinite(maxLines) && maxLines > 0) options.maxLines = maxLines;
+    if (last.emphasize) options.emphasize = true;
+    return options;
   }
 }
 

@@ -1,9 +1,10 @@
 {
   "openrouter": {
-    "model": "openai/gpt-oss-20b:nitro",
-    "visionModel": "openai/gpt-5.6-luna",
+    "model": "meta/muse-ember",
+    "visionModel": "meta/muse-ember",
     "agenticModel": "anthropic/claude-haiku-5.5",
-    "decisionModel": "~typesafe/jev-latest"
+    "decisionModel": "~typesafe/jev-latest",
+    "toolChoice": "auto"
   },
   "poolside": {
     "model": "poolside/laguna-xs-2.1"
@@ -14,7 +15,7 @@
     "agenticModel": "qwen/qwen3.6-27b"
   },
   "openai": {
-    "model": "gpt-5-nano",
+    "model": "gpt-6-luna",
     "visionModel": "gpt-6-luna",
     "agenticModel": "gpt-6-luna"
   },

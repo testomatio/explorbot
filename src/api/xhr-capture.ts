@@ -1,4 +1,4 @@
-import { isSameHostFamily } from '../utils/url-matcher.js';
+import { isAppRequest } from '../utils/url-matcher.js';
 import { RequestResult, generateRequestId } from './request-result.ts';
 import type { RequestStore } from './request-store.ts';
 
@@ -34,13 +34,10 @@ export class XhrCapture {
 
   private async captureResponse(response: any): Promise<void> {
     const request = response.request();
-    const resourceType = request.resourceType();
-
-    if (resourceType !== 'xhr' && resourceType !== 'fetch') return;
+    if (!isAppRequest(request, this.baseOrigin)) return;
 
     const method = request.method();
     const url = request.url();
-    if (!isSameHostFamily(url, this.baseOrigin)) return;
 
     const status = response.status();
 

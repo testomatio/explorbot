@@ -211,11 +211,16 @@ const LogPane: React.FC<LogPaneProps> = React.memo(({ verboseMode }) => {
     }
 
     let marginTop = 0;
+    let marginBottom = 0;
     if (log.type === 'info') marginTop = 1;
+    if (log.emphasize) {
+      marginTop = 1;
+      marginBottom = 1;
+    }
     const icon = log.type === 'info' ? '◉' : log.type === 'success' ? '✓' : log.type === 'error' ? '✗' : log.type === 'warning' ? '!' : log.type === 'debug' ? '*' : '';
 
     return (
-      <Box key={index} columnGap={1} marginTop={marginTop} flexDirection="row">
+      <Box key={index} columnGap={1} marginTop={marginTop} marginBottom={marginBottom} flexDirection="row">
         {icon && <Text {...styles}>{icon}</Text>}
         <Box flexDirection="column">
           {lines.map((line, lineIndex) => (

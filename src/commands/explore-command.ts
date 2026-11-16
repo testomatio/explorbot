@@ -17,6 +17,7 @@ import { type ArgumentCompletion, BaseCommand, type Suggestion } from './base-co
 import { PlanCommand } from './plan-command.js';
 
 const MAX_SUB_PAGE_ATTEMPTS = 30;
+const MAX_BLOCKED_PAGES = 3;
 const PRIORITY_ORDER: Record<string, number> = { critical: 0, important: 1, high: 2, normal: 3, low: 4 };
 export const DEADLINE_RESERVE_MS = 3 * 60_000;
 export const DEADLINE_TEST_ALLOWANCE_MS = 5 * 60_000;
@@ -85,6 +86,7 @@ export class ExploreCommand extends BaseCommand {
     Stats.mode ??= 'explore';
     Stats.focus ??= feature;
     const mainUrl = this.getCurrentPageUrl();
+    const startState = this.explorBot.stateManager().getCurrentState();
     const error = getStateErrorPageError(this.explorBot.stateManager().getCurrentState());
     if (error && !this.sitemapUrls) {
       tag('warning').log(error.message);
@@ -98,6 +100,12 @@ export class ExploreCommand extends BaseCommand {
         await this.runReuseMode(mainUrl, feature, cfg);
       } else {
         await this.runFreshMode(mainUrl, feature, cfg.styles);
+      }
+
+      if (this.explorBot.stateManager().isPageBlocked(startState)) {
+        tag('error').log(`Start page ${startState?.url} is blocked, nothing to explore`, { emphasize: true });
+        this.printNextSteps();
+        return;
       }
 
       const mainPlan = this.completedPlans[0];
@@ -321,6 +329,7 @@ export class ExploreCommand extends BaseCommand {
       tag('warning').log(`Skipping page: ${errorPage.message}`);
       return false;
     }
+    if (this.skipBlockedPage()) return false;
     await this.runAllStyles(url, feature, parentPlan, styles);
     const plan = this.explorBot.getCurrentPlan();
     if (plan?.tests.length && !this.completedPlans.includes(plan)) {
@@ -337,6 +346,7 @@ export class ExploreCommand extends BaseCommand {
       const opts: { fresh: boolean; style: string; noSave?: boolean } = { fresh: false, style };
       if (this.dryRun) opts.noSave = true;
       await this.planWithRetry(feature, opts, pageUrl);
+      if (this.skipBlockedPage()) return;
       await this.runPendingTests();
     }
   }
@@ -353,6 +363,7 @@ export class ExploreCommand extends BaseCommand {
       if (fresh && parentPlan) opts.extend = parentPlan;
       if (this.dryRun) opts.noSave = true;
       await this.planWithRetry(feature, opts, pageUrl);
+      if (this.skipBlockedPage()) return;
       const plan = this.explorBot.getCurrentPlan();
       if (plan && plan.tests.length === 0) {
         tag('warning').log('Nothing to test on this page, moving on');
@@ -376,10 +387,7 @@ export class ExploreCommand extends BaseCommand {
     const before = new Set(this.explorBot.getCurrentPlan()?.tests ?? []);
 
     await this.explorBot.plan(feature, opts);
-    if (this.explorBot.lastPlanError instanceof BlockedError) {
-      tag('warning').log(`Skipping page: ${this.explorBot.lastPlanError.message}`);
-      return;
-    }
+    if (this.explorBot.lastPlanError instanceof BlockedError) return;
     if (this.explorBot.lastPlanError) {
       if (this.explorBot.lastPlanError instanceof ErrorPageError) {
         throw this.explorBot.lastPlanError;
@@ -582,6 +590,22 @@ export class ExploreCommand extends BaseCommand {
       });
     }
 
+    for (const page of this.explorBot.stateManager().getBlockedPages()) {
+      let commands = [{ label: 'Knowledge for this page did not unblock it, update it', command: `${cli} learn ${page.url} "<facts>"` }];
+      if (!this.explorBot.knowledgeTracker().getMatchingKnowledge(page.url).length) {
+        commands = [
+          { label: 'Pass credentials for this run', command: `${cli} explore ${page.url} --auth '<credentials>'` },
+          { label: 'Or save them as knowledge', command: `${cli} learn ${page.url} "<credentials>"` },
+        ];
+      }
+      sections.push({ label: `Blocked ${page.url}: ${page.reason}`, commands });
+    }
+
+    if (!this.completedPlans.length) {
+      printNextSteps(sections);
+      return;
+    }
+
     sections.push({
       label: 'Explore more',
       commands: [
@@ -601,8 +625,20 @@ export class ExploreCommand extends BaseCommand {
     test.finish(TestResult.SKIPPED);
   }
 
+  private skipBlockedPage(): boolean {
+    const stateManager = this.explorBot.stateManager();
+    const state = stateManager.getCurrentState();
+    if (!state || !stateManager.isPageBlocked(state)) return false;
+    const reason = 'matches a blocked page';
+    stateManager.markBlocked(state, reason);
+    tag('warning').log(`Skipping page ${state.url}: ${reason}`, { emphasize: true });
+    if (stateManager.getBlockedPages().length >= MAX_BLOCKED_PAGES) tag('warning').log(`${MAX_BLOCKED_PAGES} blocked pages met, stopping exploration`);
+    return true;
+  }
+
   private isLimitReached(): boolean {
     if (this.maxTests != null && this.testsRun >= this.maxTests) return true;
+    if (this.explorBot.stateManager().getBlockedPages().length >= MAX_BLOCKED_PAGES) return true;
     return this.isDeadlineReached();
   }
 

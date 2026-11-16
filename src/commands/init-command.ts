@@ -276,6 +276,7 @@ export function modelLines(provider: string, only?: ModelRole[]): string {
 
   const lines = selected.map(([role, comment]) => `    // ${comment}\n    ${role}: '${provider}/${recommended[role] || '<model-id>'}',`);
   if (!only && recommended.decisionModel) lines.push(`    // decision model judging ambiguous outcomes\n    decisionModel: { provider: '${provider}', model: '${recommended.decisionModel}' },`);
+  if (!only && recommended.toolChoice) lines.push(`    // the only tool-choice mode these models' providers accept\n    toolChoice: '${recommended.toolChoice}',`);
   return lines.join('\n');
 }
 
