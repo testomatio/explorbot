@@ -4,7 +4,9 @@ import type { SettledExpectation } from '../../../src/test-plan.ts';
 
 export const STATUS_FILE = 'status.json';
 
-const ARTIFACT_FILES = { aria: 'aria.yml', html: 'page.html', screenshot: 'page.png', network: 'network.jsonl' };
+const ARTIFACT_FILES = { aria: 'aria.yml', html: 'page.html', screenshot: 'page.png', network: 'network.jsonl', video: 'video.webm' };
+
+export const VIDEO_FILE = ARTIFACT_FILES.video;
 
 export const STEP_FILES = { aria: 'aria.yaml', html: 'html', diff: 'diff.yaml' };
 
@@ -26,6 +28,7 @@ export interface InstanceInfo {
 export interface EnvelopeData {
   ok: boolean;
   command: string;
+  purpose?: { text: string; number: string };
   used?: string[];
   page: { url: string; previousUrl?: string; redirectedFrom?: string; title: string; state: string; visits: number };
   changes?: string | null;
@@ -75,6 +78,7 @@ export function readArtifacts(dir: string): ArtifactPaths {
   const paths: ArtifactPaths = { aria: path.resolve(dir, ARTIFACT_FILES.aria), html: path.resolve(dir, ARTIFACT_FILES.html) };
   if (existsSync(path.resolve(dir, ARTIFACT_FILES.screenshot))) paths.screenshot = path.resolve(dir, ARTIFACT_FILES.screenshot);
   if (existsSync(path.resolve(dir, ARTIFACT_FILES.network))) paths.network = path.resolve(dir, ARTIFACT_FILES.network);
+  if (existsSync(path.resolve(dir, ARTIFACT_FILES.video))) paths.video = path.resolve(dir, ARTIFACT_FILES.video);
 
   const recorded = [...Object.values(ARTIFACT_FILES), STATUS_FILE];
   const files = readdirSync(dir)
@@ -86,6 +90,7 @@ export function readArtifacts(dir: string): ArtifactPaths {
 
 function renderResult(data: EnvelopeData): string {
   const lines = [`ok: ${data.ok}`, `command: ${data.command}`];
+  if (data.purpose) lines.push(`purpose: ${data.purpose.text} #${data.purpose.number}`);
   if (data.used?.length) lines.push(`used: ${data.used.join('; ')}`);
   return section('Result', lines.join('\n'));
 }
@@ -217,6 +222,7 @@ export function renderArtifacts(data: EnvelopeData): string | null {
   const lines = [`aria:       ${data.artifacts.aria}`, `html:       ${data.artifacts.html}`];
   if (data.artifacts.screenshot) lines.push(`screenshot: ${data.artifacts.screenshot}`);
   if (data.artifacts.network) lines.push(`network:    ${data.artifacts.network}`);
+  if (data.artifacts.video) lines.push(`video:      ${data.artifacts.video}`);
   if (data.artifacts.files?.length) lines.push(`also here:  ${data.artifacts.files.join(', ')}`);
   return section('Artifacts', lines.join('\n'));
 }
@@ -235,5 +241,6 @@ export interface ArtifactPaths {
   html: string;
   screenshot?: string;
   network?: string;
+  video?: string;
   files?: string[];
 }
