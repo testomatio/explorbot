@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-11-16
+
+### New CLI Options
+- **`prima --purpose <text>`** — Marks a series of prima commands as working toward one goal. Commands with the same purpose share one Langfuse session, and each gets a number in hex, `#0001`, `#0002` and so on, printed on its `purpose:` line. `prima report --purpose <text>` reports only those commands, even across browser restarts.
+  ```bash
+  prima do "add an item to the cart" --purpose "checkout"
+  prima report --purpose "checkout"
+  ```
+- **`prima do --video` / `prima check --video`** — Records the command for `prima video`. Needs `--purpose` and `ffmpeg` on PATH; both are checked before the command runs.
+  ```bash
+  prima check "the cart total updates" --purpose "checkout" --video
+  ```
+- **`prima video --purpose <text>`** — Joins the recordings of a purpose into one webm. Without options every command that passed is joined in run order. Waits are condensed so a still frame holds for at most a second, and a recording where nothing moved on screen is left out. `--list` shows the commands by number; `--only` picks and orders them; `--caption`, `--speed` and `--hold` edit one command each and repeat for several.
+  ```bash
+  prima video --purpose "checkout" --list
+  prima video --purpose "checkout" --only 0003,0001 --caption 0001="Add to cart" --speed 0001=2 --hold 0003=3
+  ```
+
+### Changes
+- Nested traces keep the session of the run that started them, so every AI call of one test or prima command lands in one Langfuse session.
+
 ## 2026-10-31
 
 ### New CLI Options

@@ -14,6 +14,14 @@ export function sessionFile(key: string): string {
   return path.join(sessionsDir(), `${safeFilename(key)}.jsonl`);
 }
 
+export function purposeFile(purpose: string, extension = '.jsonl'): string {
+  return outputPath('prima', 'purposes', safeFilename(purpose, extension));
+}
+
+export function commandNumber(position: number): string {
+  return position.toString(16).padStart(4, '0');
+}
+
 export function latestSessionFile(): string | null {
   const dir = sessionsDir();
   if (!existsSync(dir)) return null;
@@ -57,6 +65,8 @@ function commandTest(envelope: EnvelopeData, durationMs: number): any {
   };
 
   if (envelope.failure) test.error = { message: envelope.failure.error };
+  if (envelope.artifacts?.video) test.artifacts = [envelope.artifacts.video];
+  if (envelope.purpose) test.meta = { purpose: envelope.purpose.text, number: envelope.purpose.number };
   return test;
 }
 

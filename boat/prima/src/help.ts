@@ -75,7 +75,23 @@ export const statusHelp = dedent`
 
 export const reportHelp = dedent`
   Built from the command log, so it needs no browser and outlives the session.
-  Reports the latest session unless --pw-session names another.
+  Reports the latest session unless --pw-session names another;
+  --purpose reports only the commands run with that purpose, across browser restarts.
+`;
+
+export const videoHelp = dedent`
+  Every command run with --purpose gets a number (#0001, #0002, ...) on its purpose: line.
+  Joins the recordings of do and check runs made with --purpose and --video.
+  Without --only, every command that passed is joined in run order; --only picks
+  and orders them, failed ones included. A recording where nothing moved on screen
+  is left out. Waits are condensed: a still frame holds for at most a second.
+  Edits apply to one command each and repeat for several: --caption, --speed, --hold.
+  Needs ffmpeg on PATH. Writes one webm next to the purpose log and prints its path.
+
+    prima do "add an item to the cart" --purpose "checkout" --video
+    prima check "the cart total updates" --purpose "checkout" --video
+    prima video --purpose "checkout" --list
+    prima video --purpose "checkout" --only 0002,0001 --caption 0002="Cart total updates" --hold 0002=3
 `;
 
 export const sessionHelp = dedent`
