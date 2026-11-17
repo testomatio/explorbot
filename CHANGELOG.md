@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-11-17
+
+### New Commands
+- **`prima skill`** — Prints the skill that teaches a coding agent to use prima: describe behaviour with `check` and `do` instead of scripting clicks through playwright-cli. `--install` writes it as `prima/SKILL.md` into `.claude/skills` and `.agents/skills`, which Claude Code, Codex and OpenCode read; `local` (the default) installs into the project, `global` into the home directory.
+  ```bash
+  prima skill                    # print the skill
+  prima skill --install          # install into this project
+  prima skill --install global   # install into your home directory
+  ```
+
+### Changes
+- [Config] One provider API key is enough to run without a config file. When no project or global config exists and neither `EXPLORBOT_AI_PROVIDER` nor `EXPLORBOT_AI_MODEL` is set, the provider is taken from the exported key and its recommended models are used for every role. Applies to `explorbot` and `prima`.
+  ```bash
+  OPENROUTER_API_KEY=your-key prima check "the settings page saves a changed theme"
+  ```
+- [Prima] `prima verify` exits with code 1 when its assertions ran and the claim was not verified. It used to exit 0 whatever the assertions reported.
+- [Prima] Running `prima` with no arguments prints a short summary instead of the full help, and an unknown command is reported as such. The per-command notes that followed `--help` moved into the skill.
+- [Prima] A command that finds no usable AI model lists, for each provider, where to create a key and which variable to export.
+- [Prima] When prima is run through `npx`, it suggests installing it, since `npx` adds about 5 seconds to every call.
+
 ## 2026-11-16
 
 ### New CLI Options

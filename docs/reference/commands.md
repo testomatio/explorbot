@@ -683,6 +683,7 @@ Run it as `npx explorbot prima <command>` or through the standalone `prima` bin.
 | `prima status <hash>` | Show the artifacts and page detail recorded for an earlier command |
 | `prima report` | Turn every command of a session into one html and markdown report |
 | `prima config` | Show the AI models prima runs on and the config file they come from |
+| `prima skill` | Print the skill that teaches a coding agent to use prima; `--install [local\|global]` writes it for Claude Code, Codex and OpenCode |
 | `prima browser {start\|stop\|status\|list}` | Manage the browsers prima drives |
 
 ### Choosing a command

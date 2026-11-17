@@ -11,9 +11,11 @@ npx prima-cli check "a workflow can be created and appears in the list" --expect
 ## Install
 
 ```bash
-npx prima-cli --help          # no install
-npm install -g prima-cli      # or install it
+npm install -g prima-cli      # install it
+npx prima-cli --help          # or run without installing
 ```
+
+Install it when an agent drives it: `npx` adds about 5 seconds to every call.
 
 Prima also ships inside [explorbot](https://www.npmjs.com/package/explorbot), so `npx explorbot prima <command>` runs the same tool if you already have it.
 
@@ -49,6 +51,7 @@ playwright-cli close
 | `video` | Join and edit the `do` and `check` recordings of a purpose into one video |
 | `browser` | Check that a playwright-cli session is open, and fail with the command to open one when it is not |
 | `config` | Show models, config file and paths used by this run |
+| `skill` | Print the skill that teaches a coding agent to use prima, or install it with `--install` |
 
 `check` takes an outcome rather than a click path. It runs on the page you are already on and never reloads it, so an open dialog survives the check. Each `--expected` outcome comes back as PASSED, FAILED, CONTRADICTION or not verified — settled against a screenshot of the whole page, because what a user can see is the proof.
 
@@ -90,27 +93,29 @@ prima-cli video --purpose "checkout" --only 0002,0001 --caption 0002="Cart total
 
 ## AI model
 
-Prima needs a model, and takes it from the environment. There is no `init` to run and nothing is written for you.
-
-The setup we recommend runs everything through OpenRouter with one key: GPT-OSS 120B served by Groq as the main model, and TypeSafe's Jev as the [decision model](https://github.com/testomatio/explorbot/blob/main/docs/web-testing/decisions.md), which answers narrow yes/no and pick-one questions so the main model is called less often.
+Prima needs a model, and one API key is all the setup there is. Export the key of the provider you use and prima picks that provider's recommended models for every role, from the list bundled with the package. There is no `init` to run and nothing is written for you.
 
 ```bash
-PRIMA_CLI_AI_MODEL=openrouter/openai/gpt-oss-120b:nitro
-PRIMA_CLI_DECISION_MODEL=openrouter/typesafe/jev-1.13
 OPENROUTER_API_KEY=your-key
 ```
 
-The provider comes from each model name, and `:nitro` asks OpenRouter for its fastest host, which is Groq for this model. Jev is optional: leave `PRIMA_CLI_DECISION_MODEL` unset and prima never calls it, or pass `--decision-model` for a single run.
+`prima-cli recommended-models` prints every supported provider, the key each one reads, the models it gets per role, and which keys are already set. Prefer it to any model name written down elsewhere: the recommendations change between versions.
 
-Prima is usually run by a coding agent, so the best home for these variables is the agent's own config, where they reach every command the agent runs.
+When several keys are exported, name the provider:
+
+```bash
+PRIMA_CLI_AI_PROVIDER=openrouter
+```
+
+To pin a role yourself, write the model as `provider/model-id` in `PRIMA_CLI_AI_MODEL`, `PRIMA_CLI_VISION_MODEL` or `PRIMA_CLI_AGENTIC_MODEL`, or pass `--model` and `--vision-model` for a single run. `PRIMA_CLI_DECISION_MODEL` or `--decision-model` sets the [decision model](https://github.com/testomatio/explorbot/blob/main/docs/web-testing/decisions.md), which answers narrow yes/no and pick-one questions so the main model is called less often.
+
+Prima is usually run by a coding agent, so the best home for the key is the agent's own config, where it reaches every command the agent runs.
 
 Claude Code, in `~/.claude/settings.json`:
 
 ```json
 {
   "env": {
-    "PRIMA_CLI_AI_MODEL": "openrouter/openai/gpt-oss-120b:nitro",
-    "PRIMA_CLI_DECISION_MODEL": "openrouter/typesafe/jev-1.13",
     "OPENROUTER_API_KEY": "your-key"
   }
 }
@@ -120,34 +125,38 @@ Codex, in `~/.codex/config.toml`:
 
 ```toml
 [shell_environment_policy]
-set = { PRIMA_CLI_AI_MODEL = "openrouter/openai/gpt-oss-120b:nitro", PRIMA_CLI_DECISION_MODEL = "openrouter/typesafe/jev-1.13", OPENROUTER_API_KEY = "your-key" }
+set = { OPENROUTER_API_KEY = "your-key" }
 ```
 
 `set` is applied after Codex filters the inherited environment, so the key survives even where names containing `KEY` are stripped.
 
-To run prima yourself, or from any agent that inherits your shell, export them in `~/.bashrc` or `~/.zshrc`:
+To run prima yourself, or from any agent that inherits your shell, export it in `~/.bashrc` or `~/.zshrc`:
 
 ```bash
-export PRIMA_CLI_AI_MODEL=openrouter/openai/gpt-oss-120b:nitro
-export PRIMA_CLI_DECISION_MODEL=openrouter/typesafe/jev-1.13
 export OPENROUTER_API_KEY=your-key
 ```
 
 Fish uses `set -gx` in `~/.config/fish/config.fish` instead of `export`.
 
-Screenshot analysis needs its own model — one is never guessed from the main model. Set `PRIMA_CLI_VISION_MODEL`, or pass `--vision-model` for a single run, as `--model` does for the main one. Without it prima still runs, but settles `check` outcomes from the run log rather than from the page as seen.
+A provider that serves no vision model leaves screenshot analysis off. Prima still runs then, but settles `check` outcomes from the run log rather than from the page as seen; set `PRIMA_CLI_VISION_MODEL` to add one.
 
-Every `PRIMA_CLI_*` variable mirrors the `EXPLORBOT_*` one of the same name and wins over it, so prima can be pointed at a different provider, model or URL without disturbing an explorbot setup on the same machine. `PRIMA_CLI_AI_MODEL`, `PRIMA_CLI_URL`, `PRIMA_CLI_VISION_MODEL` and the rest all work this way.
+Every `PRIMA_CLI_*` variable mirrors the `EXPLORBOT_*` one of the same name and wins over it, so prima can be pointed at a different provider, model or URL without disturbing an explorbot setup on the same machine.
 
-Where [explorbot](https://www.npmjs.com/package/explorbot) is already configured, prima reads its config too — a project's `explorbot.config.js` first, then `~/.explorbot/config.js`. Variables win over both. `prima config` prints what a directory resolves to, and `--ephemeral` keeps no state between runs, writing output to a temp directory.
-
-Providers: openai, anthropic, google, groq, mistral, openrouter, sambanova.
+Where [explorbot](https://www.npmjs.com/package/explorbot) is already configured, prima reads its config too — a project's `explorbot.config.js` first, then `~/.explorbot/config.js`. A bare API key applies only when neither exists; `PRIMA_CLI_AI_PROVIDER` and `PRIMA_CLI_AI_MODEL` win over the global config. `prima config` prints what a directory resolves to, and `--ephemeral` keeps no state between runs, writing output to a temp directory.
 
 Without a model `pw` still works, since it runs Playwright directly.
 
 ## Agents
 
-Prima is built to be called by a coding agent: one call takes a whole job, and the reply is a compact report rather than a browser transcript. Point your agent at `prima-cli --help` and it will find its way.
+Prima is built to be called by a coding agent: one call takes a whole job, and the reply is a compact report rather than a browser transcript. Prima ships its own skill, which teaches an agent to describe behaviour instead of scripting clicks:
+
+```bash
+prima-cli skill                    # print the skill
+prima-cli skill --install          # install into this project
+prima-cli skill --install global   # install into your home directory
+```
+
+`--install` writes `prima/SKILL.md` into `.claude/skills` and `.agents/skills`, which Claude Code, Codex and OpenCode read.
 
 ## License
 
