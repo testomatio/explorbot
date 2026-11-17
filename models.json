@@ -16,7 +16,8 @@
   "openai": {
     "model": "gpt-5-nano",
     "visionModel": "gpt-6-luna",
-    "agenticModel": "gpt-6-luna"
+    "agenticModel": "gpt-6-luna",
+    "decisionModel": "gpt-6-luna"
   },
   "anthropic": {
     "model": "claude-haiku-5-5",
@@ -31,6 +32,7 @@
   "google": {
     "model": "gemini-3.1-flash-lite",
     "visionModel": "gemini-3.1-flash-lite",
-    "agenticModel": "gemini-3.5-flash"
+    "agenticModel": "gemini-3.5-flash",
+    "decisionModel": "gemini-decision-1"
   }
 }
