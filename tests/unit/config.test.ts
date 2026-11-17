@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os, { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ConfigParser, EXPLORBOT_ENV_VARS, materializeKnowledge, resolveConfigModels, resolveModel, resolveOutputRoot } from '../../src/config.ts';
+import { ConfigParser, EXPLORBOT_ENV_VARS, PROVIDERS, materializeKnowledge, resolveConfigModels, resolveModel, resolveOutputRoot } from '../../src/config.ts';
 
 describe('ConfigParser runtime baseUrl overrides', () => {
   beforeEach(() => {
@@ -76,7 +76,7 @@ describe('ConfigParser runtime baseUrl overrides', () => {
   });
 });
 
-const ENV_KEYS = ['EXPLORBOT_AI_PROVIDER', 'EXPLORBOT_AI_MODEL', 'EXPLORBOT_VISION_MODEL', 'EXPLORBOT_AGENTIC_MODEL', 'EXPLORBOT_URL', 'EXPLORBOT_OUTPUT', 'EXPLORBOT_EPHEMERAL', 'EXPLORBOT_KNOWLEDGE', 'EXPLORBOT_KNOWLEDGE_FILE'];
+const ENV_KEYS = ['EXPLORBOT_AI_PROVIDER', 'EXPLORBOT_AI_MODEL', 'EXPLORBOT_VISION_MODEL', 'EXPLORBOT_AGENTIC_MODEL', 'EXPLORBOT_URL', 'EXPLORBOT_OUTPUT', 'EXPLORBOT_EPHEMERAL', 'EXPLORBOT_KNOWLEDGE', 'EXPLORBOT_KNOWLEDGE_FILE', ...Object.values(PROVIDERS).map((provider) => provider.envKey)];
 
 let savedEnv: Record<string, string | undefined> = {};
 let scratchDir: string;

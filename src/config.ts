@@ -639,8 +639,9 @@ export class ConfigParser {
   }
 
   private async buildEnvConfig(baseUrl: string | undefined, outputRoot: string): Promise<ExplorbotConfig> {
-    const provider = process.env.EXPLORBOT_AI_PROVIDER;
     const modelSpec = process.env.EXPLORBOT_AI_MODEL;
+    let provider = process.env.EXPLORBOT_AI_PROVIDER;
+    if (!provider && !modelSpec) provider = providerWithKey();
     if (!provider && !modelSpec) {
       throw new ConfigMissingError(missingConfigMessage());
     }
@@ -826,6 +827,16 @@ export function missingModelRoles(provider: string): ModelRole[] {
 }
 
 export class ConfigMissingError extends Error {}
+
+export function providerWithKey(): string | undefined {
+  return Object.keys(ConfigParser.recommendedModels()).find((provider) => process.env[PROVIDERS[provider]?.envKey]);
+}
+
+export function providerKeyHelp(): string[] {
+  return Object.keys(ConfigParser.recommendedModels())
+    .filter((provider) => PROVIDERS[provider])
+    .map((provider) => `${provider}: create a key at ${PROVIDERS[provider].keyUrl}, then export ${PROVIDERS[provider].envKey}=<key>`);
+}
 
 export function envConfigRequested(): boolean {
   return !!(process.env.EXPLORBOT_AI_PROVIDER || process.env.EXPLORBOT_AI_MODEL);

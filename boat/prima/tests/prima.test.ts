@@ -1259,7 +1259,7 @@ describe('Prima.check', () => {
     expect(envelope.answer).toContain('vision');
   });
 
-  test('verify reports each assertion with its own result and gives no verdict', async () => {
+  test('verify reports each assertion with its own result and fails when the claim is not verified', async () => {
     const { prima } = fakePrima();
     (prima as any).bot.agentNavigator = () => ({
       verifyState: async () => ({
@@ -1281,7 +1281,7 @@ describe('Prima.check', () => {
       { code: "I.see('Dashboard')", passed: true, proof: ['await expect(page).toContainText("Dashboard");'] },
       { code: "I.seeElement('.chart')", passed: false, proof: [] },
     ]);
-    expect(envelope.ok).toBe(true);
+    expect(envelope.ok).toBe(false);
   });
 
   test('verify with nothing expressible reports no assertions rather than a failure', async () => {
