@@ -15,7 +15,7 @@ import { actionRule, locatorRule } from '../../../src/ai/rules.ts';
 import { createAgentTools, createCodeceptJSTools, createRefTools } from '../../../src/ai/tools.ts';
 import { getAliveEndpoint, listInstances } from '../../../src/browser-server.ts';
 import { ConfigCommand } from '../../../src/commands/config-command.ts';
-import { ConfigMissingError, ConfigParser, EXPLORBOT_ENV_VARS, type ExplorbotConfig, outputPath } from '../../../src/config.ts';
+import { ConfigMissingError, ConfigParser, EXPLORBOT_ENV_VARS, type ExplorbotConfig, outputPath, providerKeyHelp } from '../../../src/config.ts';
 import { ExplorBot } from '../../../src/explorbot.ts';
 import { findSiteWith, listSites } from '../../../src/global-config.ts';
 import { Reporter } from '../../../src/reporter.ts';
@@ -501,7 +501,9 @@ export class Prima {
       if (seen) outcome.answer = `No assertion could express this claim, so it was judged from a screenshot instead.\n\n${seen}`;
     }
 
-    return this.reportEnvelope(command, result, previousState, outcome);
+    const envelope = await this.reportEnvelope(command, result, previousState, outcome);
+    if (outcome.assertions?.length && !verification.verified) envelope.ok = false;
+    return envelope;
   }
 
   async research(opts: { data?: boolean; deep?: boolean; fresh?: boolean } = {}): Promise<EnvelopeData> {
@@ -929,7 +931,7 @@ export class Prima {
   private async aiGuard(command: string): Promise<EnvelopeData | null> {
     const reason = this.aiUnavailable();
     if (!reason) return null;
-    const message = `this command needs an AI model and none is usable: ${reason}. Drive the browser directly with playwright-cli or prima pw, or fix the AI config in ~/.explorbot/config.js or EXPLORBOT_AI_PROVIDER.`;
+    const message = `this command needs an AI model and none is usable: ${reason}. Drive the browser directly with playwright-cli or prima pw, or export one provider API key:\n${providerKeyHelp().join('\n')}`;
     return this.toolFailureEnvelope(command, message);
   }
 
