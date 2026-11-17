@@ -71,7 +71,7 @@ describe('click on an ambiguous locator', () => {
     expect(result.multipleElementsDetected).toBe(true);
     expect(result.elements).toContain('Element 1:');
     expect(result.elements).toContain('Element 2:');
-    expect(result.suggestion).toContain('elementIndex');
+    expect(result.suggestion).toContain('.at(N)');
     expect(result.elements).not.toContain('Identical to element');
   });
 
@@ -113,9 +113,9 @@ describe('judging an ambiguous match', () => {
   };
   const judgePicking = (index: number) => judgeAnswering((options) => options[index]).judge;
 
-  it('names the element the judge picks, by elementIndex', async () => {
+  it('names the element the judge picks, by .at(N)', async () => {
     const result = await failedToolResult('form', 'Multiple elements (2) found', {}, multipleElementsError(), judgePicking(1), 'Toggle the control');
-    expect(result.suggestion).toContain('elementIndex: 2');
+    expect(result.suggestion).toContain('.at(2)');
   });
 
   it('keeps the numbered list when the judge rejects', async () => {
@@ -149,7 +149,7 @@ describe('judging an ambiguous match', () => {
     const { deps, action } = fakeDeps(() => multipleElementsError());
     let state = { url: '/settings', html: '<html><body></body></html>', ariaSnapshot: '- switch', id: 'before' };
     deps.stateManager.getCurrentState = () => state;
-    const executed = `I.click({"role":"switch"}, step.opts({"elementIndex":2}))`;
+    const executed = `I.click({"role":"switch"}).at(2)`;
     action.attemptExactElementIndex = async () => {
       action.lastError = null;
       action.executedSteps = [{ command: executed, success: true }];

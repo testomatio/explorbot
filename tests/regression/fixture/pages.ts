@@ -14,6 +14,12 @@ const PRIORITY_OPTIONS = [
   { value: 'critical', label: 'Critical' },
 ];
 
+const SIGN_IN_STAGES = {
+  email: { label: 'Email', name: 'email', type: 'email', hint: 'Step 1 of 3. Who is signing in?', action: '/signin', submit: 'Continue' },
+  password: { label: 'Password', name: 'password', type: 'password', hint: 'Step 2 of 3. Enter your password.', action: '/signin/password', submit: 'Continue' },
+  otp: { label: 'One-time code', name: 'code', type: 'text', hint: 'Step 3 of 3. Enter the one-time code.', action: '/signin/otp', submit: 'Verify' },
+};
+
 export function loginPage(error?: string, action = '/login'): string {
   const alert = error ? `<p role="alert" class="alert">${esc(error)}</p>` : '';
   const body = `
@@ -28,6 +34,27 @@ export function loginPage(error?: string, action = '/login'): string {
       </form>
     </main>`;
   return doc('Sign in · Trackly', body, null, 'login');
+}
+
+export function signInStagePage(stage: keyof typeof SIGN_IN_STAGES, error?: string): string {
+  const { label, name, type, hint, action, submit } = SIGN_IN_STAGES[stage];
+  let alert = '';
+  if (error) alert = `<p role="alert" class="alert">${esc(error)}</p>`;
+  const body = `
+    <main class="auth">
+      <h1>${esc(label)}</h1>
+      <p>${esc(hint)}</p>
+      ${alert}
+      <form method="post" action="${action}">
+        <div class="field"><label for="${name}">${esc(label)}</label><input id="${name}" name="${name}" type="${type}" required></div>
+        <button type="submit">${esc(submit)}</button>
+      </form>
+    </main>`;
+  return doc(`${label} · Trackly`, body, null, 'login');
+}
+
+export function accountPage(user: PublicUser): string {
+  return doc('Account · Trackly', `<h1>Account</h1><p>Signed in as ${esc(user.name)}.</p>`, user, 'account');
 }
 
 export function issuesPage(reg: Registry, store: Store, filters: { q?: string; status?: string; label?: string }, user: PublicUser, opts: { openDrawer?: boolean; error?: string } = {}): string {

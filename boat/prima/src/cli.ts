@@ -1,11 +1,16 @@
+import { readFileSync } from 'node:fs';
 import { Command } from 'commander';
 import { RecommendedModelsCommand } from '../../../src/commands/recommended-models-command.ts';
+import { Observability } from '../../../src/observability.ts';
 import { browserErrorMessage } from '../../../src/utils/browser-errors.ts';
 import { isVerboseMode, setQuietMode } from '../../../src/utils/logger.ts';
+import { safeFilename } from '../../../src/utils/strings.ts';
 import { clearActivityLine, trackActivityLine } from './activity-line.ts';
 import { type EnvelopeData, renderEnvelope } from './envelope.ts';
-import { askHelp, checkHelp, doHelp, helpContract, reportHelp, researchHelp, sessionHelp, statusHelp, uxHelp, verifyHelp } from './help.ts';
+import { askHelp, checkHelp, doHelp, helpContract, reportHelp, researchHelp, sessionHelp, statusHelp, uxHelp, verifyHelp, videoHelp } from './help.ts';
 import { Prima, type PrimaOptions } from './prima.ts';
+
+export const { version } = JSON.parse(readFileSync(new URL('../../../package.json', import.meta.url), 'utf8'));
 
 let rootOptions: () => any = () => ({});
 
@@ -23,6 +28,8 @@ function buildOptions(subcommand: any): PrimaOptions {
     baseUrl: options.baseUrl,
     endpoint: options.endpoint,
     pwSession: options.pwSession,
+    purpose: options.purpose,
+    video: options.video,
   };
 }
 
@@ -48,7 +55,8 @@ function addCommonOptions(cmd: Command): Command {
     .option('--url <url>', 'Page to open when the session has no page yet')
     .option('--spec <path>', 'Docbot application spec directory or index.md to read as page knowledge')
     .option('--endpoint <ep>', 'Websocket endpoint of a browser server to attach to, skipping discovery')
-    .option('--pw-session <title>', 'Title of the playwright-cli session to attach to');
+    .option('--pw-session <title>', 'Title of the playwright-cli session to attach to')
+    .option('--purpose <text>', 'What a series of commands is for; groups them into one Langfuse session, report and video');
 }
 
 function addBrowserOptions(cmd: Command): Command {
@@ -74,11 +82,13 @@ async function runPrima(options: any, command: string, run: (prima: Prima) => Pr
   let envelope: EnvelopeData;
   try {
     if (browser) await prima.start();
-    envelope = await run(prima);
+    await prima.startVideo();
+    envelope = await Observability.run(command, { tags: ['prima'], sessionId: options.purpose && safeFilename(options.purpose) }, () => run(prima));
   } catch (error) {
     envelope = await prima.toolFailureEnvelope(command, error);
   }
 
+  await prima.stopVideo(envelope);
   if (record) prima.record(envelope, Date.now() - startedAt);
   clearActivityLine();
   console.log(renderEnvelope(envelope));
@@ -89,6 +99,7 @@ async function runPrima(options: any, command: string, run: (prima: Prima) => Pr
 export function createPrimaCommands(name = 'prima'): Command {
   const cmd = new Command(name);
   cmd.description('Drives a web app through described behaviour, not locators');
+  cmd.version(version, '-V, --version');
   cmd.option('--pw-session <title>', 'Title of the playwright-cli session to attach to');
   cmd.option('--url <url>', 'Page to open when the session has no page yet');
   cmd.addHelpText('after', `\n${helpContract}`);
@@ -99,6 +110,7 @@ export function createPrimaCommands(name = 'prima'): Command {
   });
 
   addBrowserOptions(cmd.command('do <instructions...>').description('Run instructions, one argument each'))
+    .option('--video', 'Record this command for prima video; needs --purpose and ffmpeg')
     .addHelpText('after', `\n${doHelp}`)
     .action(async (instructions, options) => {
       await runPrima(options, `do ${instructions.join(' ')}`, (prima) => prima.do(instructions));
@@ -106,6 +118,7 @@ export function createPrimaCommands(name = 'prima'): Command {
 
   addBrowserOptions(cmd.command('check <scenario>').description('Run a scenario as a test, with verification'))
     .option('--expected <outcome>', 'An outcome the run must reach; repeat the flag for several', (value: string, all: string[]) => [...all, value], [])
+    .option('--video', 'Record this command for prima video; needs --purpose and ffmpeg')
     .addHelpText('after', `\n${checkHelp}`)
     .action(async (scenario, options) => {
       await runPrima(options, `check ${scenario}`, (prima) => prima.check(scenario, options.expected));
@@ -170,7 +183,24 @@ export function createPrimaCommands(name = 'prima'): Command {
       process.exit(0);
     });
 
-  addBrowserOptions(cmd.command('browser').description('Check that a playwright-cli session is open for prima to drive')).action(async (options) => {
+  const repeat = (value: string, all: string[]) => [...all, value];
+  addCommonOptions(cmd.command('video').description('Join the do and check recordings of a purpose into one video, with optional edits'))
+    .option('--list', 'List the commands of the purpose with their numbers')
+    .option('--only <numbers>', 'Commands to join, in this order, e.g. 0001,0003,0002; repeatable', repeat, [])
+    .option('--caption <number=text>', 'Caption shown over one command, e.g. 0002="Add to cart"; repeatable', repeat, [])
+    .option('--speed <number=factor>', 'Play one command faster (2) or slower (0.5); repeatable', repeat, [])
+    .option('--hold <number=seconds>', 'Hold the last frame of one command for this long; repeatable', repeat, [])
+    .addHelpText('after', `\n${videoHelp}`)
+    .action(async (options) => {
+      setQuietMode(!isVerboseMode());
+      const output = await primaFor(options)
+        .video({ list: options.list, only: options.only, caption: options.caption, speed: options.speed, hold: options.hold })
+        .catch((error: unknown) => browserErrorMessage(error));
+      console.log(output);
+      process.exit(0);
+    });
+
+  addBrowserOptions(cmd.command('browser').description('Open a playwright-cli session for prima to drive, or report the one already open')).action(async (options) => {
     try {
       console.log(await primaFor(options).browserCheck());
     } catch (error) {

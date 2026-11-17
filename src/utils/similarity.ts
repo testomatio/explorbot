@@ -1,4 +1,4 @@
-export function diceSimilarity(a: Set<string>, b: Set<string>): number {
+export function similarityScore(a: Set<string>, b: Set<string>): number {
   let intersection = 0;
   for (const item of a) {
     if (b.has(item)) intersection++;

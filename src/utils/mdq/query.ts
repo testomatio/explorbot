@@ -70,6 +70,14 @@ export class MarkdownQuery {
     return this.matches.map((range) => this.source.slice(range.start, range.start + range.length)).join('');
   }
 
+  plainText(): string {
+    return this.each()
+      .flatMap((match) => marked.lexer(match.text()))
+      .map((token) => this.plainTextOf(token))
+      .filter(Boolean)
+      .join('\n');
+  }
+
   nodes(): NodeInfo[] {
     return this.matches.map((range) => {
       const token = range.token as any;
@@ -99,18 +107,11 @@ export class MarkdownQuery {
   }
 
   entries(): Record<string, string> {
-    const entries: Record<string, string> = {};
+    return this.entriesOf(this.matches.flatMap((range) => this.tokenText(range.token).split('\n')));
+  }
 
-    for (const range of this.matches) {
-      for (const line of this.tokenText(range.token).split('\n')) {
-        const separator = line.indexOf(':');
-        if (separator < 1) continue;
-        const value = line.slice(separator + 1).trim();
-        if (value) entries[line.slice(0, separator).trim().toLowerCase()] = value;
-      }
-    }
-
-    return entries;
+  entry(key: string): string | undefined {
+    return this.entriesOf(this.plainText().split('\n'))[key.trim().toLowerCase()];
   }
 
   frontmatter(): Record<string, unknown> {
@@ -426,6 +427,32 @@ export class MarkdownQuery {
     if (token.type === 'html') return value.raw || '';
     if (token.type === 'table') return [...(value.header || []).map((cell: any) => cell.text), ...(value.rows || []).flatMap((row: any) => row.map((cell: any) => cell.text))].join(', ');
     return value.text || '';
+  }
+
+  private entriesOf(lines: string[]): Record<string, string> {
+    const entries: Record<string, string> = {};
+    for (const line of lines) {
+      const separator = line.indexOf(':');
+      if (separator < 1) continue;
+      const value = line.slice(separator + 1).trim();
+      if (value) entries[line.slice(0, separator).trim().toLowerCase()] = value;
+    }
+    return entries;
+  }
+
+  private plainTextOf(token: Token): string {
+    const value = token as any;
+    if (token.type === 'html') return '';
+    if (token.type === 'list') return value.items.map((item: Token) => this.plainTextOf(item)).join('\n');
+    if (token.type === 'table') return [value.header, ...value.rows].map((row: Token[]) => row.map((cell) => this.plainTextOf(cell)).join(' ')).join('\n');
+    if (!value.tokens) return value.text || '';
+
+    let separator = '';
+    if (token.type === 'blockquote' || token.type === 'list_item') separator = '\n';
+    return value.tokens
+      .map((child: Token) => this.plainTextOf(child))
+      .filter(Boolean)
+      .join(separator);
   }
 
   private isComment(token: Token): boolean {

@@ -1,6 +1,6 @@
 # Changelog
 
-## 2026-11-17
+## 2026-11-18
 
 ### Configuration
 - **`ai.decisionModel`** — Two more providers: OpenAI's Decisions API and Google's Gemini Decisions API, authenticated with `OPENAI_API_KEY` and `GOOGLE_GENERATIVE_AI_API_KEY`. For example `decisionModel: { provider: 'openai', model: 'gpt-6-luna' }` or `decisionModel: { provider: 'google', model: 'gemini-decision-1' }`. Both models are also served by OpenRouter: `{ provider: 'openrouter', model: 'google/gemini-decision-1' }`.
@@ -9,6 +9,112 @@
 ### Changes
 - The decision model is now called through the Vercel AI SDK (`experimental_decide`) for every provider. `openrouter` and `typesafe` configs keep their provider names and API keys. On the `judge.decide` span the `judgeEndpoint` metadata is replaced by `judgeProvider`.
 - Requires `ai` 7.0.173 or newer. That version rejects a response without a tool call when a tool call was required; Explorbot retries such a request once with automatic tool choice, as it already did when the provider itself rejected it.
+
+## 2026-11-16
+
+### New CLI Options
+- **`prima --purpose <text>`** — Marks a series of prima commands as working toward one goal. Commands with the same purpose share one Langfuse session, and each gets a number in hex, `#0001`, `#0002` and so on, printed on its `purpose:` line. `prima report --purpose <text>` reports only those commands, even across browser restarts.
+  ```bash
+  prima do "add an item to the cart" --purpose "checkout"
+  prima report --purpose "checkout"
+  ```
+- **`prima do --video` / `prima check --video`** — Records the command for `prima video`. Needs `--purpose` and `ffmpeg` on PATH; both are checked before the command runs.
+  ```bash
+  prima check "the cart total updates" --purpose "checkout" --video
+  ```
+- **`prima video --purpose <text>`** — Joins the recordings of a purpose into one webm. Without options every command that passed is joined in run order. Waits are condensed so a still frame holds for at most a second, and a recording where nothing moved on screen is left out. `--list` shows the commands by number; `--only` picks and orders them; `--caption`, `--speed` and `--hold` edit one command each and repeat for several.
+  ```bash
+  prima video --purpose "checkout" --list
+  prima video --purpose "checkout" --only 0003,0001 --caption 0001="Add to cart" --speed 0001=2 --hold 0003=3
+  ```
+
+### Changes
+- Nested traces keep the session of the run that started them, so every AI call of one test or prima command lands in one Langfuse session.
+
+## 2026-11-13
+
+### Changes
+- [Planner] Stress tests in the `psycho` style no longer expect the app to reject strange values such as SQL-like text. Saving the value and showing it as plain text passes; a crash, an error, lost data or executed markup fails.
+- [Prima] `prima browser` opens a playwright-cli session when none is open, instead of only printing the command to start one. It runs `playwright-cli open`, or `npx @playwright/cli open` when playwright-cli is not installed, at `--url` or the configured base URL. A `--pw-session` name that is not open yet is opened under that name. When several sessions are open and none is named, it still asks you to pick one.
+  ```bash
+  prima browser --url https://app.example.com   # browser: playwright-cli session "default" at ...
+  prima browser --pw-session staging            # opens or reuses the "staging" session
+  ```
+## 2026-11-12
+
+### Changes
+
+- Updated CodeceptJS to 4.2.4, which ships chained step options. When a locator matches several elements, the agent now picks one as `I.click('Delete').at(2)` instead of `I.click('Delete', step.opts({ elementIndex: 2 }))` — same behavior, modern syntax.
+- Generated tests now record the element picked for an ambiguous click as `I.click('Delete').at(2)`, so they stay short and replay without failing on multiple matches.
+- [Prima] `do` and `check` now see the knowledge for the current page: knowledge files, `--knowledge` and `--auth`. Before, a sign-in step blocked with "no auth details" even when `--auth` was given.
+## 2026-11-11
+
+### Changes
+- [Navigator] A step the Tester hands over with `interact` no longer counts as done just because its code ran without an error. If nothing on the page changed and the app sent no request of its own, the Navigator tries the next solution instead of reporting success, so a click on the wrong element is no longer reported back as the step being done. A change that shows up late, or a request to the app's own domain or subdomains, still counts; third-party calls such as analytics do not.
+- Test plans: the Prerequisite URL of a plan keeps underscores (`?assets_host=…`, `/my_project/`). They were stripped before, so tests opened a different URL than the one written in the plan.
+## 2026-11-12
+
+### Changes
+- **`verify()` can check the clipboard** — A claim about copied content is now checked with `I.seeInClipboard` / `I.seeClipboardEquals` against the real system clipboard, instead of a copy notification that may already have closed. A passing check is saved into the generated test.
+## 2026-11-11
+
+### Changes
+- **`EXPLORBOT_URL`** with a path or query (`https://app.example.com/projects/demo/?preview=pr-42`) now sets the base path and pinned query, the same as `web.url` in a config file or `--base-url`. Before, relative navigation was appended to the whole URL and opened pages like `/projects/demo/?preview=pr-42/projects/demo/settings`.
+- [Pilot] The action history Pilot reviews before a pass/fail verdict is now in the order things happened. Returning to a page shows it as a new visit instead of merging it into the first one, and checks made right after a navigation appear under the page they ran on. Actions are numbered across the whole log. A check from an earlier visit is no longer mistaken for the final state.
+- **Pilot sees notifications when it decides pass/fail** — A toast, alert or other message that appeared after an action is now part of the action log Pilot reads for its final verdict and for reset decisions. A test whose confirmation closed before it could be checked is no longer failed for showing "no confirmation".
+
+## 2026-11-10
+
+### Configuration
+- **`ai.toolChoice`** — Sets how every agent picks tools: `'auto'`, `'required'` or `'none'`. Use `'auto'` for a model whose provider accepts no other mode. When unset, each agent keeps its own choice. `recommendedModels: 'openrouter'` and `EXPLORBOT_AI_PROVIDER=openrouter` set it to `'auto'`, and `explorbot init` writes it for OpenRouter.
+- **`ai.agents.<agent>.toolChoice`** — The same setting for one agent, for example `agents: { tester: { toolChoice: 'auto' } }`. Takes priority over `ai.toolChoice`.
+
+### Changes
+- OpenRouter's recommended models are now `meta/muse-ember` for the main and vision models, with `anthropic/claude-haiku-5.5` kept as the agentic model. Against the previous defaults on the regression scenario, with muse-ember in the main slot (vision stayed on gpt-5.6-luna), it passed 10/10, ran about 20% more checks, and was about 20% faster and 25% cheaper per check.
+- OpenAI's recommended models are now `gpt-6-luna` for all three roles, replacing `gpt-5-nano` as the main model.
+- [Tester] The `reasoning` and `providerOptions` settings under `ai.agents.tester` now apply to the Tester's test steps too.
+
+## 2026-11-07
+
+### Changes
+- [Planner] Works out what a website is for and plans its main user flow first, such as buying or reserving, managing records, communicating, multi-step applications or reporting. Steps of that flow that are not visible yet are still planned. Sign-in, FAQ and support pages come afterwards, unless they are the main flow.
+
+## 2026-11-06
+
+### Changes
+- [Researcher] Closes cookie consent, paywall, marketing and similar popups before researching a page. Regular dialogs stay open and are researched as before.
+- [Planner] No longer plans tests for cookie consent, marketing, announcement or notification popups, unless you plan that feature explicitly.
+
+## 2026-11-05
+
+### Changes
+- [Navigator] Gets through flows spread over several pages, such as a sign-in that asks for the email, the password and a one-time code on separate pages. When a step moves the page on, Navigator now looks at the new page instead of spending its remaining attempts on the old one.
+
+## 2026-11-05
+
+### New CLI Options
+- **`prima --version`** — Shows the installed prima version. Running `prima` with no arguments also prints it, above the help.
+  ```bash
+  prima --version
+  prima
+  ```
+
+### Changes
+- [Scout] Works when Explorbot is installed from npm. It used to stop with `Scout requires ripgrep or grep on PATH` even though grep was installed, so any run with `--spec` planned no tests.
+- [Planner] A Scout failure no longer stops planning. The log shows a warning and the plan is made without documentation.
+- Prima: `npx prima-cli` releases are published again. Nothing newer than 0.5.4 reached npm because a release test failed, so fixes such as treating `localhost` and `127.0.0.1` as one site were missing from it.
+
+## 2026-11-01
+
+### Changes
+- [Explore] A page that cannot be opened (for example a sign-in form with no credentials) is now skipped as a whole: no more planning styles or tests run on it, and pages that look the same are skipped without trying again, listed as "matches a blocked page". Exploration stops after 3 such pages.
+- [Explore] When the start page itself is blocked, the run ends right away and suggests how to unblock it: pass credentials with `--auth`, or save them with `learn`. If knowledge for the page exists but did not help, it suggests updating it.
+  ```bash
+  explorbot explore /workspace --auth 'login: admin@example.com password: secret123'
+  explorbot learn /workspace "login: admin@example.com password: secret123"
+  ```
+- [Captain] Takes over a blocked page once. It no longer gets the same blocked page again each time the Planner words the problem differently.
+- Console output: blocker messages stand out with an empty line before and after, and empty lines no longer stack up.
 
 ## 2026-10-31
 
@@ -56,6 +162,8 @@
 - **`ai.agents.scout.enabled`** — Scout now turns on by itself when a spec is set with `--spec` or `dirs.spec`. Set it to `false` to keep it off.
 
 ### Changes
+- [Tester] When the browser page is lost and can't be restored, the test stops as failed at the next browser step instead of running on against a closed browser. Console errors and native dialogs keep being recorded on a page restored after a crash.
+- [Tester] A test stops for final review after three steps in a row with no progress on the same page, including steps where the model called no tools. Pilot steps in after two such steps. A successful `interact` or `visualClick` now counts as progress.
 - [Scout] Searches the docs for the facts a tester needs: roles and permissions, prerequisites, accepted values and limits, error messages, duplicates, state changes, side effects, failure and retry behavior, list and bulk behavior, deletions, file formats and differences between variants. For vague words such as "valid" or "supported" it looks for exact definitions with examples of valid and invalid values.
 - [Scout] Each digest is saved to `output/scout/` and reused for 6 hours for the same page and focus, so repeated planning doesn't search the docs again. The log shows how many words were found, the file path and the first lines of the digest.
 - [Planner] Writes the plan as markdown in the plan file format. If the format is off, the planner is asked to fix it, up to 3 times.

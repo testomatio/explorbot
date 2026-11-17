@@ -216,6 +216,27 @@ describe('Provider', () => {
       expect(toolNames).toContain('click');
     });
 
+    it.each([
+      ['the agent', { agents: { tester: { toolChoice: 'auto' } } }],
+      ['every agent', { toolChoice: 'auto' }],
+      ['the agent over every agent', { toolChoice: 'none', agents: { tester: { toolChoice: 'auto' } } }],
+    ])('should send the tool choice configured for %s', async (_name, configured: any) => {
+      let toolChoice: any;
+      const model = new MockLanguageModelV3({
+        provider: 'test',
+        modelId: 'agent-tool-choice-model',
+        doGenerate: async (params: any) => {
+          toolChoice = params.toolChoice;
+          return { text: 'ok', finishReason: 'stop', usage: { inputTokens: 1, outputTokens: 1 }, content: [{ type: 'text' as const, text: 'ok' }] };
+        },
+      });
+      Object.assign(aiConfig, configured);
+
+      await provider.generateWithTools([{ role: 'user', content: 'Use a tool' }], model, { click: tool({ description: 'Click', inputSchema: z.object({}) }) }, { toolChoice: 'required', agentName: 'tester' });
+
+      expect(toolChoice).toEqual({ type: 'auto' });
+    });
+
     it('should relax required tool choice after the provider rejects it', async () => {
       const requests: Array<{ toolChoice: any; toolNames: string[]; prompt: unknown }> = [];
       let calls = 0;

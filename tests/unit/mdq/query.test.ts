@@ -743,6 +743,26 @@ Not a section.
     });
   });
 
+  describe('plainText', () => {
+    it('drops emphasis, code and link markup but keeps underscores inside words', () => {
+      const doc = '* URL: **https://app.example.com/my_app/?assets_host=pr_1**\n* Open `settings` and *[the docs](https://docs.example.com)*\n';
+      expect(mdq(doc).query('item[0]').plainText()).toBe('URL: https://app.example.com/my_app/?assets_host=pr_1');
+      expect(mdq(doc).query('item[1]').plainText()).toBe('Open settings and the docs');
+    });
+
+    it('reads escaped characters as text and drops inline html', () => {
+      expect(mdq('Use \\*literal\\* stars and <b>bold</b> tags\n').query('paragraph').plainText()).toBe('Use *literal* stars and bold tags');
+    });
+
+    it('joins blocks of a section with new lines', () => {
+      expect(mdq('## Steps\n\nFirst **step**\n\n* one\n* _two_\n').query('section("Steps")').plainText()).toBe('Steps\nFirst step\none\ntwo');
+    });
+
+    it('keeps every match on its own line', () => {
+      expect(mdq('## A\n\nRun **this**.\n\n## B\n\nThen *that*.\n').query('paragraph').plainText()).toBe('Run this.\nThen that.');
+    });
+  });
+
   describe('keyValue', () => {
     const block = "## S\n\n> Container: '.rows'\n> Pagination: infinite\n\ntext\n";
 
@@ -764,6 +784,18 @@ Not a section.
 
     it('returns nothing when the block is absent', () => {
       expect(mdq('## S\n\ntext\n').query('blockquote[0]').keyValue()).toEqual({});
+    });
+  });
+
+  describe('entry', () => {
+    it('reads one entry by key, whatever the key casing, spacing or markup', () => {
+      for (const item of ['* url: https://a.example/my_app', '* URL: https://a.example/my_app', '* uRl : https://a.example/my_app', '* **URL:** https://a.example/my_app', '* URL: `https://a.example/my_app`']) {
+        expect(mdq(item).query('item[0]').entry('url')).toBe('https://a.example/my_app');
+      }
+    });
+
+    it('returns undefined for a key the block does not have', () => {
+      expect(mdq('* Title: Login').query('item[0]').entry('url')).toBeUndefined();
     });
   });
 

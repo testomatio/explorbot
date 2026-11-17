@@ -46,6 +46,7 @@ playwright-cli close
 | `pw <fn>` | Run a Playwright function expression against the open page |
 | `status <hash>` | Show the artifacts and page detail recorded for an earlier command |
 | `report` | Turn every command of a session into one html and markdown report |
+| `video` | Join and edit the `do` and `check` recordings of a purpose into one video |
 | `browser` | Check that a playwright-cli session is open, and fail with the command to open one when it is not |
 | `config` | Show models, config file and paths used by this run |
 
@@ -54,6 +55,38 @@ playwright-cli close
 `do` accounts for every instruction you gave: each is reported as ok, FAIL or ??. Nothing runs past the last instruction.
 
 `ux` reviews one area, not the whole page. A named focus is shown first with at most one click, which may open a dialog, tab or section or go to another page; nothing is submitted, and when no click leads to it the command fails without reviewing. The area reviewed is the dialog or region open on the page, else the focus you named, else the area your session's commands on this page acted in, else the main content. It measures target sizes, spacing, overflow, text size, zoom and motion at each width, runs axe on the area, and asks the model to judge copy, forms and navigation against the rules in `rules/quartermaster/ux/`. Findings are ranked Critical to Low. It reports problems only: no replacement wording and no colors or styles, since the project owns those. Override a rule by placing a file of the same name in `./rules/quartermaster/ux/`, or add your own with `ai.agents.quartermaster.rules`.
+
+## Purpose and video
+
+`--purpose <text>` marks a series of commands as working toward one goal. Every command run with the same text joins one Langfuse session, and `report --purpose <text>` reports just those commands, even across browser restarts.
+
+Each command run with a purpose gets a number, `#0001`, `#0002` and so on in hex, printed on its `purpose:` line.
+
+`--video` on `do` or `check` records the command. `video --purpose <text>` joins the recordings into one webm and prints its path:
+
+```bash
+prima-cli do "add an item to the cart" --purpose "checkout" --video
+prima-cli check "the cart total updates" --purpose "checkout" --video
+prima-cli video --purpose "checkout"
+```
+
+Without options, every command that passed is joined in run order. Waits are condensed, so a still frame holds for at most a second, and a recording where nothing moved on screen is left out. Recording needs `ffmpeg` on PATH.
+
+Edits refer to commands by number:
+
+| Option | Effect |
+| --- | --- |
+| `--list` | List the purpose's commands with number, result and whether a recording exists |
+| `--only 0003,0001` | Join only these commands, in this order; failed ones may be picked |
+| `--caption 0001="Add to cart"` | Show a caption over one command |
+| `--speed 0001=2` | Play one command faster (`2`) or slower (`0.5`) |
+| `--hold 0003=3` | Hold the last frame of one command for 3 seconds |
+
+`--caption`, `--speed` and `--hold` repeat for several commands:
+
+```bash
+prima-cli video --purpose "checkout" --only 0002,0001 --caption 0002="Cart total updates" --speed 0001=2 --hold 0002=3
+```
 
 ## AI model
 

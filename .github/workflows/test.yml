@@ -54,6 +54,9 @@ jobs:
     - name: Run unit tests
       run: bun test tests/unit/
 
+    - name: Run prima tests
+      run: bun test boat/prima/tests/
+
     - name: Build for npm
       run: bun run build:npm
 

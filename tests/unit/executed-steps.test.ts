@@ -32,7 +32,7 @@ describe('executed steps', () => {
 
     detachSteps();
 
-    expect(steps[0]?.command).toBe('I.click("Manual", step.opts({"elementIndex":2}))');
+    expect(steps[0]?.command).toBe('I.click("Manual").at(2)');
   });
 
   it('reports a successful command even when a later one fails', () => {
