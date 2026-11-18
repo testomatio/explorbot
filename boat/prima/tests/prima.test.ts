@@ -1797,6 +1797,25 @@ describe('Prima browser instances', () => {
     await expect(prima.browserCheck()).rejects.toThrow(/playwright-cli open https:\/\/app.example.com/);
   });
 
+  test('browserStop closes the named session through playwright-cli', async () => {
+    const { prima } = fakePrima({ pwSession: 'mine' });
+    const calls: string[][] = [];
+    (prima as any).playwrightCli = (args: string[]) => {
+      calls.push(args);
+      return { status: 0 };
+    };
+
+    expect(await prima.browserStop()).toBe('browser: playwright-cli session closed');
+    expect(calls).toEqual([['close']]);
+  });
+
+  test('browserStop fails when playwright-cli close fails', async () => {
+    const { prima } = fakePrima();
+    (prima as any).playwrightCli = () => ({ status: 1 });
+
+    await expect(prima.browserStop()).rejects.toThrow(/playwright-cli close failed/);
+  });
+
   test('session file is wired into the browser context options', () => {
     const prima = new Prima({ session: 'output/session.json' });
     expect((prima as any).bot.options.session).toBe('output/session.json');

@@ -108,7 +108,7 @@ export function createPrimaCommands(name = 'prima'): Command {
     .allowUnknownOption()
     .action(() => {
       if (cmd.args.length) cmd.error(`error: unknown command '${cmd.args[0]}'`);
-      console.log(bareHelp);
+      console.log(`prima ${version}\n${bareHelp}`);
       if (npxHint()) console.log(`\n${npxHint()}`);
     });
   rootOptions = () => cmd.opts();
@@ -206,9 +206,13 @@ export function createPrimaCommands(name = 'prima'): Command {
       process.exit(0);
     });
 
-  addCommonOptions(cmd.command('browser').description('Open a playwright-cli session for prima to drive, or report the one already open')).action(async (options) => {
+  addCommonOptions(cmd.command('browser').description('Report the playwright-cli session prima drives; start opens one through playwright-cli, stop closes it').argument('[action]', 'start or stop', 'start').argument('[url]', 'Page to open on start')).action(async (action, url, options) => {
+    if (!['start', 'stop'].includes(action)) cmd.error(`error: unknown browser action '${action}', use start or stop`);
+    if (url) options.url = url;
     try {
-      console.log(await (await primaFor(options)).browserCheck());
+      const prima = await primaFor(options);
+      if (action === 'stop') console.log(await prima.browserStop());
+      if (action === 'start') console.log(await prima.browserCheck());
     } catch (error) {
       console.error(browserErrorMessage(error));
       process.exit(1);

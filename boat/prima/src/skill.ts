@@ -57,8 +57,8 @@ const SKILL = dedent(`
 
   ## Session
 
-  - \`playwright-cli open <url>\` starts it, \`playwright-cli close\` ends it; prima only attaches
-  - \`prima-cli browser\` reports the open session, or opens one
+  - \`prima-cli browser start <url>\` opens it, \`prima-cli browser stop\` closes it; both hand over to playwright-cli, prima only attaches
+  - \`prima-cli browser start\` on an open session reports it
   - \`--pw-session <title>\` picks one when several are open
   - Parallel jobs need one \`--instance\` each
 

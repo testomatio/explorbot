@@ -1,11 +1,13 @@
 import dedent from 'dedent';
 
 export const bareHelp = dedent(`
-  prima — declarative browser testing on top of playwright-cli
+  Declarative browser testing on top of playwright-cli
 
+    prima browser start <url>                       open a browser through playwright-cli
     prima check "<outcome>" --expected "<result>"   test a behaviour
     prima do "<step>" "<step>" ...                  drive the page
     prima ask | verify | research | ux | go | pw    read, assert, map, review, navigate, raw code
+    prima browser stop                              close the browser
 
     prima skill              how to use prima well (for coding agents)
     prima skill --install    install that skill: local (default) or global

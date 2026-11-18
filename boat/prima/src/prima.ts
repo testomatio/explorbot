@@ -597,6 +597,11 @@ export class Prima {
     return `browser: ${this.attachmentLabel(match)} at ${match.endpoint}`;
   }
 
+  async browserStop(): Promise<string> {
+    if (this.playwrightCli(['close']).status) throw new Error('playwright-cli close failed, see its output above.');
+    return 'browser: playwright-cli session closed';
+  }
+
   async config(json?: boolean): Promise<string> {
     const config = await this.loadRecordedConfig();
     const parser = ConfigParser.getInstance();
@@ -833,15 +838,20 @@ export class Prima {
 
   private openPlaywrightSession(): void {
     const args = ['open'];
-    const title = this.pwSessionTitle();
-    if (title) args.unshift(`-s=${title}`);
     const url = this.options.url || this.configBaseUrl();
     if (url) args.push(url);
+    this.playwrightCli(args);
+  }
+
+  private playwrightCli(command: string[]) {
+    const args = [...command];
+    const title = this.pwSessionTitle();
+    if (title) args.unshift(`-s=${title}`);
 
     const stdio: any = ['ignore', 'ignore', 'inherit'];
     const local = spawnSync('playwright-cli', args, { stdio });
-    if (!local.error) return;
-    spawnSync('npx', ['-y', '@playwright/cli', ...args], { stdio });
+    if (!local.error) return local;
+    return spawnSync('npx', ['-y', '@playwright/cli', ...args], { stdio });
   }
 
   private pwSessionTitle(): string | undefined {

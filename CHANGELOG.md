@@ -2,7 +2,15 @@
 
 ## 2026-11-19
 
+### New Commands
+- **`prima browser start [url]` / `prima browser stop`** — Open and close the browser prima drives. Both hand over to playwright-cli: `start` runs `playwright-cli open`, or reports the session when one is already open, and `stop` runs `playwright-cli close`. `--pw-session <title>` names the session. A bare `prima browser` still behaves as `start`.
+  ```bash
+  prima browser start https://app.example.com
+  prima browser stop
+  ```
+
 ### Changes
+- [Prima] `prima` with no arguments prints its version on the first line, also when run as `explorbot prima`, and lists `browser start` and `browser stop`.
 - [Prima] `prima` with no arguments, `--help`, `--version`, `skill` and `recommended-models` start in about 0.4 seconds instead of 1.5. The browser-driving code is loaded only by a command that uses it.
 
 ## 2026-11-17
