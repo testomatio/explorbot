@@ -15,7 +15,7 @@ import { actionRule, locatorRule } from '../../../src/ai/rules.ts';
 import { createAgentTools, createCodeceptJSTools, createRefTools } from '../../../src/ai/tools.ts';
 import { getAliveEndpoint, listInstances } from '../../../src/browser-server.ts';
 import { ConfigCommand } from '../../../src/commands/config-command.ts';
-import { ConfigMissingError, ConfigParser, EXPLORBOT_ENV_VARS, type ExplorbotConfig, outputPath, providerKeyHelp } from '../../../src/config.ts';
+import { ConfigMissingError, ConfigParser, EXPLORBOT_ENV_VARS, type ExplorbotConfig, modelName, modelProvider, outputPath, providerKeyHelp } from '../../../src/config.ts';
 import { ExplorBot } from '../../../src/explorbot.ts';
 import { findSiteWith, listSites } from '../../../src/global-config.ts';
 import { Reporter } from '../../../src/reporter.ts';
@@ -485,6 +485,12 @@ export class Prima {
     return this.reportEnvelope(command, result, previousState, { answer: await this.answer(question, result) });
   }
 
+  async state(): Promise<EnvelopeData> {
+    const previousState = this.bot.stateManager().getCurrentState();
+    const result = await this.capturedResult(previousState, { screenshot: true });
+    return this.reportEnvelope('state', result, previousState, { overlay: result.overlay.describe() || 'none' });
+  }
+
   async verify(assertion: string): Promise<EnvelopeData> {
     const command = `verify ${assertion}`;
     const guard = await this.aiGuard(command);
@@ -585,7 +591,7 @@ export class Prima {
   }
 
   async browserCheck(): Promise<string> {
-    await this.loadConfig();
+    const config = await this.loadConfig();
     let discovery = await this.discover();
     if (!discovery.match && (this.pwSessionTitle() || !discovery.candidates.length)) {
       this.openPlaywrightSession();
@@ -594,7 +600,9 @@ export class Prima {
     const { match, candidates, browser } = discovery;
     await browser?.close().catch(() => {});
     if (!match) throw this.missingSessionError(candidates);
-    return `browser: ${this.attachmentLabel(match)} at ${match.endpoint}`;
+    let ai = 'none, only pw and state work until a provider API key is exported';
+    if (config.ai?.model) ai = `${modelProvider(config.ai.model)} ${modelName(config.ai.model)}`;
+    return `browser: ${this.attachmentLabel(match)} at ${match.endpoint}\nai: ${ai}`;
   }
 
   async browserStop(): Promise<string> {

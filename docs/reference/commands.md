@@ -678,7 +678,8 @@ Run it as `npx explorbot prima <command>` or through the standalone `prima` bin.
 | `prima do <instructions...>` | Run high-level instructions tester-style, one argument per instruction |
 | `prima pw <fn>` | Run a Playwright function expression against the open page |
 | `prima ask <question>` | Answer a question about the current page |
-| `prima verify <assertion>` | Assert a statement about the current page (alias: `assert`) |
+| `prima state` | Capture the current page without acting on it: url, state, open overlay, and the aria, html and screenshot files. Needs no AI model |
+| `prima verify <assertion>` | Assert one statement about the page as it is now, without acting on it |
 | `prima research` | Map the current page and return verified locators |
 | `prima go <target>` | Navigate to a url, a path, or a page described in plain words |
 | `prima status <hash>` | Show the artifacts and page detail recorded for an earlier command |

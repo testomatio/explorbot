@@ -1217,6 +1217,38 @@ describe('Prima.check', () => {
     expect(envelope.artifacts?.screenshot).toContain('page.png');
   });
 
+  test('state captures the page with a screenshot and names the open overlay, without a model', async () => {
+    const { prima } = fakePrima();
+    const captures: unknown[] = [];
+    const explorer = (prima as any).bot.getExplorer();
+    (prima as any).bot.getExplorer = () => ({
+      ...explorer,
+      capture: async (opts: unknown) => {
+        captures.push(opts);
+        return fakeState({ screenshot: Buffer.from('png'), overlay: { describe: () => 'dialog "Invite" opened' } });
+      },
+    });
+    (prima as any).bot.getProvider = () => {
+      throw new Error('state must not reach a model');
+    };
+
+    const envelope = await prima.state();
+
+    expect(envelope.ok).toBe(true);
+    expect(captures).toEqual([{ screenshot: true }]);
+    expect(envelope.artifacts?.screenshot).toBeTruthy();
+    expect(renderEnvelope(envelope)).toContain('overlay: dialog "Invite" opened');
+  });
+
+  test('state reports no overlay when none is open', async () => {
+    const { prima } = fakePrima();
+    (prima as any).bot.getExplorer = () => ({ capture: async () => fakeState({ overlay: { describe: () => '' } }) });
+
+    const envelope = await prima.state();
+
+    expect(envelope.overlay).toBe('none');
+  });
+
   test('ask defaults to vision via screenshot analysis', async () => {
     const { prima } = fakePrima();
     (prima as any).bot.getProvider = () => ({ hasVision: () => true, generateObject: async () => ({ object: { steps: [] } }) });
@@ -1739,9 +1771,18 @@ describe('Prima browser instances', () => {
 
   test('browserCheck reports the open playwright-cli session', async () => {
     const { prima } = fakePrima();
+    (prima as any).loadConfig = async () => ({ ai: { model: { provider: 'openrouter.chat', modelId: 'acme/model-1' } } });
     (prima as any).discover = () => ({ match: { title: 'auth', endpoint: 'ws://127.0.0.1:4321/auth', workspaceDir: '' }, candidates: [] });
 
-    expect(await prima.browserCheck()).toBe('browser: playwright-cli session "auth" at ws://127.0.0.1:4321/auth');
+    expect(await prima.browserCheck()).toBe('browser: playwright-cli session "auth" at ws://127.0.0.1:4321/auth\nai: openrouter acme/model-1');
+  });
+
+  test('browserCheck says when no AI model is configured', async () => {
+    const { prima } = fakePrima();
+    (prima as any).loadConfig = async () => ({});
+    (prima as any).discover = () => ({ match: { title: 'auth', endpoint: 'ws://127.0.0.1:4321/auth', workspaceDir: '' }, candidates: [] });
+
+    expect(await prima.browserCheck()).toContain('ai: none');
   });
 
   test('browserCheck opens a playwright-cli session when none is open', async () => {
@@ -1756,7 +1797,7 @@ describe('Prima browser instances', () => {
       return { match: { title: 'default', endpoint: 'ws://127.0.0.1:4321/default', workspaceDir: '' }, candidates: [] };
     };
 
-    expect(await prima.browserCheck()).toBe('browser: playwright-cli session "default" at ws://127.0.0.1:4321/default');
+    expect(await prima.browserCheck()).toContain('browser: playwright-cli session "default" at ws://127.0.0.1:4321/default');
   });
 
   test('browserCheck opens a named session that is not open yet beside other sessions', async () => {
@@ -1772,7 +1813,7 @@ describe('Prima browser instances', () => {
       return { match: { title: 'mine', endpoint: 'ws://127.0.0.1:4321/mine', workspaceDir: '' }, candidates: [other] };
     };
 
-    expect(await prima.browserCheck()).toBe('browser: playwright-cli session "mine" at ws://127.0.0.1:4321/mine');
+    expect(await prima.browserCheck()).toContain('browser: playwright-cli session "mine" at ws://127.0.0.1:4321/mine');
   });
 
   test('browserCheck asks to pick a session when several are open and none is named', async () => {

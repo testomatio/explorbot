@@ -113,25 +113,23 @@ export function createPrimaCommands(name = 'prima'): Command {
     });
   rootOptions = () => cmd.opts();
 
-  cmd
-    .command('skill')
-    .description('Print the skill that teaches a coding agent to use prima, or install it')
-    .option('--install [scope]', 'Install for Claude Code, Codex and OpenCode: local (this project) or global (home directory)')
-    .action((options) => {
-      if (!options.install) {
-        console.log(PrimaSkill.render());
-        console.error(installHelp);
-        if (!providerWithKey()) console.error('\nNo provider API key is set: see "Getting an API key" in the skill.');
-        return;
-      }
-      let scope = 'local';
-      if (options.install !== true) scope = options.install;
-      if (!PrimaSkill.scopes().includes(scope)) cmd.error(`error: unknown install scope '${scope}', use ${PrimaSkill.scopes().join(' or ')}`);
-      for (const file of PrimaSkill.install(scope)) console.log(`installed ${file}`);
-    });
+  addCommonOptions(cmd.command('browser').description('Report the playwright-cli session prima drives; start opens one through playwright-cli, stop closes it').argument('[action]', 'start or stop', 'start').argument('[url]', 'Page to open on start')).action(async (action, url, options) => {
+    if (!['start', 'stop'].includes(action)) cmd.error(`error: unknown browser action '${action}', use start or stop`);
+    if (url) options.url = url;
+    try {
+      const prima = await primaFor(options);
+      if (action === 'stop') console.log(await prima.browserStop());
+      if (action === 'start') console.log(await prima.browserCheck());
+    } catch (error) {
+      console.error(browserErrorMessage(error));
+      process.exit(1);
+    }
+    process.exit(0);
+  });
 
-  addCommonOptions(cmd.command('pw <fn>').description('Run a Playwright function expression against the open page')).action(async (fn, options) => {
-    await runPrima(options, `pw ${fn}`, (prima) => prima.pw(fn));
+  addCommonOptions(cmd.command('go <target>').description('Navigate to a url, a path, or a page described in plain words')).action(async (target, options) => {
+    if (URL.canParse(target)) options.baseUrl = target;
+    await runPrima(options, `go ${target}`, (prima) => prima.go(target));
   });
 
   addCommonOptions(cmd.command('do <instructions...>').description('Run instructions, one argument each'))
@@ -147,49 +145,8 @@ export function createPrimaCommands(name = 'prima'): Command {
       await runPrima(options, `check ${scenario}`, (prima) => prima.check(scenario, options.expected));
     });
 
-  addCommonOptions(cmd.command('ask <question>').description('Answer a question about the current page').option('--no-vision', 'Answer from page structure only, without a screenshot')).action(async (question, options) => {
-    await runPrima(options, `ask ${question}`, (prima) => prima.ask(question));
-  });
-
-  addCommonOptions(cmd.command('verify <assertion>').alias('assert').description('Assert a statement about the current page')).action(async (assertion, options) => {
-    await runPrima(options, `verify ${assertion}`, (prima) => prima.verify(assertion));
-  });
-
-  addCommonOptions(
-    cmd.command('research').description('Map the current page and return verified locators').option('--data', 'Include data extraction in the map').option('--deep', 'Expand hidden elements for a deeper map').option('--fresh', 'Ignore the cached map and research the page again')
-  ).action(async (options) => {
-    await runPrima(options, 'research', (prima) => prima.research({ data: options.data, deep: options.deep, fresh: options.fresh }));
-  });
-
   addCommonOptions(cmd.command('ux [focus]').description('Review the area being worked on for UX issues, across breakpoints')).action(async (focus, options) => {
     await runPrima(options, ['ux', focus].filter(Boolean).join(' '), (prima) => prima.ux(focus));
-  });
-
-  addCommonOptions(cmd.command('go <target>').description('Navigate to a url, a path, or a page described in plain words')).action(async (target, options) => {
-    if (URL.canParse(target)) options.baseUrl = target;
-    await runPrima(options, `go ${target}`, (prima) => prima.go(target));
-  });
-
-  addCommonOptions(cmd.command('config').description('Show models, config file and paths used by this run'))
-    .option('--json', 'Print the resolved config as JSON')
-    .action(async (options) => {
-      setQuietMode(!isVerboseMode());
-      const prima = await primaFor(options);
-      console.log(await prima.config(options.json).catch((error: unknown) => browserErrorMessage(error)));
-      await prima.stop().catch(() => {});
-      process.exit(0);
-    });
-
-  RecommendedModelsCommand.register(cmd);
-
-  addCommonOptions(cmd.command('status <hash>').description('Show the artifacts and page detail recorded for an earlier command')).action(async (hash, options) => {
-    await runPrima(options, `status ${hash}`, (prima) => prima.status(hash), { browser: false, record: false });
-  });
-
-  addCommonOptions(cmd.command('report').description('Turn every command of a session into one html and markdown report')).action(async (options) => {
-    setQuietMode(!isVerboseMode());
-    console.log(await (await primaFor(options)).report().catch((error: unknown) => browserErrorMessage(error)));
-    process.exit(0);
   });
 
   const repeat = (value: string, all: string[]) => [...all, value];
@@ -206,19 +163,66 @@ export function createPrimaCommands(name = 'prima'): Command {
       process.exit(0);
     });
 
-  addCommonOptions(cmd.command('browser').description('Report the playwright-cli session prima drives; start opens one through playwright-cli, stop closes it').argument('[action]', 'start or stop', 'start').argument('[url]', 'Page to open on start')).action(async (action, url, options) => {
-    if (!['start', 'stop'].includes(action)) cmd.error(`error: unknown browser action '${action}', use start or stop`);
-    if (url) options.url = url;
-    try {
-      const prima = await primaFor(options);
-      if (action === 'stop') console.log(await prima.browserStop());
-      if (action === 'start') console.log(await prima.browserCheck());
-    } catch (error) {
-      console.error(browserErrorMessage(error));
-      process.exit(1);
-    }
+  addCommonOptions(cmd.command('state').description('Capture the current page without acting on it: state, open overlay, aria, html and screenshot')).action(async (options) => {
+    await runPrima(options, 'state', (prima) => prima.state());
+  });
+
+  addCommonOptions(cmd.command('verify <assertion>').description('Assert one statement about the page as it is now, without acting on it')).action(async (assertion, options) => {
+    await runPrima(options, `verify ${assertion}`, (prima) => prima.verify(assertion));
+  });
+
+  addCommonOptions(cmd.command('ask <question>').description('Answer a question about the current page').option('--no-vision', 'Answer from page structure only, without a screenshot')).action(async (question, options) => {
+    await runPrima(options, `ask ${question}`, (prima) => prima.ask(question));
+  });
+
+  addCommonOptions(
+    cmd.command('research').description('Map the current page and return verified locators').option('--data', 'Include data extraction in the map').option('--deep', 'Expand hidden elements for a deeper map').option('--fresh', 'Ignore the cached map and research the page again')
+  ).action(async (options) => {
+    await runPrima(options, 'research', (prima) => prima.research({ data: options.data, deep: options.deep, fresh: options.fresh }));
+  });
+
+  addCommonOptions(cmd.command('pw <fn>').description('Run a Playwright function expression against the open page')).action(async (fn, options) => {
+    await runPrima(options, `pw ${fn}`, (prima) => prima.pw(fn));
+  });
+
+  addCommonOptions(cmd.command('status <hash>').description('Show the artifacts and page detail recorded for an earlier command')).action(async (hash, options) => {
+    await runPrima(options, `status ${hash}`, (prima) => prima.status(hash), { browser: false, record: false });
+  });
+
+  addCommonOptions(cmd.command('report').description('Turn every command of a session into one html and markdown report')).action(async (options) => {
+    setQuietMode(!isVerboseMode());
+    console.log(await (await primaFor(options)).report().catch((error: unknown) => browserErrorMessage(error)));
     process.exit(0);
   });
+
+  addCommonOptions(cmd.command('config').description('Show models, config file and paths used by this run'))
+    .option('--json', 'Print the resolved config as JSON')
+    .action(async (options) => {
+      setQuietMode(!isVerboseMode());
+      const prima = await primaFor(options);
+      console.log(await prima.config(options.json).catch((error: unknown) => browserErrorMessage(error)));
+      await prima.stop().catch(() => {});
+      process.exit(0);
+    });
+
+  RecommendedModelsCommand.register(cmd);
+
+  cmd
+    .command('skill')
+    .description('Print the skill that teaches a coding agent to use prima, or install it')
+    .option('--install [scope]', 'Install for Claude Code, Codex and OpenCode: local (this project) or global (home directory)')
+    .action((options) => {
+      if (!options.install) {
+        console.log(PrimaSkill.render());
+        console.error(installHelp);
+        if (!providerWithKey()) console.error('\nNo provider API key is set: see "Getting an API key" in the skill.');
+        return;
+      }
+      let scope = 'local';
+      if (options.install !== true) scope = options.install;
+      if (!PrimaSkill.scopes().includes(scope)) cmd.error(`error: unknown install scope '${scope}', use ${PrimaSkill.scopes().join(' or ')}`);
+      for (const file of PrimaSkill.install(scope)) console.log(`installed ${file}`);
+    });
 
   return cmd;
 }

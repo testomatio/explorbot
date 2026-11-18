@@ -41,6 +41,7 @@ prima-cli browser stop
 | `do <instructions...>` | Run high-level instructions tester-style, one argument per instruction |
 | `verify <assertion>` | Assert a statement about the current page |
 | `ask <question>` | Answer a question about the current page |
+| `state` | Capture the current page without acting on it: url, state, open overlay, and the aria, html and screenshot files |
 | `research` | Map the current page and return verified locators |
 | `ux [focus]` | Review the area being worked on for UX issues at the current width, 768px and 375px |
 | `go <target>` | Navigate to a url, a path, or a page described in plain words |
