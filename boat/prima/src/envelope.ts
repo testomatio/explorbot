@@ -31,6 +31,7 @@ export interface EnvelopeData {
   purpose?: { text: string; number: string };
   used?: string[];
   page: { url: string; previousUrl?: string; redirectedFrom?: string; title: string; state: string; visits: number };
+  overlay?: string;
   changes?: string | null;
   steps?: Array<{ label: string; ok: boolean; unconfirmed?: boolean; proof: string; state?: number }>;
   states?: Array<{ url: string; aria: string }>;
@@ -104,6 +105,7 @@ function renderPage(data: EnvelopeData): string {
   if (previousUrl && previousUrl !== url) changedMarker = `(changed: ${previousUrl} → ${url})`;
   if (redirectedFrom) changedMarker = `(redirected: ${redirectedFrom} → ${url})`;
   const lines = [align(urlLabel, changedMarker, width), `title: ${title}`, align(stateLabel, `(visit #${visits})`, width)];
+  if (data.overlay) lines.push(`overlay: ${data.overlay}`);
   return section('Page', lines.join('\n'));
 }
 

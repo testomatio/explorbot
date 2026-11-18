@@ -150,6 +150,10 @@ export function createPrimaCommands(name = 'prima'): Command {
     await runPrima(options, `ask ${question}`, (prima) => prima.ask(question));
   });
 
+  addCommonOptions(cmd.command('state').description('Capture the current page without acting on it: state, open overlay, aria, html and screenshot')).action(async (options) => {
+    await runPrima(options, 'state', (prima) => prima.state());
+  });
+
   addCommonOptions(cmd.command('verify <assertion>').alias('assert').description('Assert a statement about the current page')).action(async (assertion, options) => {
     await runPrima(options, `verify ${assertion}`, (prima) => prima.verify(assertion));
   });

@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-11-18
+
+### New Commands
+- **`prima state`** — Captures the current page without acting on it and without calling an AI model. Prints the url, title and state hash, an `overlay:` line naming the open dialog or region (or `none`), and the paths to the aria tree, html and a fresh screenshot.
+  ```bash
+  prima state
+  ```
+
 ## 2026-11-17
 
 ### New Commands
