@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-11-19
+
+### Environment Variables
+- **`EXPLORBOT_TELEMETRY`** — Sets up Langfuse tracing in one value: the host with both keys as the URL's user and password, an optional `site` list of host globs to trace, or `off`. Prima reads `PRIMA_CLI_TELEMETRY` and the API boat reads `APIBOT_TELEMETRY` first, so each boat can trace to its own project or not at all; put them in `~/.explorbot/.env` to set it for the whole machine. `ai.langfuse` in a config still wins, and `LANGFUSE_*` keep working as the fallback.
+  ```bash
+  EXPLORBOT_TELEMETRY="langfuse=https://pk-lf-xxx:sk-lf-yyy@cloud.langfuse.com; site=*.staging.example.com"
+  PRIMA_CLI_TELEMETRY=off
+  ```
+
 ## 2026-11-17
 
 ### New Commands

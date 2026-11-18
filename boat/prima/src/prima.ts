@@ -15,7 +15,7 @@ import { actionRule, locatorRule } from '../../../src/ai/rules.ts';
 import { createAgentTools, createCodeceptJSTools, createRefTools } from '../../../src/ai/tools.ts';
 import { getAliveEndpoint, listInstances } from '../../../src/browser-server.ts';
 import { ConfigCommand } from '../../../src/commands/config-command.ts';
-import { ConfigMissingError, ConfigParser, EXPLORBOT_ENV_VARS, type ExplorbotConfig, outputPath, providerKeyHelp } from '../../../src/config.ts';
+import { ConfigMissingError, ConfigParser, EXPLORBOT_ENV_VARS, type ExplorbotConfig, boatEnvName, outputPath, providerKeyHelp, setBoatEnvPrefix } from '../../../src/config.ts';
 import { ExplorBot } from '../../../src/explorbot.ts';
 import { findSiteWith, listSites } from '../../../src/global-config.ts';
 import { Reporter } from '../../../src/reporter.ts';
@@ -95,8 +95,9 @@ export class Prima {
   }
 
   static applyEnv(): void {
+    setBoatEnvPrefix('PRIMA_CLI_');
     for (const { name } of EXPLORBOT_ENV_VARS) {
-      const value = process.env[name.replace('EXPLORBOT_', 'PRIMA_CLI_')];
+      const value = process.env[boatEnvName(name)];
       if (!value) continue;
       process.env[name] = value;
     }
