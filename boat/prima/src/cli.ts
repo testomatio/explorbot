@@ -133,14 +133,14 @@ export function createPrimaCommands(name = 'prima'): Command {
   });
 
   addCommonOptions(cmd.command('do <instructions...>').description('Run instructions, one argument each'))
-    .option('--video', 'Record this command for prima video; needs --purpose and ffmpeg')
+    .option('--video', 'Record video for prima video; needs --purpose and ffmpeg')
     .action(async (instructions, options) => {
       await runPrima(options, `do ${instructions.join(' ')}`, (prima) => prima.do(instructions));
     });
 
   addCommonOptions(cmd.command('check <scenario>').description('Run a scenario as a test, with verification'))
     .option('--expected <outcome>', 'An outcome the run must reach; repeat the flag for several', (value: string, all: string[]) => [...all, value], [])
-    .option('--video', 'Record this command for prima video; needs --purpose and ffmpeg')
+    .option('--video', 'Record video for prima video; needs --purpose and ffmpeg')
     .action(async (scenario, options) => {
       await runPrima(options, `check ${scenario}`, (prima) => prima.check(scenario, options.expected));
     });

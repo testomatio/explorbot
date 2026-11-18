@@ -13,7 +13,7 @@ export const bareHelp = dedent(`
 
     do/check options:
       --purpose "<name>"   group commands into one session, report and video
-      --video              record the command; needs --purpose and ffmpeg
+      --video              record video; needs --purpose and ffmpeg
 
     prima state                    page as it is: overlay, aria, html, screenshot (no AI)
     prima verify "<statement>"     assert a statement, no actions
