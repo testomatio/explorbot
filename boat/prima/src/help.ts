@@ -3,28 +3,26 @@ import dedent from 'dedent';
 export const bareHelp = dedent(`
   Declarative browser testing on top of playwright-cli
 
-  A regular check, in order:
-    prima browser start <url>                       open a browser through playwright-cli; prints the AI model in use
-    prima go "<page>"                               navigate to a url, a path or a page named in plain words
+    prima browser start <url>                       open browser (playwright-cli), print AI model
+    prima go "<page>"                               navigate: url, path or page name
     prima do "<step>" "<step>" ...                  act on the page
-    prima check "<outcome>" --expected "<result>"   test a behaviour end to end and judge the result
-    prima ux [focus]                                review the area for UX issues
-    prima video --purpose "<text>"                  join the recordings of do and check into one video
-    prima browser stop                              close the browser
+    prima check "<outcome>" --expected "<result>"   act, then judge the result
+    prima ux [focus]                                UX review
+    prima video --purpose "<text>"                  join do/check recordings
+    prima browser stop                              close browser
 
-  Looking closer at the current page:
-    prima state                    capture it as it is: open overlay, aria, html, screenshot; no AI
-    prima verify "<statement>"     assert one statement without acting; check acts first, verify does not
-    prima ask "<question>"         answer a question
-    prima research                 map it into verified locators
-    prima pw "<fn>"                run a Playwright function; no AI
+    prima state                    page as it is: overlay, aria, html, screenshot (no AI)
+    prima verify "<statement>"     assert a statement, no actions
+    prima ask "<question>"         answer a question about the page
+    prima research                 map the page into locators
+    prima pw "<fn>"                run a Playwright function (no AI)
 
-    prima skill              how to use prima well (for coding agents)
-    prima skill --install    install that skill: local (default) or global
+    prima skill              usage guide for coding agents
+    prima skill --install    install it: local (default) or global
     prima --help             all commands and options
 `);
 
-export const skillPointer = 'How to use these well: prima skill';
+export const skillPointer = 'Usage guide: prima skill';
 
 export const installHelp = dedent(`
   Install this skill for Claude Code, Codex and OpenCode:
