@@ -8,8 +8,12 @@ export const bareHelp = dedent(`
     prima do "<step>" "<step>" ...                  act on the page
     prima check "<outcome>" --expected "<result>"   act, then judge the result
     prima ux [focus]                                UX review
-    prima video --purpose "<text>"                  join do/check recordings
+    prima video --purpose "<name>"                  join the recordings of that purpose
     prima browser stop                              close browser
+
+    do/check options:
+      --purpose "<name>"   group commands into one session, report and video
+      --video              record the command; needs --purpose and ffmpeg
 
     prima state                    page as it is: overlay, aria, html, screenshot (no AI)
     prima verify "<statement>"     assert a statement, no actions
