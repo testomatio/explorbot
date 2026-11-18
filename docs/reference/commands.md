@@ -138,6 +138,7 @@ EXPLORBOT_AI_PROVIDER=openrouter \
 | `EXPLORBOT_DECISION_MODEL` | Turns on the decision model, as provider/model-id (openrouter/typesafe/jev-1.13 or typesafe/jev-latest); overrides ai.decisionModel |
 | `EXPLORBOT_OUTPUT` | Output root for states, plans, research, and reports. Defaults to the site dir under ~/.explorbot/sites |
 | `EXPLORBOT_EPHEMERAL` | Keep no state between runs — output goes to a fresh temp directory instead of the site dir |
+| `EXPLORBOT_SCREENCAST` | Record a video of every test; same as ai.agents.historian.screencast in a config file. "true", or a size like 1280x720 |
 | `EXPLORBOT_KNOWLEDGE` | Inline knowledge text, applied to every page |
 | `EXPLORBOT_KNOWLEDGE_FILE` | Path to a knowledge markdown file |
 | `EXPLORBOT_AUTH` | Auth details in free form (credentials, a token), kept in memory for the run and never written to disk; same as --auth |

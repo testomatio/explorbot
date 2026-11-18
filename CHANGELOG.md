@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-11-19
+
+### Changes
+- [Prima] `prima` with no arguments, `--help`, `--version`, `skill` and `recommended-models` start in about 0.4 seconds instead of 1.5. The browser-driving code is loaded only by a command that uses it.
+
 ## 2026-11-18
 
 ### New Commands

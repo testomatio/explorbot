@@ -275,6 +275,7 @@ export const EXPLORBOT_ENV_VARS: EnvVar[] = [
   { name: 'EXPLORBOT_DECISION_MODEL', description: 'Turns on the decision model, as provider/model-id (openrouter/typesafe/jev-1.13 or typesafe/jev-latest); overrides ai.decisionModel' },
   { name: 'EXPLORBOT_OUTPUT', description: 'Output root for states, plans, research, and reports. Defaults to the site dir under ~/.explorbot/sites' },
   { name: 'EXPLORBOT_EPHEMERAL', description: 'Keep no state between runs — output goes to a fresh temp directory instead of the site dir' },
+  { name: 'EXPLORBOT_SCREENCAST', description: 'Record a video of every test; same as ai.agents.historian.screencast in a config file. "true", or a size like 1280x720' },
   { name: 'EXPLORBOT_KNOWLEDGE', description: 'Inline knowledge text, applied to every page' },
   { name: 'EXPLORBOT_KNOWLEDGE_FILE', description: 'Path to a knowledge markdown file' },
   { name: 'EXPLORBOT_AUTH', description: 'Auth details in free form (credentials, a token), kept in memory for the run and never written to disk; same as --auth', secret: true },
@@ -661,9 +662,10 @@ export class ConfigParser {
     if (provider && !modelSpec) model = await resolveModel(provider, 'model');
     if (!provider) model = await resolveModel(modelSpec!, 'model');
 
+    const screencast = screencastFromEnv();
     const ai: AIConfig = {
       model,
-      agents: { historian: { enabled: false } },
+      agents: { historian: screencast ? { enabled: true, screencast } : { enabled: false } },
     };
 
     let recommended: Record<string, string> = {};
@@ -997,6 +999,16 @@ export async function createModel(provider: string, modelId: string): Promise<an
     throw new Error(`Unknown AI provider "${provider}". Supported providers: ${Object.keys(PROVIDERS).join(', ')}`);
   }
   return (await info.load())(modelId);
+}
+
+function screencastFromEnv(): boolean | ScreencastConfig | undefined {
+  const raw = process.env.EXPLORBOT_SCREENCAST?.trim();
+  if (!raw) return undefined;
+  if (raw.toLowerCase() === 'true') return true;
+  const [width, height] = raw.toLowerCase().split('x');
+  const size = { width: Number(width), height: Number(height) };
+  if (!size.width || !size.height) throw new Error(`EXPLORBOT_SCREENCAST must be "true" or a size like 1280x720, got "${raw}"`);
+  return { size };
 }
 
 function parseRunBase(baseUrl?: string): RunBase | null {
