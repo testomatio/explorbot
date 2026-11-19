@@ -945,8 +945,9 @@ export function resolveLangfuse(ai?: AIConfig, siteUrl?: string): void {
   const telemetry = parseTelemetry(process.env[boatEnvName('EXPLORBOT_TELEMETRY')] || process.env.EXPLORBOT_TELEMETRY, siteUrl);
   const publicKey = langfuse?.publicKey || telemetry.publicKey || process.env.LANGFUSE_PUBLIC_KEY;
   const secretKey = langfuse?.secretKey || telemetry.secretKey || process.env.LANGFUSE_SECRET_KEY;
+  const configLangfuse = Boolean(langfuse?.publicKey && langfuse?.secretKey);
   ai.langfuse = {
-    enabled: langfuse?.enabled ?? (telemetry.enabled && Boolean(publicKey && secretKey)),
+    enabled: langfuse?.enabled ?? (configLangfuse || (telemetry.enabled && Boolean(publicKey && secretKey))),
     publicKey,
     secretKey,
     baseUrl: langfuse?.baseUrl || telemetry.baseUrl || process.env.LANGFUSE_BASE_URL || process.env.LANGFUSE_HOST,
@@ -1040,7 +1041,7 @@ function parseTelemetry(raw: string | undefined, siteUrl?: string) {
 
   for (const { key, value } of parseSpecPairs(raw)) {
     if (key === 'site') {
-      const host = URL.parse(siteUrl || '')?.host;
+      const host = URL.parse(siteUrl || '')?.hostname;
       const patterns = value
         .split(',')
         .map((pattern) => pattern.trim().toLowerCase())

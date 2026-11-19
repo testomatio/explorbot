@@ -7,6 +7,7 @@
   ```bash
   EXPLORBOT_TELEMETRY="langfuse=https://pk-lf-xxx:sk-lf-yyy@cloud.langfuse.com; site=*.staging.example.com"
   PRIMA_CLI_TELEMETRY=off
+  ```
 ### Changes
 - [Prima] `prima` with no arguments, `--help`, `--version`, `skill` and `recommended-models` start in about 0.4 seconds instead of 1.5. The browser-driving code is loaded only by a command that uses it.
 

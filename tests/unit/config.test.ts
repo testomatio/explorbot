@@ -536,6 +536,13 @@ describe('resolveLangfuse telemetry', () => {
     expect(resolved()?.enabled).toBe(false);
   });
 
+  it('matches the site globs against the hostname, ignoring the port', () => {
+    process.env.EXPLORBOT_TELEMETRY = 'langfuse=https://pk:sk@langfuse.example.com; site=localhost, app.example.com';
+
+    expect(resolved('http://localhost:8899/issues')?.enabled).toBe(true);
+    expect(resolved('https://app.example.com:8443')?.enabled).toBe(true);
+  });
+
   it('prefers the boat variable over EXPLORBOT_TELEMETRY', () => {
     process.env.EXPLORBOT_TELEMETRY = 'langfuse=https://pk:sk@langfuse.example.com';
     process.env.PRIMA_CLI_TELEMETRY = 'off';
@@ -549,5 +556,6 @@ describe('resolveLangfuse telemetry', () => {
     process.env.EXPLORBOT_TELEMETRY = 'off';
 
     expect(resolved(undefined, { enabled: true, publicKey: 'pk-cfg', secretKey: 'sk-cfg' })).toEqual({ enabled: true, publicKey: 'pk-cfg', secretKey: 'sk-cfg', baseUrl: undefined });
+    expect(resolved(undefined, { publicKey: 'pk-cfg', secretKey: 'sk-cfg' })?.enabled).toBe(true);
   });
 });
