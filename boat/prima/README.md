@@ -33,6 +33,8 @@ prima-cli browser stop
 
 `browser start` reports the session when one is already open. `--pw-session <title>` names the session to open or close. A session you opened with `playwright-cli open` yourself works the same way.
 
+`browser start` keeps the browser profile (`playwright-cli open --persistent`), so a login survives `browser stop` and the next `browser start` is already signed in. `--incognito` opens a clean profile instead; `playwright-cli delete-data` wipes the kept one.
+
 ## Commands
 
 | Command | What it does |

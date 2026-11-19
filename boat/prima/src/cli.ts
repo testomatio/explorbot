@@ -22,7 +22,7 @@ function buildOptions(subcommand: any): PrimaOptions {
     config: options.config,
     path: options.path,
     instance: options.instance,
-    session: options.session,
+    incognito: options.incognito,
     ephemeral: options.ephemeral,
     framework: options.framework,
     noVision: options.vision === false,
@@ -49,7 +49,7 @@ function addCommonOptions(cmd: Command): Command {
     .option('-c, --config <path>', 'Path to explorbot configuration file')
     .option('-p, --path <path>', 'Working directory path')
     .option('-i, --instance <name>', 'Browser instance to drive')
-    .option('--session [file]', 'Persist cookies and storage to a session file')
+    .option('--incognito', 'browser start opens a clean profile; by default the profile is kept, so logins survive browser stop')
     .option('--model <model>', 'Main model, as provider/model-id')
     .option('--vision-model <model>', 'Model for screenshot analysis, as provider/model-id')
     .option('--ephemeral', 'Keep no state; config-free runs use a temp directory')

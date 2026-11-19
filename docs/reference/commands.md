@@ -755,7 +755,8 @@ html: /home/you/.explorbot/sites/app.example.com/output/prima/2026-08-04T10-04-2
 Prima never launches a browser itself; `browser start` and `browser stop` run playwright-cli for it:
 
 ```bash
-npx explorbot prima browser start https://app.example.com   # runs playwright-cli open, or reports the session already open
+npx explorbot prima browser start https://app.example.com   # runs playwright-cli open --persistent, or reports the session already open
+npx explorbot prima browser start https://app.example.com --incognito   # clean profile, no kept logins
 npx explorbot prima browser stop                             # runs playwright-cli close
 ```
 

@@ -86,7 +86,6 @@ export class Prima {
       config: options.config,
       path: options.path,
       baseUrl: this.configBaseUrl(),
-      session: options.session,
       instance: options.instance,
       headless: true,
       optionalAi: true,
@@ -846,6 +845,7 @@ export class Prima {
 
   private openPlaywrightSession(): void {
     const args = ['open'];
+    if (!this.options.incognito) args.push('--persistent');
     const url = this.options.url || this.configBaseUrl();
     if (url) args.push(url);
     this.playwrightCli(args);
@@ -1479,7 +1479,7 @@ export interface PrimaOptions {
   config?: string;
   path?: string;
   instance?: string;
-  session?: string | boolean;
+  incognito?: boolean;
   ephemeral?: boolean;
   framework?: 'codeceptjs' | 'playwright';
   noVision?: boolean;

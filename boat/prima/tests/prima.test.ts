@@ -1857,9 +1857,22 @@ describe('Prima browser instances', () => {
     await expect(prima.browserStop()).rejects.toThrow(/playwright-cli close failed/);
   });
 
-  test('session file is wired into the browser context options', () => {
-    const prima = new Prima({ session: 'output/session.json' });
-    expect((prima as any).bot.options.session).toBe('output/session.json');
+  test('browser start opens a persistent profile, so logins survive a stop', () => {
+    const { prima } = fakePrima({ url: 'https://app.example.com' });
+    const calls: string[][] = [];
+    (prima as any).playwrightCli = (args: string[]) => calls.push(args);
+
+    (prima as any).openPlaywrightSession();
+    expect(calls).toEqual([['open', '--persistent', 'https://app.example.com']]);
+  });
+
+  test('--incognito opens a clean profile', () => {
+    const { prima } = fakePrima({ url: 'https://app.example.com', incognito: true });
+    const calls: string[][] = [];
+    (prima as any).playwrightCli = (args: string[]) => calls.push(args);
+
+    (prima as any).openPlaywrightSession();
+    expect(calls).toEqual([['open', 'https://app.example.com']]);
   });
 });
 
