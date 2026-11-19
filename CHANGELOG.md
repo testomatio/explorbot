@@ -5,6 +5,14 @@
 ### Changes
 - [Prima] `prima` with no arguments, `--help`, `--version`, `skill` and `recommended-models` start in about 0.4 seconds instead of 1.5. The browser-driving code is loaded only by a command that uses it.
 
+## 2026-11-18
+
+### New Commands
+- **`prima state`** — Captures the current page without acting on it and without calling an AI model. Prints the url, title and state hash, an `overlay:` line naming the open dialog or region (or `none`), and the paths to the aria tree, html and a fresh screenshot.
+  ```bash
+  prima state
+  ```
+
 ## 2026-11-17
 
 ### New Commands

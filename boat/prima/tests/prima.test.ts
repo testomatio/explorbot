@@ -1217,6 +1217,38 @@ describe('Prima.check', () => {
     expect(envelope.artifacts?.screenshot).toContain('page.png');
   });
 
+  test('state captures the page with a screenshot and names the open overlay, without a model', async () => {
+    const { prima } = fakePrima();
+    const captures: unknown[] = [];
+    const explorer = (prima as any).bot.getExplorer();
+    (prima as any).bot.getExplorer = () => ({
+      ...explorer,
+      capture: async (opts: unknown) => {
+        captures.push(opts);
+        return fakeState({ screenshot: Buffer.from('png'), overlay: { describe: () => 'dialog "Invite" opened' } });
+      },
+    });
+    (prima as any).bot.getProvider = () => {
+      throw new Error('state must not reach a model');
+    };
+
+    const envelope = await prima.state();
+
+    expect(envelope.ok).toBe(true);
+    expect(captures).toEqual([{ screenshot: true }]);
+    expect(envelope.artifacts?.screenshot).toBeTruthy();
+    expect(renderEnvelope(envelope)).toContain('overlay: dialog "Invite" opened');
+  });
+
+  test('state reports no overlay when none is open', async () => {
+    const { prima } = fakePrima();
+    (prima as any).bot.getExplorer = () => ({ capture: async () => fakeState({ overlay: { describe: () => '' } }) });
+
+    const envelope = await prima.state();
+
+    expect(envelope.overlay).toBe('none');
+  });
+
   test('ask defaults to vision via screenshot analysis', async () => {
     const { prima } = fakePrima();
     (prima as any).bot.getProvider = () => ({ hasVision: () => true, generateObject: async () => ({ object: { steps: [] } }) });
