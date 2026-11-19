@@ -8,11 +8,15 @@
   prima browser start https://app.example.com
   prima browser stop
   ```
+- **`prima browser clear`** — Close the session and remove the browser profile kept for this directory, with its logins.
+  ```bash
+  prima browser clear
+  ```
 
 ### Changes
 - [Prima] `prima` with no arguments prints its version on the first line, also when run as `explorbot prima`. Its command list follows a regular check in order: `browser start`, `go`, `do`, `check`, `ux`, `video`, `browser stop`, then `state`, `verify`, `ask`, `research` and `pw` for a closer look at the page. `prima --help` lists commands in the same order.
 - [Prima] `prima browser start` prints the AI model in use on an `ai:` line, or says that none is configured.
-- [Prima] `prima browser start` keeps the browser profile, so a login survives `browser stop` and the next start is already signed in. `--incognito` opens a clean profile:
+- [Prima] `prima browser start` keeps one browser profile per directory, so a login survives `browser stop` and the next start in that directory is already signed in. Profiles live in `~/.explorbot/profiles`, one per directory and `--pw-session`. `--incognito` opens a clean profile:
   ```bash
   prima browser start https://app.example.com --incognito
   ```

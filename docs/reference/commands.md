@@ -686,7 +686,7 @@ Run it as `npx explorbot prima <command>` or through the standalone `prima` bin.
 | `prima report` | Turn every command of a session into one html and markdown report |
 | `prima config` | Show the AI models prima runs on and the config file they come from |
 | `prima skill` | Print the skill that teaches a coding agent to use prima; `--install [local\|global]` writes it for Claude Code, Codex and OpenCode |
-| `prima browser {start [url]\|stop}` | Open or close the playwright-cli session prima drives; both run `playwright-cli`. `start` reports the session when one is already open |
+| `prima browser {start [url]\|stop\|clear}` | Open or close the playwright-cli session prima drives; both run `playwright-cli`. `start` reports the session when one is already open and keeps one profile per directory; `clear` removes it |
 
 ### Choosing a command
 
@@ -755,10 +755,13 @@ html: /home/you/.explorbot/sites/app.example.com/output/prima/2026-08-04T10-04-2
 Prima never launches a browser itself; `browser start` and `browser stop` run playwright-cli for it:
 
 ```bash
-npx explorbot prima browser start https://app.example.com   # runs playwright-cli open --persistent, or reports the session already open
+npx explorbot prima browser start https://app.example.com   # runs playwright-cli open with this directory's profile, or reports the session already open
 npx explorbot prima browser start https://app.example.com --incognito   # clean profile, no kept logins
 npx explorbot prima browser stop                             # runs playwright-cli close
+npx explorbot prima browser clear                            # closes the session, removes this directory's profile
 ```
+
+`browser start` keeps one profile per directory and `--pw-session` in `~/.explorbot/profiles`, so a login survives `browser stop`.
 
 By default prima attaches to the playwright-cli browser of the current workspace and works on the tabs it already has open — driving the same session from both tools is the intended usage. Stopping prima disconnects from an attached browser; it never closes it. The `### Instance` block names the browser you are on.
 

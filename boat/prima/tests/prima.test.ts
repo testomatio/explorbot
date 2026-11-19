@@ -1857,13 +1857,36 @@ describe('Prima browser instances', () => {
     await expect(prima.browserStop()).rejects.toThrow(/playwright-cli close failed/);
   });
 
-  test('browser start opens a persistent profile, so logins survive a stop', () => {
-    const { prima } = fakePrima({ url: 'https://app.example.com' });
+  test('browser start opens the profile kept for this directory', () => {
+    const { prima } = fakePrima({ url: 'https://app.example.com', path: '/work/shop' });
     const calls: string[][] = [];
     (prima as any).playwrightCli = (args: string[]) => calls.push(args);
 
     (prima as any).openPlaywrightSession();
-    expect(calls).toEqual([['open', '--persistent', 'https://app.example.com']]);
+    expect(calls).toEqual([['open', `--profile=${(prima as any).profileDir()}`, 'https://app.example.com']]);
+    expect(path.basename((prima as any).profileDir())).toMatch(/^shop_default_[0-9a-f]{8}$/);
+  });
+
+  test('each directory and each session gets its own profile', () => {
+    const profile = (options: Record<string, unknown>) => (fakePrima(options).prima as any).profileDir();
+
+    expect(profile({ path: '/work/shop' })).toBe(profile({ path: '/work/shop' }));
+    expect(profile({ path: '/work/shop' })).not.toBe(profile({ path: '/other/shop' }));
+    expect(profile({ path: '/work/shop' })).not.toBe(profile({ path: '/work/shop', pwSession: 'admin' }));
+  });
+
+  test('browser clear closes the session and removes the kept profile', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'prima-profile-'));
+    const { prima } = fakePrima();
+    const calls: string[][] = [];
+    (prima as any).profileDir = () => dir;
+    (prima as any).playwrightCli = (args: string[]) => calls.push(args);
+
+    expect(await prima.browserClear()).toBe(`browser: profile removed (${dir})`);
+    expect(calls).toEqual([['close']]);
+    expect(existsSync(dir)).toBe(false);
+    expect(await prima.browserClear()).toContain('no profile kept');
+    expect(calls).toHaveLength(1);
   });
 
   test('--incognito opens a clean profile', () => {

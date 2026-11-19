@@ -49,7 +49,7 @@ function addCommonOptions(cmd: Command): Command {
     .option('-c, --config <path>', 'Path to explorbot configuration file')
     .option('-p, --path <path>', 'Working directory path')
     .option('-i, --instance <name>', 'Browser instance to drive')
-    .option('--incognito', 'browser start opens a clean profile; by default the profile is kept, so logins survive browser stop')
+    .option('--incognito', 'browser start opens a clean profile; by default one profile is kept per directory, so logins survive browser stop')
     .option('--model <model>', 'Main model, as provider/model-id')
     .option('--vision-model <model>', 'Model for screenshot analysis, as provider/model-id')
     .option('--ephemeral', 'Keep no state; config-free runs use a temp directory')
@@ -113,12 +113,15 @@ export function createPrimaCommands(name = 'prima'): Command {
     });
   rootOptions = () => cmd.opts();
 
-  addCommonOptions(cmd.command('browser').description('Report the playwright-cli session prima drives; start opens one through playwright-cli, stop closes it').argument('[action]', 'start or stop', 'start').argument('[url]', 'Page to open on start')).action(async (action, url, options) => {
-    if (!['start', 'stop'].includes(action)) cmd.error(`error: unknown browser action '${action}', use start or stop`);
+  addCommonOptions(
+    cmd.command('browser').description('Report the playwright-cli session prima drives; start opens one through playwright-cli, stop closes it, clear removes the profile kept for this directory').argument('[action]', 'start, stop or clear', 'start').argument('[url]', 'Page to open on start')
+  ).action(async (action, url, options) => {
+    if (!['start', 'stop', 'clear'].includes(action)) cmd.error(`error: unknown browser action '${action}', use start, stop or clear`);
     if (url) options.url = url;
     try {
       const prima = await primaFor(options);
       if (action === 'stop') console.log(await prima.browserStop());
+      if (action === 'clear') console.log(await prima.browserClear());
       if (action === 'start') console.log(await prima.browserCheck());
     } catch (error) {
       console.error(browserErrorMessage(error));

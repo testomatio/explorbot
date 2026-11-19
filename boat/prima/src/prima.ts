@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { tool } from 'ai';
@@ -17,7 +17,7 @@ import { getAliveEndpoint, listInstances } from '../../../src/browser-server.ts'
 import { ConfigCommand } from '../../../src/commands/config-command.ts';
 import { ConfigMissingError, ConfigParser, EXPLORBOT_ENV_VARS, type ExplorbotConfig, modelName, modelProvider, outputPath, providerKeyHelp } from '../../../src/config.ts';
 import { ExplorBot } from '../../../src/explorbot.ts';
-import { findSiteWith, listSites } from '../../../src/global-config.ts';
+import { findSiteWith, globalDir, listSites } from '../../../src/global-config.ts';
 import { Reporter } from '../../../src/reporter.ts';
 import type { WebPageState } from '../../../src/state-manager.ts';
 import { Stats } from '../../../src/stats.ts';
@@ -609,6 +609,14 @@ export class Prima {
     return 'browser: playwright-cli session closed';
   }
 
+  async browserClear(): Promise<string> {
+    const dir = this.profileDir();
+    if (!existsSync(dir)) return `browser: no profile kept for this directory (${dir})`;
+    this.playwrightCli(['close']);
+    rmSync(dir, { recursive: true, force: true });
+    return `browser: profile removed (${dir})`;
+  }
+
   async config(json?: boolean): Promise<string> {
     const config = await this.loadRecordedConfig();
     const parser = ConfigParser.getInstance();
@@ -845,10 +853,17 @@ export class Prima {
 
   private openPlaywrightSession(): void {
     const args = ['open'];
-    if (!this.options.incognito) args.push('--persistent');
+    if (!this.options.incognito) args.push(`--profile=${this.profileDir()}`);
     const url = this.options.url || this.configBaseUrl();
     if (url) args.push(url);
     this.playwrightCli(args);
+  }
+
+  private profileDir(): string {
+    const dir = path.resolve(this.options.path || '.');
+    const hash = createHash('sha1').update(dir).digest('hex').slice(0, 8);
+    const session = this.pwSessionTitle() || 'default';
+    return path.join(globalDir(), 'profiles', safeFilename(`${path.basename(dir)}-${session}-${hash}`));
   }
 
   private playwrightCli(command: string[]) {

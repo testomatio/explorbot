@@ -33,7 +33,7 @@ prima-cli browser stop
 
 `browser start` reports the session when one is already open. `--pw-session <title>` names the session to open or close. A session you opened with `playwright-cli open` yourself works the same way.
 
-`browser start` keeps the browser profile (`playwright-cli open --persistent`), so a login survives `browser stop` and the next `browser start` is already signed in. `--incognito` opens a clean profile instead; `playwright-cli delete-data` wipes the kept one.
+`browser start` keeps one browser profile per directory, so a login survives `browser stop` and the next `browser start` in that directory is already signed in. Profiles live in `~/.explorbot/profiles`, one per directory and `--pw-session`. `--incognito` opens a clean profile instead; `browser clear` closes the session and removes the kept one.
 
 ## Commands
 
@@ -53,6 +53,7 @@ prima-cli browser stop
 | `video` | Join and edit the `do` and `check` recordings of a purpose into one video |
 | `browser start [url]` | Open a playwright-cli session for prima to drive, or report the one already open |
 | `browser stop` | Close the playwright-cli session |
+| `browser clear` | Close the session and remove the profile kept for this directory |
 | `config` | Show models, config file and paths used by this run |
 | `skill` | Print the skill that teaches a coding agent to use prima, or install it with `--install` |
 
