@@ -7,6 +7,14 @@
 
 ## 2026-11-18
 
+### Configuration
+- **`ai.decisionModel`** — Two more providers: OpenAI's Decisions API and Google's Gemini Decisions API, authenticated with `OPENAI_API_KEY` and `GOOGLE_GENERATIVE_AI_API_KEY`. For example `decisionModel: { provider: 'openai', model: 'gpt-6-luna' }` or `decisionModel: { provider: 'google', model: 'gemini-decision-1' }`. Both models are also served by OpenRouter: `{ provider: 'openrouter', model: 'google/gemini-decision-1' }`.
+- **`ai.recommendedModels`** — `openai` and `google` now recommend a decision model (`gpt-6-luna` and `gemini-decision-1`), so `recommendedModels: 'openai'` or `EXPLORBOT_AI_PROVIDER=google` turns the decision model on. Anthropic has no decision model and stays without one.
+
+### Changes
+- The decision model is now called through the Vercel AI SDK (`experimental_decide`) for every provider. `openrouter` and `typesafe` configs keep their provider names and API keys. On the `judge.decide` span the `judgeEndpoint` metadata is replaced by `judgeProvider`.
+- Requires `ai` 7.0.173 or newer. That version rejects a response without a tool call when a tool call was required; Explorbot retries such a request once with automatic tool choice, as it already did when the provider itself rejected it.
+
 ### New Commands
 - **`prima state`** — Captures the current page without acting on it and without calling an AI model. Prints the url, title and state hash, an `overlay:` line naming the open dialog or region (or `none`), and the paths to the aria tree, html and a fresh screenshot.
   ```bash
