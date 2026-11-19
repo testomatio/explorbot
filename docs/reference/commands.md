@@ -138,6 +138,7 @@ EXPLORBOT_AI_PROVIDER=openrouter \
 | `EXPLORBOT_DECISION_MODEL` | Turns on the decision model, as provider/model-id (openrouter/typesafe/jev-1.13 or typesafe/jev-latest); overrides ai.decisionModel |
 | `EXPLORBOT_OUTPUT` | Output root for states, plans, research, and reports. Defaults to the site dir under ~/.explorbot/sites |
 | `EXPLORBOT_EPHEMERAL` | Keep no state between runs — output goes to a fresh temp directory instead of the site dir |
+| `EXPLORBOT_SCREENCAST` | Record a video of every test; same as ai.agents.historian.screencast in a config file. "true", or a size like 1280x720 |
 | `EXPLORBOT_KNOWLEDGE` | Inline knowledge text, applied to every page |
 | `EXPLORBOT_KNOWLEDGE_FILE` | Path to a knowledge markdown file |
 | `EXPLORBOT_AUTH` | Auth details in free form (credentials, a token), kept in memory for the run and never written to disk; same as --auth |
@@ -677,6 +678,7 @@ Run it as `npx explorbot prima <command>` or through the standalone `prima` bin.
 | `prima do <instructions...>` | Run high-level instructions tester-style, one argument per instruction |
 | `prima pw <fn>` | Run a Playwright function expression against the open page |
 | `prima ask <question>` | Answer a question about the current page |
+| `prima state` | Capture the current page without acting on it: url, state, open overlay, and the aria, html and screenshot files. Needs no AI model |
 | `prima verify <assertion>` | Assert a statement about the current page (alias: `assert`) |
 | `prima research` | Map the current page and return verified locators |
 | `prima go <target>` | Navigate to a url, a path, or a page described in plain words |

@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-11-19
+
+### Changes
+- [Prima] `prima` with no arguments, `--help`, `--version`, `skill` and `recommended-models` start in about 0.4 seconds instead of 1.5. The browser-driving code is loaded only by a command that uses it.
+
 ## 2026-11-18
 
 ### Configuration
@@ -9,6 +14,12 @@
 ### Changes
 - The decision model is now called through the Vercel AI SDK (`experimental_decide`) for every provider. `openrouter` and `typesafe` configs keep their provider names and API keys. On the `judge.decide` span the `judgeEndpoint` metadata is replaced by `judgeProvider`.
 - Requires `ai` 7.0.173 or newer. That version rejects a response without a tool call when a tool call was required; Explorbot retries such a request once with automatic tool choice, as it already did when the provider itself rejected it.
+
+### New Commands
+- **`prima state`** — Captures the current page without acting on it and without calling an AI model. Prints the url, title and state hash, an `overlay:` line naming the open dialog or region (or `none`), and the paths to the aria tree, html and a fresh screenshot.
+  ```bash
+  prima state
+  ```
 
 ## 2026-11-17
 
