@@ -1,12 +1,12 @@
 import dedent from 'dedent';
 import { z } from 'zod';
 import type { AIProvider } from '../../../../src/ai/provider.ts';
+import { parseResearchSections } from '../../../../src/ai/researcher/parser.ts';
 import type Explorer from '../../../../src/explorer.ts';
 import type { StateManager } from '../../../../src/state-manager.ts';
 import type { WebPageState } from '../../../../src/state-manager.ts';
 import { parseAriaLocator } from '../../../../src/utils/aria.ts';
 import { tag } from '../../../../src/utils/logger.ts';
-import { parseResearchSections } from '../../../../src/ai/researcher/parser.ts';
 import type { DocbotConfig } from '../config.ts';
 import { type CaptureInteractionState, type DocStateTransition, collectDocInteractions } from './tools.ts';
 

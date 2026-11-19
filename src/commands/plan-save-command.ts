@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { printNextSteps } from '../utils/next-steps.ts';
-import { PlanCommand } from './plan-command.js';
 import { BaseCommand, type Suggestion } from './base-command.js';
+import { PlanCommand } from './plan-command.js';
 
 export class PlanSaveCommand extends BaseCommand {
   name = 'plan:save';

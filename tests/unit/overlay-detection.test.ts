@@ -1,7 +1,7 @@
 import 'parse5';
 import { beforeEach, describe, expect, it } from 'vitest';
-import Action from '../../src/action.ts';
 import { ActionResult } from '../../src/action-result.ts';
+import Action from '../../src/action.ts';
 import { ConfigParser } from '../../src/config.ts';
 import { htmlDiff } from '../../src/utils/html-diff.ts';
 import { Overlay, OverlayPage } from '../../src/utils/overlay.ts';

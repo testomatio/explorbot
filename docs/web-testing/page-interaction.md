@@ -72,6 +72,15 @@ The agent starts with short semantic locators from ARIA or visible text. When a 
 
 When a locator fails, the agent tries the next strategy, then a visual click. Locators that worked are saved to experience and preferred on the next run.
 
+## Explicit tools: drag and drop, right-click
+
+Some interactions — dragging an element, opening a context menu with a right-click — need dedicated tools (`dragAndDrop`, `rightClick` in `src/ai/explicit-tools.ts`). They are **off by default**, so they never grow the Tester's context for ordinary scenarios. Two gates turn them on:
+
+- **Planner gate** — during planning, each scenario is checked with the decision model (`provider.oracle()`, with the agentic model as fallback). A scenario that needs a drag or a context menu gets the tools armed; the choice is stored in the plan (`tools:` in the `<!-- test -->` comment) and survives re-runs.
+- **Pilot gate** — mid-run, the Pilot can request the tools for the Tester by including `ENABLE_TOOLS: <names>` in its instruction, when the scenario turns out to need an interaction `click()`/`form()` cannot express.
+
+The `dragAndDrop()` tool takes visual descriptions of what to grab and where to drop it. The vision model locates both points on the screenshot, and the drag runs as a real mouse press between them through the Playwright API — which also covers sliders and canvas drawing, where there is nothing to attach a locator to. When the drop changes nothing, the tool retries the same points with HTML5 drag events on its own; that covers pages whose drag libraries cancel the mouse press, so a real mouse can never start the drag. A modifier key can be held during the drag for copy-drags. The drag is recorded as a plain CodeceptJS `I.usePlaywrightTo` mouse sequence, so generated tests replay unchanged.
+
 ## What happens after each action
 
 After every action, Explorbot captures the new page state and compares it with the previous one. The resulting diff tells the agent what changed — the URL, the accessibility tree, or the HTML — so it can confirm the action worked and decide what to do next. The Researcher turns a page into a structured UI map of sections and elements; see [Researcher](./researcher.md).

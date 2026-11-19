@@ -2,17 +2,17 @@ import { describe, expect, it } from 'bun:test';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { z } from 'zod';
 import { PNG } from 'pngjs';
+import { z } from 'zod';
 import { Documentarian } from '../../boat/doc-collector/src/ai/documentarian.ts';
 import { pickDocActionCandidates } from '../../boat/doc-collector/src/ai/tools.ts';
 import { DocBot } from '../../boat/doc-collector/src/docbot.ts';
 import { normalizeAction, renderPageDocumentation, renderSpecIndex } from '../../boat/doc-collector/src/docs-renderer.ts';
 import { getDocPageKey, shouldCrawlDocPath } from '../../boat/doc-collector/src/path-filter.ts';
 import { extractResearchNavigationTargets } from '../../boat/doc-collector/src/research-navigation.ts';
-import { buildTemplateRecord, findTemplateMatch } from '../../boat/doc-collector/src/template-dedup.ts';
 import { captureDocumentationScreenshots, captureEvidenceScreenshots, getScreenshotSections } from '../../boat/doc-collector/src/screenshots.ts';
 import { renderMermaidBody } from '../../boat/doc-collector/src/state-diagram.ts';
+import { buildTemplateRecord, findTemplateMatch } from '../../boat/doc-collector/src/template-dedup.ts';
 
 describe('doc-collector path filter', () => {
   it('allows regular documentation pages', () => {
