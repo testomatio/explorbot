@@ -23,6 +23,7 @@ export const Observability = {
           name,
           span,
         };
+        if (saved.metadata.sessionId) current.metadata.sessionId = saved.metadata.sessionId;
         try {
           return await fn();
         } finally {

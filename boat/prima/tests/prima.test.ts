@@ -1217,6 +1217,38 @@ describe('Prima.check', () => {
     expect(envelope.artifacts?.screenshot).toContain('page.png');
   });
 
+  test('state captures the page with a screenshot and names the open overlay, without a model', async () => {
+    const { prima } = fakePrima();
+    const captures: unknown[] = [];
+    const explorer = (prima as any).bot.getExplorer();
+    (prima as any).bot.getExplorer = () => ({
+      ...explorer,
+      capture: async (opts: unknown) => {
+        captures.push(opts);
+        return fakeState({ screenshot: Buffer.from('png'), overlay: { describe: () => 'dialog "Invite" opened' } });
+      },
+    });
+    (prima as any).bot.getProvider = () => {
+      throw new Error('state must not reach a model');
+    };
+
+    const envelope = await prima.state();
+
+    expect(envelope.ok).toBe(true);
+    expect(captures).toEqual([{ screenshot: true }]);
+    expect(envelope.artifacts?.screenshot).toBeTruthy();
+    expect(renderEnvelope(envelope)).toContain('overlay: dialog "Invite" opened');
+  });
+
+  test('state reports no overlay when none is open', async () => {
+    const { prima } = fakePrima();
+    (prima as any).bot.getExplorer = () => ({ capture: async () => fakeState({ overlay: { describe: () => '' } }) });
+
+    const envelope = await prima.state();
+
+    expect(envelope.overlay).toBe('none');
+  });
+
   test('ask defaults to vision via screenshot analysis', async () => {
     const { prima } = fakePrima();
     (prima as any).bot.getProvider = () => ({ hasVision: () => true, generateObject: async () => ({ object: { steps: [] } }) });
@@ -1259,7 +1291,7 @@ describe('Prima.check', () => {
     expect(envelope.answer).toContain('vision');
   });
 
-  test('verify reports each assertion with its own result and gives no verdict', async () => {
+  test('verify reports each assertion with its own result and fails when the claim is not verified', async () => {
     const { prima } = fakePrima();
     (prima as any).bot.agentNavigator = () => ({
       verifyState: async () => ({
@@ -1281,7 +1313,7 @@ describe('Prima.check', () => {
       { code: "I.see('Dashboard')", passed: true, proof: ['await expect(page).toContainText("Dashboard");'] },
       { code: "I.seeElement('.chart')", passed: false, proof: [] },
     ]);
-    expect(envelope.ok).toBe(true);
+    expect(envelope.ok).toBe(false);
   });
 
   test('verify with nothing expressible reports no assertions rather than a failure', async () => {
@@ -1744,9 +1776,54 @@ describe('Prima browser instances', () => {
     expect(await prima.browserCheck()).toBe('browser: playwright-cli session "auth" at ws://127.0.0.1:4321/auth');
   });
 
-  test('browserCheck fails proposing playwright-cli open when no session is open', async () => {
+  test('browserCheck opens a playwright-cli session when none is open', async () => {
     const { prima } = fakePrima({ url: 'https://app.example.com' });
     (prima as any).loadConfig = async () => ({});
+    let opened = false;
+    (prima as any).openPlaywrightSession = () => {
+      opened = true;
+    };
+    (prima as any).discover = () => {
+      if (!opened) return { candidates: [] };
+      return { match: { title: 'default', endpoint: 'ws://127.0.0.1:4321/default', workspaceDir: '' }, candidates: [] };
+    };
+
+    expect(await prima.browserCheck()).toBe('browser: playwright-cli session "default" at ws://127.0.0.1:4321/default');
+  });
+
+  test('browserCheck opens a named session that is not open yet beside other sessions', async () => {
+    const { prima } = fakePrima({ pwSession: 'mine' });
+    (prima as any).loadConfig = async () => ({});
+    let opened = false;
+    (prima as any).openPlaywrightSession = () => {
+      opened = true;
+    };
+    (prima as any).discover = () => {
+      const other = { title: 'other', endpoint: 'ws://127.0.0.1:4321/other', workspaceDir: '' };
+      if (!opened) return { candidates: [other] };
+      return { match: { title: 'mine', endpoint: 'ws://127.0.0.1:4321/mine', workspaceDir: '' }, candidates: [other] };
+    };
+
+    expect(await prima.browserCheck()).toBe('browser: playwright-cli session "mine" at ws://127.0.0.1:4321/mine');
+  });
+
+  test('browserCheck asks to pick a session when several are open and none is named', async () => {
+    const { prima } = fakePrima();
+    (prima as any).loadConfig = async () => ({});
+    let opened = false;
+    (prima as any).openPlaywrightSession = () => {
+      opened = true;
+    };
+    (prima as any).discover = () => ({ candidates: [{ title: 'a' }, { title: 'b' }] });
+
+    await expect(prima.browserCheck()).rejects.toThrow(/--pw-session/);
+    expect(opened).toBe(false);
+  });
+
+  test('browserCheck fails proposing playwright-cli open when the launch opened nothing', async () => {
+    const { prima } = fakePrima({ url: 'https://app.example.com' });
+    (prima as any).loadConfig = async () => ({});
+    (prima as any).openPlaywrightSession = () => {};
     (prima as any).discover = () => ({ candidates: [] });
 
     await expect(prima.browserCheck()).rejects.toThrow(/playwright-cli open https:\/\/app.example.com/);

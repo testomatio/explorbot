@@ -10,7 +10,7 @@ import InitWizard from '../../src/components/InitWizard.tsx';
 import { ConfigParser, PROVIDERS } from '../../src/config.ts';
 import { listSites, registerSite, resolveSiteTarget, siteFolderName } from '../../src/global-config.ts';
 
-const ENV_KEYS = ['EXPLORBOT_AI_PROVIDER', 'EXPLORBOT_AI_MODEL', 'EXPLORBOT_URL', 'EXPLORBOT_OUTPUT', 'EXPLORBOT_SPEC', 'EXPLORBOT_API_SPEC', 'EXPLORBOT_KNOWLEDGE', 'EXPLORBOT_KNOWLEDGE_FILE', 'GLOBAL_ONLY_KEY', 'SHARED_KEY'];
+const ENV_KEYS = ['EXPLORBOT_AI_PROVIDER', 'EXPLORBOT_AI_MODEL', 'EXPLORBOT_URL', 'EXPLORBOT_OUTPUT', 'EXPLORBOT_SPEC', 'EXPLORBOT_API_SPEC', 'EXPLORBOT_KNOWLEDGE', 'EXPLORBOT_KNOWLEDGE_FILE', 'GLOBAL_ONLY_KEY', 'SHARED_KEY', ...Object.values(PROVIDERS).map((provider) => provider.envKey)];
 const GLOBAL_CONFIG = "export default { ai: { model: { modelId: 'global-model' } } };\n";
 
 let home: string;
@@ -204,6 +204,25 @@ describe('config resolution ladder', () => {
     const config = await ConfigParser.getInstance().loadConfig({ path: workDir, from: 'https://from-argument.example.com/login' });
 
     expect(config.playwright.url).toBe('https://from-argument.example.com/login');
+  });
+
+  it('picks the provider from an exported API key when nothing else is configured', async () => {
+    process.env.GROQ_API_KEY = 'test-key';
+    process.env.EXPLORBOT_URL = 'https://env.example.com';
+
+    const config = await ConfigParser.getInstance().loadConfig({ path: workDir });
+
+    expect(config.ai.model.modelId).toBe(ConfigParser.recommendedModels().groq.model);
+  });
+
+  it('keeps the global config when only an API key is exported', async () => {
+    writeGlobalConfig();
+    process.env.GROQ_API_KEY = 'test-key';
+    process.env.EXPLORBOT_URL = 'https://env.example.com';
+
+    const config = await ConfigParser.getInstance().loadConfig({ path: workDir });
+
+    expect(config.ai.model.modelId).toBe('global-model');
   });
 
   it('suggests init --global when no configuration is found at all', async () => {

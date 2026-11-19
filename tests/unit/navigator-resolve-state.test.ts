@@ -19,13 +19,17 @@ function createHarness(
     responses?: string[];
     knowledge?: string;
     ariaChanged?: string;
+    unchanged?: boolean;
+    sentRequests?: number;
+    settlePage?: any;
+    onSettle?: (page: { changed: boolean }) => void;
     stopAt?: number;
     stopReason?: string;
     attempt?: (code: string, page: { url: string; hash: string }) => boolean;
     onWait?: (page: { url: string; hash: string }) => void;
   } = {}
 ) {
-  const page = { url: '/login', hash: 'start' };
+  const page = { url: '/login', hash: 'start', changed: !options.unchanged };
   const sent: string[] = [];
   const attempts: string[] = [];
   const flows: string[] = [];
@@ -35,7 +39,7 @@ function createHarness(
     url: page.url,
     fullUrl: `${BASE_URL}${page.url}`,
     getStateHash: () => page.hash,
-    diff: async () => ({ ariaChanged: options.ariaChanged ?? null }),
+    diff: async () => ({ ariaChanged: options.ariaChanged ?? null, hasChanges: () => page.changed }),
   });
 
   const action: any = {
@@ -45,6 +49,7 @@ function createHarness(
     exitIframe: async () => {},
     attempt: async (code: string) => {
       attempts.push(code);
+      action.sentRequests = options.sentRequests ?? 0;
       const ok = options.attempt ? options.attempt(code, page) : true;
       action.lastError = ok ? null : new Error('element not visible\n    at Object.<anonymous>');
       return ok;
@@ -70,7 +75,14 @@ function createHarness(
       return { response: { text: options.responses?.[index] ?? '' } };
     },
   };
-  navigator.explorer = { action: () => action, capture: async () => state() };
+  navigator.explorer = {
+    action: () => action,
+    capture: async () => state(),
+    withPage: async (fn: (settlePage: any) => Promise<any>) => {
+      options.onSettle?.(page);
+      return fn(options.settlePage ?? {});
+    },
+  };
   navigator.stateManager = action.stateManager;
 
   return { navigator, action, page, sent, attempts, flows };
@@ -142,6 +154,54 @@ describe('Navigator resolveState', () => {
     const resolved = await harness.navigator.resolveState('click Save', fakeActionResult());
 
     expect(resolved).toBe(true);
+  });
+
+  it('does not resolve on a step that changed nothing on the page', async () => {
+    const harness = createHarness({
+      responses: ["```js\nI.click('Project')\n```", ''],
+      unchanged: true,
+    });
+
+    const resolved = await harness.navigator.resolveState('open project settings', fakeActionResult());
+
+    expect(resolved).toBe(false);
+    expect(harness.sent[1]).toContain('Ran without error but nothing on the page changed');
+    expect(harness.flows).toHaveLength(0);
+  });
+
+  it('resolves on a step that sent a request to the app even if the page did not change', async () => {
+    const harness = createHarness({ responses: ["```js\nI.click('Save')\n```"], unchanged: true, sentRequests: 1 });
+
+    expect(await harness.navigator.resolveState('save the form', fakeActionResult())).toBe(true);
+  });
+
+  it('resolves when the page changes only after the first capture', async () => {
+    const harness = createHarness({
+      responses: ["```js\nI.click('Save')\n```"],
+      unchanged: true,
+      onSettle: (page) => {
+        page.changed = true;
+      },
+    });
+
+    expect(await harness.navigator.resolveState('save the form', fakeActionResult())).toBe(true);
+  });
+
+  it('resolves when the app sends a request while the page settles, but not on a third-party request', async () => {
+    const settlePage = (url: string) => ({
+      evaluate: () => new Promise(() => {}),
+      waitForRequest: async (predicate: (request: any) => boolean) => {
+        const request = { resourceType: () => 'fetch', url: () => url };
+        if (predicate(request)) return request;
+        throw new Error('Timeout');
+      },
+    });
+
+    const app = createHarness({ responses: ["```js\nI.click('Save')\n```"], unchanged: true, settlePage: settlePage(`${BASE_URL}/api/save`) });
+    expect(await app.navigator.resolveState('save the form', fakeActionResult())).toBe(true);
+
+    const analytics = createHarness({ responses: ["```js\nI.click('Save')\n```", ''], unchanged: true, settlePage: settlePage('https://analytics.example.net/collect') });
+    expect(await analytics.navigator.resolveState('save the form', fakeActionResult())).toBe(false);
   });
 
   it('treats code blocks as alternatives when no URL is expected', async () => {

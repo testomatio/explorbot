@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -14,7 +15,7 @@ import { actionRule, locatorRule } from '../../../src/ai/rules.ts';
 import { createAgentTools, createCodeceptJSTools, createRefTools } from '../../../src/ai/tools.ts';
 import { getAliveEndpoint, listInstances } from '../../../src/browser-server.ts';
 import { ConfigCommand } from '../../../src/commands/config-command.ts';
-import { ConfigMissingError, ConfigParser, EXPLORBOT_ENV_VARS, type ExplorbotConfig, outputPath } from '../../../src/config.ts';
+import { ConfigMissingError, ConfigParser, EXPLORBOT_ENV_VARS, type ExplorbotConfig, boatEnvName, outputPath, providerKeyHelp, setBoatEnvPrefix } from '../../../src/config.ts';
 import { ExplorBot } from '../../../src/explorbot.ts';
 import { findSiteWith, listSites } from '../../../src/global-config.ts';
 import { Reporter } from '../../../src/reporter.ts';
@@ -27,10 +28,11 @@ import { browserErrorMessage } from '../../../src/utils/browser-errors.ts';
 import { pluralize } from '../../../src/utils/logger.ts';
 import { mdq } from '../../../src/utils/markdown-query.ts';
 import { safeFilename } from '../../../src/utils/strings.ts';
-import { type ArtifactPaths, type EnvelopeData, type InstanceInfo, STATUS_FILE, STEP_FILES, readArtifacts, writeArtifacts } from './envelope.ts';
+import { type ArtifactPaths, type EnvelopeData, type InstanceInfo, STATUS_FILE, STEP_FILES, VIDEO_FILE, readArtifacts, writeArtifacts } from './envelope.ts';
 import { isFunctionExpression, takePwValue, toCodeceptWrapper } from './pw-parser.ts';
 import { type PwServerDescriptor, readDescriptors, selectDescriptor } from './pw-registry.ts';
-import { type SessionRun, latestSessionFile, readSession, recordCommand, sessionFile, sessionsDir } from './session-log.ts';
+import { type SessionRun, commandNumber, latestSessionFile, purposeFile, readSession, recordCommand, sessionFile, sessionsDir } from './session-log.ts';
+import { type VideoClip, VideoEditor } from './video-editor.ts';
 
 const WITHHELD_TOOLS = ['learnExperience', 'askUser', 'research'];
 const ITERATIONS_PER_INSTRUCTION = 2;
@@ -76,6 +78,7 @@ export class Prima {
   private sessionUrl?: string;
   private attached: string | null = null;
   private session: SessionRun | null = null;
+  private recording: string | null = null;
 
   constructor(options: PrimaOptions = {}) {
     this.options = options;
@@ -92,8 +95,9 @@ export class Prima {
   }
 
   static applyEnv(): void {
+    setBoatEnvPrefix('PRIMA_CLI_');
     for (const { name } of EXPLORBOT_ENV_VARS) {
-      const value = process.env[name.replace('EXPLORBOT_', 'PRIMA_CLI_')];
+      const value = process.env[boatEnvName(name)];
       if (!value) continue;
       process.env[name] = value;
     }
@@ -482,6 +486,12 @@ export class Prima {
     return this.reportEnvelope(command, result, previousState, { answer: await this.answer(question, result) });
   }
 
+  async state(): Promise<EnvelopeData> {
+    const previousState = this.bot.stateManager().getCurrentState();
+    const result = await this.capturedResult(previousState, { screenshot: true });
+    return this.reportEnvelope('state', result, previousState, { overlay: result.overlay.describe() || 'none' });
+  }
+
   async verify(assertion: string): Promise<EnvelopeData> {
     const command = `verify ${assertion}`;
     const guard = await this.aiGuard(command);
@@ -498,7 +508,9 @@ export class Prima {
       if (seen) outcome.answer = `No assertion could express this claim, so it was judged from a screenshot instead.\n\n${seen}`;
     }
 
-    return this.reportEnvelope(command, result, previousState, outcome);
+    const envelope = await this.reportEnvelope(command, result, previousState, outcome);
+    if (outcome.assertions?.length && !verification.verified) envelope.ok = false;
+    return envelope;
   }
 
   async research(opts: { data?: boolean; deep?: boolean; fresh?: boolean } = {}): Promise<EnvelopeData> {
@@ -581,33 +593,121 @@ export class Prima {
 
   async browserCheck(): Promise<string> {
     await this.loadConfig();
-    const { match, candidates, browser } = await this.discover();
+    let discovery = await this.discover();
+    if (!discovery.match && (this.pwSessionTitle() || !discovery.candidates.length)) {
+      this.openPlaywrightSession();
+      discovery = await this.discover();
+    }
+    const { match, candidates, browser } = discovery;
     await browser?.close().catch(() => {});
     if (!match) throw this.missingSessionError(candidates);
     return `browser: ${this.attachmentLabel(match)} at ${match.endpoint}`;
   }
 
   async config(json?: boolean): Promise<string> {
-    const [site] = listSites();
-    if (site && !this.configBaseUrl()) this.sessionUrl = site.url;
-    const config = await this.loadConfig();
+    const config = await this.loadRecordedConfig();
     const parser = ConfigParser.getInstance();
 
     return ConfigCommand.render(config, { configPath: parser.getConfigPath(), siteConfigPath: parser.getSiteConfigPath(), root: parser.getProjectRoot(), json });
   }
 
   record(envelope: EnvelopeData, durationMs: number): void {
+    const { purpose } = this.options;
+    if (purpose) {
+      const file = purposeFile(purpose);
+      envelope.purpose = { text: purpose, number: commandNumber(readSession(file).tests.length + 1) };
+      recordCommand(file, { key: purpose, endpoint: purpose, title: purpose }, envelope, durationMs);
+    }
     if (!this.session) return;
     recordCommand(sessionFile(this.session.key), this.session, envelope, durationMs);
   }
 
+  async startVideo(): Promise<void> {
+    if (!this.options.video) return;
+    if (!this.options.purpose) throw new Error('--video records into a purpose: add --purpose "<what these commands are for>", then join the recordings with prima video --purpose "<the same text>"');
+    VideoEditor.requireFfmpeg();
+
+    const page = this.bot.getExplorer().page;
+    if (!page) return;
+    mkdirSync(this.statusDir(), { recursive: true });
+    const file = path.join(this.statusDir(), VIDEO_FILE);
+    await page.screencast.stop().catch(() => {});
+    await page.screencast.start({ path: file, size: page.viewportSize() || undefined });
+    await page.screencast.showActions({ position: 'top-left' }).catch(() => {});
+    this.recording = file;
+  }
+
+  async stopVideo(envelope: EnvelopeData): Promise<void> {
+    if (!this.recording) return;
+    const stopped = await this.bot
+      .getExplorer()
+      .page?.screencast.stop()
+      .then(() => true)
+      .catch(() => false);
+    if (!stopped || !envelope.artifacts) return;
+    envelope.artifacts.video = this.recording;
+  }
+
+  async video(edits: VideoEdits = {}): Promise<string> {
+    const { purpose } = this.options;
+    if (!purpose) return 'prima video joins the recordings of one purpose: pass --purpose "<the text the commands ran with>"';
+    await this.loadRecordedConfig();
+
+    const commands = readSession(purposeFile(purpose)).tests.map((test, index) => ({ number: commandNumber(index + 1), title: test.title, passed: test.status === 'passed', file: test.artifacts?.[0] || '' }));
+    const recorded = commands.filter((command) => command.file && existsSync(command.file));
+    if (edits.list) {
+      if (!commands.length) return `No command was run with --purpose "${purpose}".`;
+      return commands
+        .map((command) => {
+          let status = 'FAILED';
+          if (command.passed) status = 'passed';
+          let video = 'no video';
+          if (recorded.includes(command)) video = 'video   ';
+          return [`#${command.number}`, status, video, command.title].join('  ');
+        })
+        .join('\n');
+    }
+
+    let selected = recorded.filter((command) => command.passed);
+    const missing: string[] = [];
+    if (edits.only?.length) {
+      selected = [];
+      for (const number of edits.only.flatMap((value) => value.split(','))) {
+        const command = recorded.find((candidate) => Number.parseInt(candidate.number, 16) === Number.parseInt(number, 16));
+        if (command) selected.push(command);
+        if (!command) missing.push(number.trim());
+      }
+    }
+    if (missing.length) return `No recording for ${missing.map((number) => `#${number}`).join(', ')} under purpose "${purpose}". prima video --purpose "${purpose}" --list shows what was recorded.`;
+    if (!selected.length) return `No successful recording under purpose "${purpose}". Run do or check with --purpose "${purpose}" --video first.`;
+
+    const captions = this.numbered(edits.caption);
+    const speeds = this.numbered(edits.speed);
+    const holds = this.numbered(edits.hold);
+    const clips: VideoClip[] = selected.map((command) => {
+      const key = Number.parseInt(command.number, 16);
+      const clip: VideoClip = { number: command.number, title: command.title, file: command.file };
+      if (captions.has(key)) clip.caption = captions.get(key);
+      if (speeds.has(key)) clip.speed = Number(speeds.get(key));
+      if (holds.has(key)) clip.hold = Number(holds.get(key));
+      return clip;
+    });
+
+    const output = purposeFile(purpose, '.webm');
+    const { used, still } = new VideoEditor().render(clips, output);
+    const lines: string[] = [];
+    if (used.length) lines.push(`video: ${output}`, `joined ${used.length} ${pluralize(used.length, 'command')}:`, ...used.map((clip) => `  #${clip.number} ${clip.title}`));
+    if (!used.length) lines.push(`No video written: nothing moved on screen in any selected recording of purpose "${purpose}".`);
+    if (still.length) lines.push('left out, nothing moved on screen:', ...still.map((clip) => `  #${clip.number} ${clip.title}`));
+    return lines.join('\n');
+  }
+
   async report(): Promise<string> {
-    const [site] = listSites();
-    if (site && !this.configBaseUrl()) this.sessionUrl = site.url;
-    await this.loadConfig();
+    await this.loadRecordedConfig();
 
     let file = latestSessionFile();
     if (this.options.pwSession) file = sessionFile(this.options.pwSession);
+    if (this.options.purpose) file = purposeFile(this.options.purpose);
     if (!file || !existsSync(file)) return `No prima session was recorded under ${sessionsDir()}. Commands are recorded as they run.`;
 
     const session = readSession(file);
@@ -666,6 +766,22 @@ export class Prima {
     return ConfigParser.getInstance().loadConfig({ config: this.options.config, path: this.options.path, baseUrl: this.configBaseUrl() });
   }
 
+  private numbered(values: string[] = []): Map<number, string> {
+    const byNumber = new Map<number, string>();
+    for (const value of values) {
+      const separator = value.indexOf('=');
+      if (separator < 0) throw new Error(`"${value}" must be <number>=<value>, e.g. 0002=2`);
+      byNumber.set(Number.parseInt(value.slice(0, separator), 16), value.slice(separator + 1));
+    }
+    return byNumber;
+  }
+
+  private async loadRecordedConfig(): Promise<ExplorbotConfig> {
+    const [site] = listSites();
+    if (site && !this.configBaseUrl()) this.sessionUrl = site.url;
+    return this.loadConfig();
+  }
+
   private configBaseUrl(): string | undefined {
     const url = this.options.baseUrl || this.options.url || this.sessionUrl;
     if (!url) return undefined;
@@ -722,9 +838,25 @@ export class Prima {
     `);
   }
 
+  private openPlaywrightSession(): void {
+    const args = ['open'];
+    const title = this.pwSessionTitle();
+    if (title) args.unshift(`-s=${title}`);
+    const url = this.options.url || this.configBaseUrl();
+    if (url) args.push(url);
+
+    const stdio: any = ['ignore', 'ignore', 'inherit'];
+    const local = spawnSync('playwright-cli', args, { stdio });
+    if (!local.error) return;
+    spawnSync('npx', ['-y', '@playwright/cli', ...args], { stdio });
+  }
+
+  private pwSessionTitle(): string | undefined {
+    return this.options.pwSession ?? process.env.PLAYWRIGHT_CLI_SESSION;
+  }
+
   private async discover(descriptors = readDescriptors()): Promise<Discovery> {
-    const title = this.options.pwSession ?? process.env.PLAYWRIGHT_CLI_SESSION;
-    const opts = { title };
+    const opts = { title: this.pwSessionTitle() };
 
     const alive = new Map<PwServerDescriptor, Browser>();
     for (const candidate of selectDescriptor(descriptors, opts).candidates) {
@@ -806,7 +938,7 @@ export class Prima {
   private async aiGuard(command: string): Promise<EnvelopeData | null> {
     const reason = this.aiUnavailable();
     if (!reason) return null;
-    const message = `this command needs an AI model and none is usable: ${reason}. Drive the browser directly with playwright-cli or prima pw, or fix the AI config in ~/.explorbot/config.js or EXPLORBOT_AI_PROVIDER.`;
+    const message = `this command needs an AI model and none is usable: ${reason}. Drive the browser directly with playwright-cli or prima pw, or export one provider API key:\n${providerKeyHelp().join('\n')}`;
     return this.toolFailureEnvelope(command, message);
   }
 
@@ -985,6 +1117,7 @@ export class Prima {
 
   private async pageContext(result: ActionResult): Promise<string> {
     const experience = this.bot.experienceTracker?.()?.renderExperienceTocFor?.(result) || '';
+    const knowledge = this.bot.knowledgeTracker?.()?.renderRelevantContext(result) || '';
     const map = getPreviousResearch(result.baseHash);
     let uiMap = '';
     if (map) {
@@ -1001,6 +1134,8 @@ export class Prima {
       <page url="${result.url}" title="${result.title}">
       ${compactAriaSnapshot(await this.refAriaSnapshot(result), true, (value) => this.offloadValue(value))}
       </page>
+
+      ${knowledge}
 
       ${uiMap}
 
@@ -1321,6 +1456,14 @@ interface LedgerEntry {
   proof: string;
 }
 
+export interface VideoEdits {
+  list?: boolean;
+  only?: string[];
+  caption?: string[];
+  speed?: string[];
+  hold?: string[];
+}
+
 export interface PrimaOptions {
   config?: string;
   path?: string;
@@ -1333,4 +1476,6 @@ export interface PrimaOptions {
   baseUrl?: string;
   endpoint?: string;
   pwSession?: string;
+  purpose?: string;
+  video?: boolean;
 }

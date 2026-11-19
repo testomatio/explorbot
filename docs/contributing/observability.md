@@ -59,6 +59,26 @@ export default {
 };
 ```
 
+### One variable per boat
+
+`EXPLORBOT_TELEMETRY` holds the whole tracing setup in one value, in the same `key=value; key=value` form as `--spec`:
+
+```bash
+EXPLORBOT_TELEMETRY="langfuse=https://pk-lf-xxx:sk-lf-yyy@cloud.langfuse.com; site=*.staging.example.com,app.example.com"
+PRIMA_CLI_TELEMETRY=off
+APIBOT_TELEMETRY="langfuse=http://localhost:3001"
+```
+
+| Key | Meaning |
+|-----|---------|
+| `langfuse` | Langfuse host, with the public and secret keys as the URL's user and password. Without them, `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` are used |
+| `site` | Comma-separated host globs; only matching sites are traced |
+| `off` | The whole value: no tracing, even with `LANGFUSE_*` set |
+
+Prima reads `PRIMA_CLI_TELEMETRY` and the API boat reads `APIBOT_TELEMETRY` first. When set, the boat variable replaces `EXPLORBOT_TELEMETRY` rather than merging with it. Put them in `~/.explorbot/.env` to set tracing for every project on the machine.
+
+Precedence: `ai.langfuse` in the config, then the telemetry variable, then `LANGFUSE_*`. For a site that reports to its own Langfuse project, set `ai.langfuse` in `~/.explorbot/sites/<host>/config.js`.
+
 ### 4. Run Explorbot
 
 Once configured, Explorbot traces every AI call. No code changes needed.

@@ -348,11 +348,11 @@ export const actionRule = dedent`
   If nothing works, use visualClick() — it locates the target in a screenshot before clicking it.
 
   When a click result reports several matches, pick one from its numbered list by position rather than guessing a new locator.
-  Reuse the same locator with step.opts({ elementIndex: N }) as the LAST argument. N is the "Element N" number.
+  Reuse the same locator and chain .at(N) to the command. N is the "Element N" number. Negative N counts from the end.
 
   <example>
-    I.click('Remove', step.opts({ elementIndex: 2 }));
-    I.click({ role: 'link', text: 'Details' }, '.panel', step.opts({ elementIndex: 1 }));
+    I.click('Remove').at(2);
+    I.click({ role: 'link', text: 'Details' }, '.panel').at(1);
   </example>
 
   For checkboxes, prefer I.checkOption/I.uncheckOption over I.click.

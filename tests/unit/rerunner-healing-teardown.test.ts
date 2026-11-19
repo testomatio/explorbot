@@ -29,11 +29,11 @@ function trackOnCalls(): { onCounts: Map<string, number>; restore: () => void } 
 
 // setupPlugins() registers the aiTrace plugin, which reads Container.helpers() and
 // codeceptjs output. Without a live codeceptjs container (this unit env) helpers is
-// null and output.warn is absent, so aiTrace throws. Neutralize both so it disables
+// null and output.print is absent, so aiTrace throws. Neutralize both so it disables
 // itself (finds no helper -> warns -> returns) instead of crashing.
 const originalHelpers = (Container as any).helpers;
 beforeAll(() => {
-  (codeceptOutput as any).warn ||= () => {};
+  (codeceptOutput as any).print ||= () => {};
   (Container as any).helpers = () => ({});
 });
 afterAll(() => {

@@ -111,6 +111,19 @@ Checks that page source does NOT contain expected text. Plain text only, same as
   I.dontSeeInSource('Session expired');
 </example>
 
+### I.seeInClipboard / I.seeClipboardEquals
+
+I.seeInClipboard(<text>)
+I.seeClipboardEquals(<text>)
+
+Checks what a copy action put into the system clipboard. Use for claims about copied content —
+a copy confirmation may be gone by the time it is checked, the clipboard is not.
+
+<example>
+  I.seeInClipboard('/invite/');
+  I.seeClipboardEquals('ABC-123');
+</example>
+
 ### Asserting the state of a control
 
 State means disabled, checked, readonly, required, selected, expanded. A presence assertion says

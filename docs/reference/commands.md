@@ -138,6 +138,7 @@ EXPLORBOT_AI_PROVIDER=openrouter \
 | `EXPLORBOT_DECISION_MODEL` | Turns on the decision model, as provider/model-id (openrouter/typesafe/jev-1.13 or typesafe/jev-latest); overrides ai.decisionModel |
 | `EXPLORBOT_OUTPUT` | Output root for states, plans, research, and reports. Defaults to the site dir under ~/.explorbot/sites |
 | `EXPLORBOT_EPHEMERAL` | Keep no state between runs — output goes to a fresh temp directory instead of the site dir |
+| `EXPLORBOT_SCREENCAST` | Record a video of every test; same as ai.agents.historian.screencast in a config file. "true", or a size like 1280x720 |
 | `EXPLORBOT_KNOWLEDGE` | Inline knowledge text, applied to every page |
 | `EXPLORBOT_KNOWLEDGE_FILE` | Path to a knowledge markdown file |
 | `EXPLORBOT_AUTH` | Auth details in free form (credentials, a token), kept in memory for the run and never written to disk; same as --auth |
@@ -145,6 +146,7 @@ EXPLORBOT_AI_PROVIDER=openrouter \
 | `EXPLORBOT_API_SPEC` | OpenAPI spec path for the API boat |
 | `EXPLORBOT_API_HEADERS` | Headers sent with every API request, one "Name: value" per line |
 | `EXPLORBOT_NO_BANNER` | Suppress the startup banner, for machine-readable output |
+| `EXPLORBOT_TELEMETRY` | Tracing as "langfuse=https://<public-key>:<secret-key>@<host>; site=<host-glob>,…", or "off". A boat reads its own prefix first (PRIMA_CLI_TELEMETRY, APIBOT_TELEMETRY) |
 | `EXPLORBOT_MAX_DURATION` | Wall-clock budget in minutes for an explore run; same as --max-duration |
 <!-- END env -->
 
@@ -677,12 +679,14 @@ Run it as `npx explorbot prima <command>` or through the standalone `prima` bin.
 | `prima do <instructions...>` | Run high-level instructions tester-style, one argument per instruction |
 | `prima pw <fn>` | Run a Playwright function expression against the open page |
 | `prima ask <question>` | Answer a question about the current page |
+| `prima state` | Capture the current page without acting on it: url, state, open overlay, and the aria, html and screenshot files. Needs no AI model |
 | `prima verify <assertion>` | Assert a statement about the current page (alias: `assert`) |
 | `prima research` | Map the current page and return verified locators |
 | `prima go <target>` | Navigate to a url, a path, or a page described in plain words |
 | `prima status <hash>` | Show the artifacts and page detail recorded for an earlier command |
 | `prima report` | Turn every command of a session into one html and markdown report |
 | `prima config` | Show the AI models prima runs on and the config file they come from |
+| `prima skill` | Print the skill that teaches a coding agent to use prima; `--install [local\|global]` writes it for Claude Code, Codex and OpenCode |
 | `prima browser {start\|stop\|status\|list}` | Manage the browsers prima drives |
 
 ### Choosing a command

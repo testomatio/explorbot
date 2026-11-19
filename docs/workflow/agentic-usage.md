@@ -55,6 +55,7 @@ No `init`, no config file, no project directory, no model IDs to look up. These 
 | `EXPLORBOT_DECISION_MODEL` | no | Turns on the decision model, as provider/model-id (openrouter/typesafe/jev-1.13 or typesafe/jev-latest); overrides ai.decisionModel |
 | `EXPLORBOT_OUTPUT` | no | Output root for states, plans, research, and reports. Defaults to the site dir under ~/.explorbot/sites |
 | `EXPLORBOT_EPHEMERAL` | no | Keep no state between runs — output goes to a fresh temp directory instead of the site dir |
+| `EXPLORBOT_SCREENCAST` | no | Record a video of every test; same as ai.agents.historian.screencast in a config file. "true", or a size like 1280x720 |
 | `EXPLORBOT_KNOWLEDGE` | no | Inline knowledge text, applied to every page |
 | `EXPLORBOT_KNOWLEDGE_FILE` | no | Path to a knowledge markdown file |
 | `EXPLORBOT_AUTH` | no | Auth details in free form (credentials, a token), kept in memory for the run and never written to disk; same as --auth |
@@ -62,6 +63,7 @@ No `init`, no config file, no project directory, no model IDs to look up. These 
 | `EXPLORBOT_API_SPEC` | no | OpenAPI spec path for the API boat |
 | `EXPLORBOT_API_HEADERS` | no | Headers sent with every API request, one "Name: value" per line |
 | `EXPLORBOT_NO_BANNER` | no | Suppress the startup banner, for machine-readable output |
+| `EXPLORBOT_TELEMETRY` | no | Tracing as "langfuse=https://<public-key>:<secret-key>@<host>; site=<host-glob>,…", or "off". A boat reads its own prefix first (PRIMA_CLI_TELEMETRY, APIBOT_TELEMETRY) |
 | `EXPLORBOT_MAX_DURATION` | no | Wall-clock budget in minutes for an explore run; same as --max-duration |
 <!-- END env -->
 

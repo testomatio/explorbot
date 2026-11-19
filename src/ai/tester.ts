@@ -348,6 +348,7 @@ export class Tester extends TaskAgent implements Agent {
           const result = await this.provider.invokeConversation(conversation, tools, {
             maxToolRoundtrips: 3,
             toolChoice: 'required',
+            agentName: 'tester',
             stopWhen: () => task.hasFinished || !!this.pendingReview,
           });
 
