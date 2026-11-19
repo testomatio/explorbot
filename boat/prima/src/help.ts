@@ -6,6 +6,7 @@ export const bareHelp = dedent(`
     prima check "<outcome>" --expected "<result>"   test a behaviour
     prima do "<step>" "<step>" ...                  drive the page
     prima ask | verify | research | ux | go | pw    read, assert, map, review, navigate, raw code
+    prima state                                     capture the page as it is, no AI
 
     prima skill              how to use prima well (for coding agents)
     prima skill --install    install that skill: local (default) or global

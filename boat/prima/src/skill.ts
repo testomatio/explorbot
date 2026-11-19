@@ -68,6 +68,7 @@ const SKILL = dedent(`
   - Put the app into a state → \`do "<step>" "<step>" ...\`
   - Is this true of the page now? → \`verify "<one claim>"\`
   - What does the page show? → \`ask "<question>"\`
+  - Where am I, is a dialog open, give me the files? → \`state\`: no AI, nothing touched; prints url, state, open overlay and paths to aria, html and screenshot
   - What is on this page, with locators → \`research\`
   - Is this area usable? → \`ux [focus]\`
   - Get to a page → \`go <url | path | page in words>\`

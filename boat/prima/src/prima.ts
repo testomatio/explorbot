@@ -486,6 +486,12 @@ export class Prima {
     return this.reportEnvelope(command, result, previousState, { answer: await this.answer(question, result) });
   }
 
+  async state(): Promise<EnvelopeData> {
+    const previousState = this.bot.stateManager().getCurrentState();
+    const result = await this.capturedResult(previousState, { screenshot: true });
+    return this.reportEnvelope('state', result, previousState, { overlay: result.overlay.describe() || 'none' });
+  }
+
   async verify(assertion: string): Promise<EnvelopeData> {
     const command = `verify ${assertion}`;
     const guard = await this.aiGuard(command);

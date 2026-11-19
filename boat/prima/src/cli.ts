@@ -9,7 +9,7 @@ import { safeFilename } from '../../../src/utils/strings.ts';
 import { clearActivityLine, trackActivityLine } from './activity-line.ts';
 import { type EnvelopeData, renderEnvelope } from './envelope.ts';
 import { bareHelp, installHelp, npxHint, skillPointer } from './help.ts';
-import { Prima, type PrimaOptions } from './prima.ts';
+import type { Prima, PrimaOptions } from './prima.ts';
 import { PrimaSkill } from './skill.ts';
 
 export const { version } = JSON.parse(readFileSync(new URL('../../../package.json', import.meta.url), 'utf8'));
@@ -61,7 +61,8 @@ function addCommonOptions(cmd: Command): Command {
     .option('--purpose <text>', 'What a series of commands is for; groups them into one Langfuse session, report and video');
 }
 
-function primaFor(options: any): Prima {
+async function primaFor(options: any): Promise<Prima> {
+  const { Prima } = await import('./prima.ts');
   Prima.applyEnv();
   if (options.ephemeral) process.env.EXPLORBOT_EPHEMERAL = '1';
   if (options.model) process.env.EXPLORBOT_AI_MODEL = options.model;
@@ -74,7 +75,7 @@ async function runPrima(options: any, command: string, run: (prima: Prima) => Pr
   const { browser = true, record = true } = opts;
   setQuietMode(!isVerboseMode());
   trackActivityLine();
-  const prima = primaFor(options);
+  const prima = await primaFor(options);
   const startedAt = Date.now();
 
   let envelope: EnvelopeData;
@@ -150,6 +151,10 @@ export function createPrimaCommands(name = 'prima'): Command {
     await runPrima(options, `ask ${question}`, (prima) => prima.ask(question));
   });
 
+  addCommonOptions(cmd.command('state').description('Capture the current page without acting on it: state, open overlay, aria, html and screenshot')).action(async (options) => {
+    await runPrima(options, 'state', (prima) => prima.state());
+  });
+
   addCommonOptions(cmd.command('verify <assertion>').alias('assert').description('Assert a statement about the current page')).action(async (assertion, options) => {
     await runPrima(options, `verify ${assertion}`, (prima) => prima.verify(assertion));
   });
@@ -173,7 +178,7 @@ export function createPrimaCommands(name = 'prima'): Command {
     .option('--json', 'Print the resolved config as JSON')
     .action(async (options) => {
       setQuietMode(!isVerboseMode());
-      const prima = primaFor(options);
+      const prima = await primaFor(options);
       console.log(await prima.config(options.json).catch((error: unknown) => browserErrorMessage(error)));
       await prima.stop().catch(() => {});
       process.exit(0);
@@ -187,11 +192,7 @@ export function createPrimaCommands(name = 'prima'): Command {
 
   addCommonOptions(cmd.command('report').description('Turn every command of a session into one html and markdown report')).action(async (options) => {
     setQuietMode(!isVerboseMode());
-    console.log(
-      await primaFor(options)
-        .report()
-        .catch((error: unknown) => browserErrorMessage(error))
-    );
+    console.log(await (await primaFor(options)).report().catch((error: unknown) => browserErrorMessage(error)));
     process.exit(0);
   });
 
@@ -204,16 +205,14 @@ export function createPrimaCommands(name = 'prima'): Command {
     .option('--hold <number=seconds>', 'Hold the last frame of one command for this long; repeatable', repeat, [])
     .action(async (options) => {
       setQuietMode(!isVerboseMode());
-      const output = await primaFor(options)
-        .video({ list: options.list, only: options.only, caption: options.caption, speed: options.speed, hold: options.hold })
-        .catch((error: unknown) => browserErrorMessage(error));
+      const output = await (await primaFor(options)).video({ list: options.list, only: options.only, caption: options.caption, speed: options.speed, hold: options.hold }).catch((error: unknown) => browserErrorMessage(error));
       console.log(output);
       process.exit(0);
     });
 
   addCommonOptions(cmd.command('browser').description('Open a playwright-cli session for prima to drive, or report the one already open')).action(async (options) => {
     try {
-      console.log(await primaFor(options).browserCheck());
+      console.log(await (await primaFor(options)).browserCheck());
     } catch (error) {
       console.error(browserErrorMessage(error));
       process.exit(1);
