@@ -40,7 +40,7 @@ ai: { decisionModel: { provider: 'openrouter', model: 'typesafe/jev-1.13', tool:
 
 `config.ts` holds only the field type. An unknown provider or a missing API key throws at startup, naming what to fix.
 
-Everything transport-specific lives in `src/ai/judge-provider.ts`: `endpointFor()` (a `switch` over `openrouter` and `typesafe`, each with its endpoint and API-key variable), the HTTP call, timeout, and the Noul/Choice wire format. That file is temporary: when the Vercel AI SDK supports decision models it is deleted and `decisionModel` becomes a regular provider-built model.
+Everything provider-specific lives in `src/ai/judge-provider.ts`: `sourceFor()` (a `switch` over `openrouter`, `typesafe`, `openai` and `google`, each with its API-key variable and the AI SDK provider that builds its decision model), and the one `experimental_decide` call with its timeout. The model is asked a `boolean` or a `choice` question; the SDK provider owns the wire format. The call makes one attempt, and a choice that comes back without probabilities is a failure.
 
 `Judge.fromConfig()` builds the judge; it reaches agents through `AgentDeps` and tools through `ToolDeps`.
 

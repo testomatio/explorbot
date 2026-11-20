@@ -16,7 +16,7 @@ flowchart LR
 
 ## Navigator Agent
 
-Handles browser interactions: clicks, form fills, and navigation.
+Handles browser interactions: clicks, drag and drop, form fills, and navigation.
 
 The Navigator runs CodeceptJS commands in the browser. When a selector fails, it tries other locator strategies and resolves the interaction without stopping the run. It remembers what worked and what didn't, so failed selectors don't keep killing your runs and tests survive UI changes.
 

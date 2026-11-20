@@ -146,6 +146,7 @@ EXPLORBOT_AI_PROVIDER=openrouter \
 | `EXPLORBOT_API_SPEC` | OpenAPI spec path for the API boat |
 | `EXPLORBOT_API_HEADERS` | Headers sent with every API request, one "Name: value" per line |
 | `EXPLORBOT_NO_BANNER` | Suppress the startup banner, for machine-readable output |
+| `EXPLORBOT_TELEMETRY` | Tracing as "langfuse=https://<public-key>:<secret-key>@<host>; site=<host-glob>,…", or "off". A boat reads its own prefix first (PRIMA_CLI_TELEMETRY, APIBOT_TELEMETRY) |
 | `EXPLORBOT_MAX_DURATION` | Wall-clock budget in minutes for an explore run; same as --max-duration |
 <!-- END env -->
 

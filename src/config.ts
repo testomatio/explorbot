@@ -5,10 +5,12 @@ import { pathToFileURL } from 'node:url';
 import { parseEnv } from 'node:util';
 import dedent from 'dedent';
 import matter from 'gray-matter';
+import micromatch from 'micromatch';
 import { EXPLORBOT_CONFIG_PATHS, type SiteRecord, findGlobalConfig, globalEnvPath, isGlobalConfigPath, loadSiteConfig, registerSite, resolveSiteTarget } from './global-config.js';
 import { getCliName } from './utils/cli-name.js';
-import { deepMerge } from './utils/merge.js';
 import { log, tag } from './utils/logger.js';
+import { deepMerge } from './utils/merge.js';
+import { parseSpecPairs } from './utils/spec.js';
 
 export const PROVIDERS: Record<string, ProviderInfo> = {
   openai: { envKey: 'OPENAI_API_KEY', keyUrl: 'https://platform.openai.com/api-keys', load: async () => (await import('@ai-sdk/openai')).createOpenAI() },
@@ -24,6 +26,7 @@ export const MODEL_ROLES: ModelRole[] = ['model', 'visionModel', 'agenticModel']
 
 let cachedOutputRoot: string | null = null;
 let runOutputDir: string | null = null;
+let boatEnvPrefix = 'EXPLORBOT_';
 
 interface PlaywrightConfig {
   browser: 'chromium' | 'firefox' | 'webkit';
@@ -283,6 +286,7 @@ export const EXPLORBOT_ENV_VARS: EnvVar[] = [
   { name: 'EXPLORBOT_API_SPEC', description: 'OpenAPI spec path for the API boat' },
   { name: 'EXPLORBOT_API_HEADERS', description: 'Headers sent with every API request, one "Name: value" per line', secret: true },
   { name: 'EXPLORBOT_NO_BANNER', description: 'Suppress the startup banner, for machine-readable output' },
+  { name: 'EXPLORBOT_TELEMETRY', description: 'Tracing as "langfuse=https://<public-key>:<secret-key>@<host>; site=<host-glob>,…", or "off". A boat reads its own prefix first (PRIMA_CLI_TELEMETRY, APIBOT_TELEMETRY)', secret: true },
   { name: 'EXPLORBOT_MAX_DURATION', description: 'Wall-clock budget in minutes for an explore run; same as --max-duration' },
 ];
 
@@ -614,7 +618,7 @@ export class ConfigParser {
 
     const merged = deepMerge(config, siteConfig);
     await resolveConfigModels(merged.ai);
-    resolveLangfuse(merged.ai);
+    resolveLangfuse(merged.ai, site.baseUrl);
 
     merged.dirs = { knowledge: 'knowledge', experience: 'experience', output: 'output' };
     merged.playwright = { ...merged.playwright, browser: merged.playwright?.browser || 'chromium', url: site.baseUrl };
@@ -739,7 +743,7 @@ export class ConfigParser {
       config.playwright.url = this.runBase.origin;
     }
 
-    resolveLangfuse(config.ai);
+    resolveLangfuse(config.ai, config.playwright?.url);
 
     return config;
   }
@@ -926,17 +930,27 @@ async function fillRecommendedModels(ai: AIConfig): Promise<void> {
   if (missing.length) tag('warning').log(`No recommended ${missing.join(' and ')} for ${provider} — set them explicitly as "provider/model-id"`);
 }
 
-export function resolveLangfuse(ai?: AIConfig): void {
+export function setBoatEnvPrefix(prefix: string): void {
+  boatEnvPrefix = prefix;
+}
+
+export function boatEnvName(name: string): string {
+  return name.replace('EXPLORBOT_', boatEnvPrefix);
+}
+
+export function resolveLangfuse(ai?: AIConfig, siteUrl?: string): void {
   if (!ai) return;
 
   const langfuse = ai.langfuse;
-  const publicKey = langfuse?.publicKey || process.env.LANGFUSE_PUBLIC_KEY;
-  const secretKey = langfuse?.secretKey || process.env.LANGFUSE_SECRET_KEY;
+  const telemetry = parseTelemetry(process.env[boatEnvName('EXPLORBOT_TELEMETRY')] || process.env.EXPLORBOT_TELEMETRY, siteUrl);
+  const publicKey = langfuse?.publicKey || telemetry.publicKey || process.env.LANGFUSE_PUBLIC_KEY;
+  const secretKey = langfuse?.secretKey || telemetry.secretKey || process.env.LANGFUSE_SECRET_KEY;
+  const configLangfuse = Boolean(langfuse?.publicKey && langfuse?.secretKey);
   ai.langfuse = {
-    enabled: langfuse?.enabled ?? Boolean(publicKey && secretKey),
+    enabled: langfuse?.enabled ?? (configLangfuse || (telemetry.enabled && Boolean(publicKey && secretKey))),
     publicKey,
     secretKey,
-    baseUrl: langfuse?.baseUrl || process.env.LANGFUSE_BASE_URL || process.env.LANGFUSE_HOST,
+    baseUrl: langfuse?.baseUrl || telemetry.baseUrl || process.env.LANGFUSE_BASE_URL || process.env.LANGFUSE_HOST,
   };
 }
 
@@ -1018,6 +1032,41 @@ function parseRunBase(baseUrl?: string): RunBase | null {
   if (!url) throw new Error(`Base URL must be a full URL like https://app.example.com/team/acme, got "${baseUrl}"`);
 
   return { origin: url.origin, path: url.pathname.replace(/\/+$/, ''), query: url.search };
+}
+
+function parseTelemetry(raw: string | undefined, siteUrl?: string) {
+  const telemetry: { enabled: boolean; publicKey?: string; secretKey?: string; baseUrl?: string } = { enabled: true };
+  if (!raw) return telemetry;
+  if (raw.trim().toLowerCase() === 'off') return { enabled: false };
+
+  for (const { key, value } of parseSpecPairs(raw)) {
+    if (key === 'site') {
+      const host = URL.parse(siteUrl || '')?.hostname;
+      const patterns = value
+        .split(',')
+        .map((pattern) => pattern.trim().toLowerCase())
+        .filter(Boolean);
+      telemetry.enabled = Boolean(host) && micromatch.isMatch(host!, patterns);
+      continue;
+    }
+
+    if (key !== 'langfuse') {
+      tag('warning').log(`Ignoring unknown telemetry key "${key}" — use langfuse or site`);
+      continue;
+    }
+
+    const url = URL.parse(value);
+    if (!url) {
+      tag('warning').log('Ignoring telemetry langfuse value — write it as https://<public-key>:<secret-key>@<host>');
+      continue;
+    }
+    telemetry.publicKey = decodeURIComponent(url.username) || undefined;
+    telemetry.secretKey = decodeURIComponent(url.password) || undefined;
+    url.username = '';
+    url.password = '';
+    telemetry.baseUrl = url.href.replace(/\/$/, '');
+  }
+  return telemetry;
 }
 
 type ModelRole = 'model' | 'visionModel' | 'agenticModel';

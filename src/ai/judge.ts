@@ -1,5 +1,5 @@
-import { clearActivity, setActivity } from '../activity.ts';
 import type { ActionResult } from '../action-result.ts';
+import { clearActivity, setActivity } from '../activity.ts';
 import type { AIConfig } from '../config.ts';
 import { Observability } from '../observability.ts';
 import { createDebug, tag } from '../utils/logger.ts';

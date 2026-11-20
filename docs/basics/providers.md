@@ -129,6 +129,7 @@ export default {
     model: openai('gpt-6-luna'),
     visionModel: openai('gpt-6-luna'),
     agenticModel: openai('gpt-6-luna'),
+    decisionModel: { provider: 'openai', model: 'gpt-6-luna' },
   },
 };
 ```
@@ -230,6 +231,7 @@ export default {
     model: google('gemini-3.1-flash-lite'),
     visionModel: google('gemini-3.1-flash-lite'),
     agenticModel: google('gemini-3.5-flash'),
+    decisionModel: { provider: 'google', model: 'gemini-decision-1' },
   },
 };
 ```
@@ -318,7 +320,7 @@ Keep `agenticModel` on another provider. Poolside's endpoint accepts `response_f
 
 A decision model is an optional fourth role. It does not generate text or call tools. It receives the current state and one closed question, and returns an answer with a probability. Explorbot uses it for narrow choices that would otherwise take a call to a larger model or a guess.
 
-Explorbot supports TypeSafe's Jev, reached through OpenRouter or through TypeSafe's API directly:
+Explorbot calls decision models through the Vercel AI SDK. It supports TypeSafe's Jev, reached through OpenRouter or through TypeSafe's API directly, OpenAI's Decisions API (`{ provider: 'openai', model: 'gpt-6-luna' }`) and Google's Gemini Decisions API (`{ provider: 'google', model: 'gemini-decision-1' }`). OpenRouter serves the OpenAI and Google models too, as `openai/gpt-6-luna-decisions` and `google/gemini-decision-1`.
 
 ```javascript
 export default {
@@ -332,7 +334,7 @@ export default {
 
 | Option | Type | Description |
 |--------|------|-------------|
-| `provider` | `'openrouter' \| 'typesafe'` | Authenticates with `OPENROUTER_API_KEY` or `TYPESAFE_API_KEY` |
+| `provider` | `'openrouter' \| 'typesafe' \| 'openai' \| 'google'` | Authenticates with `OPENROUTER_API_KEY`, `TYPESAFE_API_KEY`, `OPENAI_API_KEY` or `GOOGLE_GENERATIVE_AI_API_KEY` |
 | `model` | `string` | Model ID at that provider |
 | `tool` | `boolean` | Give Tester and Pilot a `judge` tool to ask their own questions. Default: `true` |
 | `direct` | `boolean` | Consult the model at Explorbot's built-in decision points. Default: `true` |

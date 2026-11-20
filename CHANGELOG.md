@@ -13,6 +13,12 @@
   prima browser clear
   ```
 
+### Environment Variables
+- **`EXPLORBOT_TELEMETRY`** — Sets up Langfuse tracing in one value: the host with both keys as the URL's user and password, an optional `site` list of host globs to trace, or `off`. Prima reads `PRIMA_CLI_TELEMETRY` and the API boat reads `APIBOT_TELEMETRY` first, so each boat can trace to its own project or not at all; put them in `~/.explorbot/.env` to set it for the whole machine. `ai.langfuse` in a config still wins, and `LANGFUSE_*` keep working as the fallback.
+  ```bash
+  EXPLORBOT_TELEMETRY="langfuse=https://pk-lf-xxx:sk-lf-yyy@cloud.langfuse.com; site=*.staging.example.com"
+  PRIMA_CLI_TELEMETRY=off
+  ```
 ### Changes
 - [Prima] `prima` with no arguments prints its version on the first line, also when run as `explorbot prima`. Its command list follows a regular check in order: `browser start`, `go`, `do`, `check`, `ux`, `video`, `browser stop`, then `state`, `verify`, `ask`, `research` and `pw` for a closer look at the page. `prima --help` lists commands in the same order.
 - [Prima] `prima browser start` prints the AI model in use on an `ai:` line, or says that none is configured.
@@ -25,6 +31,14 @@
 - [Prima] `prima` with no arguments, `--help`, `--version`, `skill` and `recommended-models` start in about 0.4 seconds instead of 1.5. The browser-driving code is loaded only by a command that uses it.
 
 ## 2026-11-18
+
+### Configuration
+- **`ai.decisionModel`** — Two more providers: OpenAI's Decisions API and Google's Gemini Decisions API, authenticated with `OPENAI_API_KEY` and `GOOGLE_GENERATIVE_AI_API_KEY`. For example `decisionModel: { provider: 'openai', model: 'gpt-6-luna' }` or `decisionModel: { provider: 'google', model: 'gemini-decision-1' }`. Both models are also served by OpenRouter: `{ provider: 'openrouter', model: 'google/gemini-decision-1' }`.
+- **`ai.recommendedModels`** — `openai` and `google` now recommend a decision model (`gpt-6-luna` and `gemini-decision-1`), so `recommendedModels: 'openai'` or `EXPLORBOT_AI_PROVIDER=google` turns the decision model on. Anthropic has no decision model and stays without one.
+
+### Changes
+- The decision model is now called through the Vercel AI SDK (`experimental_decide`) for every provider. `openrouter` and `typesafe` configs keep their provider names and API keys. On the `judge.decide` span the `judgeEndpoint` metadata is replaced by `judgeProvider`.
+- Requires `ai` 7.0.173 or newer. That version rejects a response without a tool call when a tool call was required; Explorbot retries such a request once with automatic tool choice, as it already did when the provider itself rejected it.
 
 ### New Commands
 - **`prima state`** — Captures the current page without acting on it and without calling an AI model. Prints the url, title and state hash, an `overlay:` line naming the open dialog or region (or `none`), and the paths to the aria tree, html and a fresh screenshot.
@@ -354,6 +368,20 @@
 - An `explore` run ends with an "Explore more" section suggesting `explorbot explore /` to cover the whole site, plus a link to the docs.
 - Init makes it explicit how to connect the AI: the `.env` template and the missing-key warning point to the provider's key page (e.g. `https://openrouter.ai/keys`) and show the exact line to paste — `OPENROUTER_API_KEY=<your-key>`; the setup wizard shows where to create the key too.
 
+## 2026-11-09
+
+### Changes
+- [Tester] Non-standard interaction tools — `dragAndDrop()` and `rightClick()` — are now explicit tools: off by default, so they never grow the Tester's context for ordinary scenarios. The Planner decides per scenario (via the decision model) whether a drag or a context menu is needed and arms the tools for exactly those scenarios; the choice is stored in the plan file (`tools:` line in the `<!-- test -->` comment) and survives re-runs. Mid-run, the Pilot can also arm the tools by including `ENABLE_TOOLS: <names>` in its instruction when a scenario turns out to need an interaction `click()`/`form()` cannot express.
+
+## 2026-10-08
+
+### Changes
+- [Tester] New `dragAndDrop()` tool, so scenarios that drag something onto something else can be tested: reordering lists and trees, moving cards between columns, dropping items into folders or zones — and dragging slider handles or drawing on canvas, where nothing can be addressed by a locator. The tool takes visual descriptions of what to grab and where to drop it, the vision model locates both points on the screenshot, and the drag runs as a real mouse press between them through the Playwright API. When the drop changes nothing, the same points are retried with HTML5 drag events — covering pages whose drag libraries cancel the mouse press.
+  ```javascript
+  dragAndDrop({ from: 'card labeled Bug 5 in the first column', to: 'column labeled Done' });   // move or reorder
+  ```
+  Copy-drag: pass the modifier (e.g. `Control`) to the tool; the generated test records the drag as a plain CodeceptJS `I.usePlaywrightTo` mouse sequence — so it replays and heals in rerun like any other step.
+
 ## 2026-10-06
 
 ### Configuration
@@ -367,8 +395,8 @@
 - OpenRouter's recommended agentic model is now Claude Haiku 5.5 (`anthropic/claude-haiku-5.5`).
 - OpenAI's recommended vision and agentic model is now GPT-6 Luna (`gpt-6-luna`).
 - `explorbot recommended-models` lists the decision model and its `EXPLORBOT_DECISION_MODEL` env line for providers that recommend one.
-### Changes
 - A `url` in the config file can now point to an app in a subfolder, such as `https://example.com/apps/todo/`. The folder becomes the base path for the run, just like `--base-url`: `explorbot start` opens the app itself, and relative paths such as `/active` resolve to `/apps/todo/active`. Previously every navigation was built as `https://example.com/apps/todo///…` and the Navigator had to guess its way back, sometimes ending on the wrong page. `--base-url` still takes precedence over the config `url`.
+- Generated tests no longer break on a locator that contains quotes, such as `li:has-text("Item 2")`: executed commands are recorded with the quotes escaped, so the test file stays valid code and reruns instead of failing to load.
 
 ## 2026-10-05
 

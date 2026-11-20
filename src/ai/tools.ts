@@ -1211,7 +1211,7 @@ function cap(text: string | undefined | null, max: number): string {
   return `${text.slice(0, max)}\n[...truncated; ${text.length - max} chars omitted...]`;
 }
 
-function throwIfFatalBrowserError(error: unknown): void {
+export function throwIfFatalBrowserError(error: unknown): void {
   if (isFatalBrowserError(error)) throw error;
 }
 
@@ -1240,7 +1240,7 @@ function transformContainsCommand(command: string): string {
   return command;
 }
 
-function errorText(error: unknown): string {
+export function errorText(error: unknown): string {
   if (error instanceof Error) return compactErrorMessage(error);
   return 'Unknown error occurred';
 }
@@ -1304,7 +1304,7 @@ export function formatExecutedSteps(steps: ExecutedStep[], requestedCount = step
   return lines.join('\n');
 }
 
-function hasObservablePageChange(data?: Record<string, any>): boolean {
+export function hasObservablePageChange(data?: Record<string, any>): boolean {
   if (!data?.pageDiff) return false;
   if (data.pageDiff.urlChanged === true) return true;
   if (data.pageDiff.ariaChanges) return true;
@@ -1361,6 +1361,7 @@ export function withdrawVisionTools(tools: Record<string, any>): void {
   if (!Stats.visionDisabled) return;
   Reflect.deleteProperty(tools, 'see');
   Reflect.deleteProperty(tools, 'visualClick');
+  Reflect.deleteProperty(tools, 'dragAndDrop');
 }
 
 export function clickFailureSuggestion(attempts: Array<{ error?: string }>): string {
