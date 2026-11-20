@@ -22,7 +22,7 @@ function buildOptions(subcommand: any): PrimaOptions {
     config: options.config,
     path: options.path,
     instance: options.instance,
-    session: options.session,
+    incognito: options.incognito,
     ephemeral: options.ephemeral,
     framework: options.framework,
     noVision: options.vision === false,
@@ -49,7 +49,7 @@ function addCommonOptions(cmd: Command): Command {
     .option('-c, --config <path>', 'Path to explorbot configuration file')
     .option('-p, --path <path>', 'Working directory path')
     .option('-i, --instance <name>', 'Browser instance to drive')
-    .option('--session [file]', 'Persist cookies and storage to a session file')
+    .option('--incognito', 'browser start opens a clean profile; by default one profile is kept per directory, so logins survive browser stop')
     .option('--model <model>', 'Main model, as provider/model-id')
     .option('--vision-model <model>', 'Model for screenshot analysis, as provider/model-id')
     .option('--ephemeral', 'Keep no state; config-free runs use a temp directory')
@@ -108,10 +108,107 @@ export function createPrimaCommands(name = 'prima'): Command {
     .allowUnknownOption()
     .action(() => {
       if (cmd.args.length) cmd.error(`error: unknown command '${cmd.args[0]}'`);
-      console.log(bareHelp);
+      console.log(`prima ${version}\n${bareHelp}`);
       if (npxHint()) console.log(`\n${npxHint()}`);
     });
   rootOptions = () => cmd.opts();
+
+  addCommonOptions(
+    cmd.command('browser').description('Report the playwright-cli session prima drives; start opens one through playwright-cli, stop closes it, clear removes the profile kept for this directory').argument('[action]', 'start, stop or clear', 'start').argument('[url]', 'Page to open on start')
+  ).action(async (action, url, options) => {
+    if (!['start', 'stop', 'clear'].includes(action)) cmd.error(`error: unknown browser action '${action}', use start, stop or clear`);
+    if (url) options.url = url;
+    try {
+      const prima = await primaFor(options);
+      if (action === 'stop') console.log(await prima.browserStop());
+      if (action === 'clear') console.log(await prima.browserClear());
+      if (action === 'start') console.log(await prima.browserCheck());
+    } catch (error) {
+      console.error(browserErrorMessage(error));
+      process.exit(1);
+    }
+    process.exit(0);
+  });
+
+  addCommonOptions(cmd.command('go <target>').description('Navigate to a url, a path, or a page described in plain words')).action(async (target, options) => {
+    if (URL.canParse(target)) options.baseUrl = target;
+    await runPrima(options, `go ${target}`, (prima) => prima.go(target));
+  });
+
+  addCommonOptions(cmd.command('do <instructions...>').description('Run instructions, one argument each'))
+    .option('--video', 'Record video for prima video; needs --purpose and ffmpeg')
+    .action(async (instructions, options) => {
+      await runPrima(options, `do ${instructions.join(' ')}`, (prima) => prima.do(instructions));
+    });
+
+  addCommonOptions(cmd.command('check <scenario>').description('Run a scenario as a test, with verification'))
+    .option('--expected <outcome>', 'An outcome the run must reach; repeat the flag for several', (value: string, all: string[]) => [...all, value], [])
+    .option('--video', 'Record video for prima video; needs --purpose and ffmpeg')
+    .action(async (scenario, options) => {
+      await runPrima(options, `check ${scenario}`, (prima) => prima.check(scenario, options.expected));
+    });
+
+  addCommonOptions(cmd.command('ux [focus]').description('Review the area being worked on for UX issues, across breakpoints')).action(async (focus, options) => {
+    await runPrima(options, ['ux', focus].filter(Boolean).join(' '), (prima) => prima.ux(focus));
+  });
+
+  const repeat = (value: string, all: string[]) => [...all, value];
+  addCommonOptions(cmd.command('video').description('Join the do and check recordings of a purpose into one video, with optional edits'))
+    .option('--list', 'List the commands of the purpose with their numbers')
+    .option('--only <numbers>', 'Commands to join, in this order, e.g. 0001,0003,0002; repeatable', repeat, [])
+    .option('--caption <number=text>', 'Caption shown over one command, e.g. 0002="Add to cart"; repeatable', repeat, [])
+    .option('--speed <number=factor>', 'Play one command faster (2) or slower (0.5); repeatable', repeat, [])
+    .option('--hold <number=seconds>', 'Hold the last frame of one command for this long; repeatable', repeat, [])
+    .action(async (options) => {
+      setQuietMode(!isVerboseMode());
+      const output = await (await primaFor(options)).video({ list: options.list, only: options.only, caption: options.caption, speed: options.speed, hold: options.hold }).catch((error: unknown) => browserErrorMessage(error));
+      console.log(output);
+      process.exit(0);
+    });
+
+  addCommonOptions(cmd.command('state').description('Capture the current page without acting on it: state, open overlay, aria, html and screenshot')).action(async (options) => {
+    await runPrima(options, 'state', (prima) => prima.state());
+  });
+
+  addCommonOptions(cmd.command('verify <assertion>').description('Assert one statement about the page as it is now, without acting on it')).action(async (assertion, options) => {
+    await runPrima(options, `verify ${assertion}`, (prima) => prima.verify(assertion));
+  });
+
+  addCommonOptions(cmd.command('ask <question>').description('Answer a question about the current page').option('--no-vision', 'Answer from page structure only, without a screenshot')).action(async (question, options) => {
+    await runPrima(options, `ask ${question}`, (prima) => prima.ask(question));
+  });
+
+  addCommonOptions(
+    cmd.command('research').description('Map the current page and return verified locators').option('--data', 'Include data extraction in the map').option('--deep', 'Expand hidden elements for a deeper map').option('--fresh', 'Ignore the cached map and research the page again')
+  ).action(async (options) => {
+    await runPrima(options, 'research', (prima) => prima.research({ data: options.data, deep: options.deep, fresh: options.fresh }));
+  });
+
+  addCommonOptions(cmd.command('pw <fn>').description('Run a Playwright function expression against the open page')).action(async (fn, options) => {
+    await runPrima(options, `pw ${fn}`, (prima) => prima.pw(fn));
+  });
+
+  addCommonOptions(cmd.command('status <hash>').description('Show the artifacts and page detail recorded for an earlier command')).action(async (hash, options) => {
+    await runPrima(options, `status ${hash}`, (prima) => prima.status(hash), { browser: false, record: false });
+  });
+
+  addCommonOptions(cmd.command('report').description('Turn every command of a session into one html and markdown report')).action(async (options) => {
+    setQuietMode(!isVerboseMode());
+    console.log(await (await primaFor(options)).report().catch((error: unknown) => browserErrorMessage(error)));
+    process.exit(0);
+  });
+
+  addCommonOptions(cmd.command('config').description('Show models, config file and paths used by this run'))
+    .option('--json', 'Print the resolved config as JSON')
+    .action(async (options) => {
+      setQuietMode(!isVerboseMode());
+      const prima = await primaFor(options);
+      console.log(await prima.config(options.json).catch((error: unknown) => browserErrorMessage(error)));
+      await prima.stop().catch(() => {});
+      process.exit(0);
+    });
+
+  RecommendedModelsCommand.register(cmd);
 
   cmd
     .command('skill')
@@ -129,96 +226,6 @@ export function createPrimaCommands(name = 'prima'): Command {
       if (!PrimaSkill.scopes().includes(scope)) cmd.error(`error: unknown install scope '${scope}', use ${PrimaSkill.scopes().join(' or ')}`);
       for (const file of PrimaSkill.install(scope)) console.log(`installed ${file}`);
     });
-
-  addCommonOptions(cmd.command('pw <fn>').description('Run a Playwright function expression against the open page')).action(async (fn, options) => {
-    await runPrima(options, `pw ${fn}`, (prima) => prima.pw(fn));
-  });
-
-  addCommonOptions(cmd.command('do <instructions...>').description('Run instructions, one argument each'))
-    .option('--video', 'Record this command for prima video; needs --purpose and ffmpeg')
-    .action(async (instructions, options) => {
-      await runPrima(options, `do ${instructions.join(' ')}`, (prima) => prima.do(instructions));
-    });
-
-  addCommonOptions(cmd.command('check <scenario>').description('Run a scenario as a test, with verification'))
-    .option('--expected <outcome>', 'An outcome the run must reach; repeat the flag for several', (value: string, all: string[]) => [...all, value], [])
-    .option('--video', 'Record this command for prima video; needs --purpose and ffmpeg')
-    .action(async (scenario, options) => {
-      await runPrima(options, `check ${scenario}`, (prima) => prima.check(scenario, options.expected));
-    });
-
-  addCommonOptions(cmd.command('ask <question>').description('Answer a question about the current page').option('--no-vision', 'Answer from page structure only, without a screenshot')).action(async (question, options) => {
-    await runPrima(options, `ask ${question}`, (prima) => prima.ask(question));
-  });
-
-  addCommonOptions(cmd.command('state').description('Capture the current page without acting on it: state, open overlay, aria, html and screenshot')).action(async (options) => {
-    await runPrima(options, 'state', (prima) => prima.state());
-  });
-
-  addCommonOptions(cmd.command('verify <assertion>').alias('assert').description('Assert a statement about the current page')).action(async (assertion, options) => {
-    await runPrima(options, `verify ${assertion}`, (prima) => prima.verify(assertion));
-  });
-
-  addCommonOptions(
-    cmd.command('research').description('Map the current page and return verified locators').option('--data', 'Include data extraction in the map').option('--deep', 'Expand hidden elements for a deeper map').option('--fresh', 'Ignore the cached map and research the page again')
-  ).action(async (options) => {
-    await runPrima(options, 'research', (prima) => prima.research({ data: options.data, deep: options.deep, fresh: options.fresh }));
-  });
-
-  addCommonOptions(cmd.command('ux [focus]').description('Review the area being worked on for UX issues, across breakpoints')).action(async (focus, options) => {
-    await runPrima(options, ['ux', focus].filter(Boolean).join(' '), (prima) => prima.ux(focus));
-  });
-
-  addCommonOptions(cmd.command('go <target>').description('Navigate to a url, a path, or a page described in plain words')).action(async (target, options) => {
-    if (URL.canParse(target)) options.baseUrl = target;
-    await runPrima(options, `go ${target}`, (prima) => prima.go(target));
-  });
-
-  addCommonOptions(cmd.command('config').description('Show models, config file and paths used by this run'))
-    .option('--json', 'Print the resolved config as JSON')
-    .action(async (options) => {
-      setQuietMode(!isVerboseMode());
-      const prima = await primaFor(options);
-      console.log(await prima.config(options.json).catch((error: unknown) => browserErrorMessage(error)));
-      await prima.stop().catch(() => {});
-      process.exit(0);
-    });
-
-  RecommendedModelsCommand.register(cmd);
-
-  addCommonOptions(cmd.command('status <hash>').description('Show the artifacts and page detail recorded for an earlier command')).action(async (hash, options) => {
-    await runPrima(options, `status ${hash}`, (prima) => prima.status(hash), { browser: false, record: false });
-  });
-
-  addCommonOptions(cmd.command('report').description('Turn every command of a session into one html and markdown report')).action(async (options) => {
-    setQuietMode(!isVerboseMode());
-    console.log(await (await primaFor(options)).report().catch((error: unknown) => browserErrorMessage(error)));
-    process.exit(0);
-  });
-
-  const repeat = (value: string, all: string[]) => [...all, value];
-  addCommonOptions(cmd.command('video').description('Join the do and check recordings of a purpose into one video, with optional edits'))
-    .option('--list', 'List the commands of the purpose with their numbers')
-    .option('--only <numbers>', 'Commands to join, in this order, e.g. 0001,0003,0002; repeatable', repeat, [])
-    .option('--caption <number=text>', 'Caption shown over one command, e.g. 0002="Add to cart"; repeatable', repeat, [])
-    .option('--speed <number=factor>', 'Play one command faster (2) or slower (0.5); repeatable', repeat, [])
-    .option('--hold <number=seconds>', 'Hold the last frame of one command for this long; repeatable', repeat, [])
-    .action(async (options) => {
-      setQuietMode(!isVerboseMode());
-      const output = await (await primaFor(options)).video({ list: options.list, only: options.only, caption: options.caption, speed: options.speed, hold: options.hold }).catch((error: unknown) => browserErrorMessage(error));
-      console.log(output);
-      process.exit(0);
-    });
-
-  addCommonOptions(cmd.command('browser').description('Open a playwright-cli session for prima to drive, or report the one already open')).action(async (options) => {
-    try {
-      console.log(await (await primaFor(options)).browserCheck());
-    } catch (error) {
-      console.error(browserErrorMessage(error));
-      process.exit(1);
-    }
-    process.exit(0);
-  });
 
   return cmd;
 }

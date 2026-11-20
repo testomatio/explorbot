@@ -1771,9 +1771,18 @@ describe('Prima browser instances', () => {
 
   test('browserCheck reports the open playwright-cli session', async () => {
     const { prima } = fakePrima();
+    (prima as any).loadConfig = async () => ({ ai: { model: { provider: 'openrouter.chat', modelId: 'acme/model-1' } } });
     (prima as any).discover = () => ({ match: { title: 'auth', endpoint: 'ws://127.0.0.1:4321/auth', workspaceDir: '' }, candidates: [] });
 
-    expect(await prima.browserCheck()).toBe('browser: playwright-cli session "auth" at ws://127.0.0.1:4321/auth');
+    expect(await prima.browserCheck()).toBe('browser: playwright-cli session "auth" at ws://127.0.0.1:4321/auth\nai: openrouter acme/model-1');
+  });
+
+  test('browserCheck says when no AI model is configured', async () => {
+    const { prima } = fakePrima();
+    (prima as any).loadConfig = async () => ({});
+    (prima as any).discover = () => ({ match: { title: 'auth', endpoint: 'ws://127.0.0.1:4321/auth', workspaceDir: '' }, candidates: [] });
+
+    expect(await prima.browserCheck()).toContain('ai: none');
   });
 
   test('browserCheck opens a playwright-cli session when none is open', async () => {
@@ -1788,7 +1797,7 @@ describe('Prima browser instances', () => {
       return { match: { title: 'default', endpoint: 'ws://127.0.0.1:4321/default', workspaceDir: '' }, candidates: [] };
     };
 
-    expect(await prima.browserCheck()).toBe('browser: playwright-cli session "default" at ws://127.0.0.1:4321/default');
+    expect(await prima.browserCheck()).toContain('browser: playwright-cli session "default" at ws://127.0.0.1:4321/default');
   });
 
   test('browserCheck opens a named session that is not open yet beside other sessions', async () => {
@@ -1804,7 +1813,7 @@ describe('Prima browser instances', () => {
       return { match: { title: 'mine', endpoint: 'ws://127.0.0.1:4321/mine', workspaceDir: '' }, candidates: [other] };
     };
 
-    expect(await prima.browserCheck()).toBe('browser: playwright-cli session "mine" at ws://127.0.0.1:4321/mine');
+    expect(await prima.browserCheck()).toContain('browser: playwright-cli session "mine" at ws://127.0.0.1:4321/mine');
   });
 
   test('browserCheck asks to pick a session when several are open and none is named', async () => {
@@ -1829,9 +1838,64 @@ describe('Prima browser instances', () => {
     await expect(prima.browserCheck()).rejects.toThrow(/playwright-cli open https:\/\/app.example.com/);
   });
 
-  test('session file is wired into the browser context options', () => {
-    const prima = new Prima({ session: 'output/session.json' });
-    expect((prima as any).bot.options.session).toBe('output/session.json');
+  test('browserStop closes the named session through playwright-cli', async () => {
+    const { prima } = fakePrima({ pwSession: 'mine' });
+    const calls: string[][] = [];
+    (prima as any).playwrightCli = (args: string[]) => {
+      calls.push(args);
+      return { status: 0 };
+    };
+
+    expect(await prima.browserStop()).toBe('browser: playwright-cli session closed');
+    expect(calls).toEqual([['close']]);
+  });
+
+  test('browserStop fails when playwright-cli close fails', async () => {
+    const { prima } = fakePrima();
+    (prima as any).playwrightCli = () => ({ status: 1 });
+
+    await expect(prima.browserStop()).rejects.toThrow(/playwright-cli close failed/);
+  });
+
+  test('browser start opens the profile kept for this directory', () => {
+    const { prima } = fakePrima({ url: 'https://app.example.com', path: '/work/shop' });
+    const calls: string[][] = [];
+    (prima as any).playwrightCli = (args: string[]) => calls.push(args);
+
+    (prima as any).openPlaywrightSession();
+    expect(calls).toEqual([['open', `--profile=${(prima as any).profileDir()}`, 'https://app.example.com']]);
+    expect(path.basename((prima as any).profileDir())).toMatch(/^shop_default_[0-9a-f]{8}$/);
+  });
+
+  test('each directory and each session gets its own profile', () => {
+    const profile = (options: Record<string, unknown>) => (fakePrima(options).prima as any).profileDir();
+
+    expect(profile({ path: '/work/shop' })).toBe(profile({ path: '/work/shop' }));
+    expect(profile({ path: '/work/shop' })).not.toBe(profile({ path: '/other/shop' }));
+    expect(profile({ path: '/work/shop' })).not.toBe(profile({ path: '/work/shop', pwSession: 'admin' }));
+  });
+
+  test('browser clear closes the session and removes the kept profile', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'prima-profile-'));
+    const { prima } = fakePrima();
+    const calls: string[][] = [];
+    (prima as any).profileDir = () => dir;
+    (prima as any).playwrightCli = (args: string[]) => calls.push(args);
+
+    expect(await prima.browserClear()).toBe(`browser: profile removed (${dir})`);
+    expect(calls).toEqual([['close']]);
+    expect(existsSync(dir)).toBe(false);
+    expect(await prima.browserClear()).toContain('no profile kept');
+    expect(calls).toHaveLength(1);
+  });
+
+  test('--incognito opens a clean profile', () => {
+    const { prima } = fakePrima({ url: 'https://app.example.com', incognito: true });
+    const calls: string[][] = [];
+    (prima as any).playwrightCli = (args: string[]) => calls.push(args);
+
+    (prima as any).openPlaywrightSession();
+    expect(calls).toEqual([['open', 'https://app.example.com']]);
   });
 });
 

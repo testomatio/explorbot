@@ -23,16 +23,17 @@ Requires Node.js 22.13+. Playwright browsers come from `npx playwright install c
 
 ## Session
 
-Prima drives a browser opened by `playwright-cli` and never launches one itself:
+Prima drives a browser opened by `playwright-cli` and never launches one itself. `browser start` and `browser stop` hand over to `playwright-cli open` and `playwright-cli close`:
 
 ```bash
-playwright-cli open https://app.example.com
-prima-cli browser
+prima-cli browser start https://app.example.com
 prima-cli check "the settings page saves a changed theme"
-playwright-cli close
+prima-cli browser stop
 ```
 
-`browser` checks that a `playwright-cli` session is open and fails with the command to open one when it is not.
+`browser start` reports the session when one is already open. `--pw-session <title>` names the session to open or close. A session you opened with `playwright-cli open` yourself works the same way.
+
+`browser start` keeps one browser profile per directory, so a login survives `browser stop` and the next `browser start` in that directory is already signed in. Profiles live in `~/.explorbot/profiles`, one per directory and `--pw-session`. `--incognito` opens a clean profile instead; `browser clear` closes the session and removes the kept one.
 
 ## Commands
 
@@ -50,7 +51,9 @@ playwright-cli close
 | `status <hash>` | Show the artifacts and page detail recorded for an earlier command |
 | `report` | Turn every command of a session into one html and markdown report |
 | `video` | Join and edit the `do` and `check` recordings of a purpose into one video |
-| `browser` | Check that a playwright-cli session is open, and fail with the command to open one when it is not |
+| `browser start [url]` | Open a playwright-cli session for prima to drive, or report the one already open |
+| `browser stop` | Close the playwright-cli session |
+| `browser clear` | Close the session and remove the profile kept for this directory |
 | `config` | Show models, config file and paths used by this run |
 | `skill` | Print the skill that teaches a coding agent to use prima, or install it with `--install` |
 

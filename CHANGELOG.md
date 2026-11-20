@@ -2,6 +2,17 @@
 
 ## 2026-11-19
 
+### New Commands
+- **`prima browser start [url]` / `prima browser stop`** — Open and close the browser prima drives. Both hand over to playwright-cli: `start` runs `playwright-cli open`, or reports the session when one is already open, and `stop` runs `playwright-cli close`. `--pw-session <title>` names the session. A bare `prima browser` still behaves as `start`.
+  ```bash
+  prima browser start https://app.example.com
+  prima browser stop
+  ```
+- **`prima browser clear`** — Close the session and remove the browser profile kept for this directory, with its logins.
+  ```bash
+  prima browser clear
+  ```
+
 ### Environment Variables
 - **`EXPLORBOT_TELEMETRY`** — Sets up Langfuse tracing in one value: the host with both keys as the URL's user and password, an optional `site` list of host globs to trace, or `off`. Prima reads `PRIMA_CLI_TELEMETRY` and the API boat reads `APIBOT_TELEMETRY` first, so each boat can trace to its own project or not at all; put them in `~/.explorbot/.env` to set it for the whole machine. `ai.langfuse` in a config still wins, and `LANGFUSE_*` keep working as the fallback.
   ```bash
@@ -9,6 +20,14 @@
   PRIMA_CLI_TELEMETRY=off
   ```
 ### Changes
+- [Prima] `prima` with no arguments prints its version on the first line, also when run as `explorbot prima`. Its command list follows a regular check in order: `browser start`, `go`, `do`, `check`, `ux`, `video`, `browser stop`, then `state`, `verify`, `ask`, `research` and `pw` for a closer look at the page. `prima --help` lists commands in the same order.
+- [Prima] `prima browser start` prints the AI model in use on an `ai:` line, or says that none is configured.
+- [Prima] `prima browser start` keeps one browser profile per directory, so a login survives `browser stop` and the next start in that directory is already signed in. Profiles live in `~/.explorbot/profiles`, one per directory and `--pw-session`. `--incognito` opens a clean profile:
+  ```bash
+  prima browser start https://app.example.com --incognito
+  ```
+- [Prima] The `--session` option of prima is removed. It never took effect on a playwright-cli browser.
+- [Prima] The `assert` alias of `prima verify` is removed. Use `prima verify`.
 - [Prima] `prima` with no arguments, `--help`, `--version`, `skill` and `recommended-models` start in about 0.4 seconds instead of 1.5. The browser-driving code is loaded only by a command that uses it.
 
 ## 2026-11-18

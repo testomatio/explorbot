@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { tool } from 'ai';
@@ -15,9 +15,9 @@ import { actionRule, locatorRule } from '../../../src/ai/rules.ts';
 import { createAgentTools, createCodeceptJSTools, createRefTools } from '../../../src/ai/tools.ts';
 import { getAliveEndpoint, listInstances } from '../../../src/browser-server.ts';
 import { ConfigCommand } from '../../../src/commands/config-command.ts';
-import { ConfigMissingError, ConfigParser, EXPLORBOT_ENV_VARS, type ExplorbotConfig, boatEnvName, outputPath, providerKeyHelp, setBoatEnvPrefix } from '../../../src/config.ts';
+import { ConfigMissingError, ConfigParser, EXPLORBOT_ENV_VARS, type ExplorbotConfig, boatEnvName, modelName, modelProvider, outputPath, providerKeyHelp, setBoatEnvPrefix } from '../../../src/config.ts';
 import { ExplorBot } from '../../../src/explorbot.ts';
-import { findSiteWith, listSites } from '../../../src/global-config.ts';
+import { findSiteWith, globalDir, listSites } from '../../../src/global-config.ts';
 import { Reporter } from '../../../src/reporter.ts';
 import type { WebPageState } from '../../../src/state-manager.ts';
 import { Stats } from '../../../src/stats.ts';
@@ -86,7 +86,6 @@ export class Prima {
       config: options.config,
       path: options.path,
       baseUrl: this.configBaseUrl(),
-      session: options.session,
       instance: options.instance,
       headless: true,
       optionalAi: true,
@@ -592,7 +591,7 @@ export class Prima {
   }
 
   async browserCheck(): Promise<string> {
-    await this.loadConfig();
+    const config = await this.loadConfig();
     let discovery = await this.discover();
     if (!discovery.match && (this.pwSessionTitle() || !discovery.candidates.length)) {
       this.openPlaywrightSession();
@@ -601,7 +600,22 @@ export class Prima {
     const { match, candidates, browser } = discovery;
     await browser?.close().catch(() => {});
     if (!match) throw this.missingSessionError(candidates);
-    return `browser: ${this.attachmentLabel(match)} at ${match.endpoint}`;
+    let ai = 'none, only pw and state work until a provider API key is exported';
+    if (config.ai?.model) ai = `${modelProvider(config.ai.model)} ${modelName(config.ai.model)}`;
+    return `browser: ${this.attachmentLabel(match)} at ${match.endpoint}\nai: ${ai}`;
+  }
+
+  async browserStop(): Promise<string> {
+    if (this.playwrightCli(['close']).status) throw new Error('playwright-cli close failed, see its output above.');
+    return 'browser: playwright-cli session closed';
+  }
+
+  async browserClear(): Promise<string> {
+    const dir = this.profileDir();
+    if (!existsSync(dir)) return `browser: no profile kept for this directory (${dir})`;
+    this.playwrightCli(['close']);
+    rmSync(dir, { recursive: true, force: true });
+    return `browser: profile removed (${dir})`;
   }
 
   async config(json?: boolean): Promise<string> {
@@ -840,15 +854,28 @@ export class Prima {
 
   private openPlaywrightSession(): void {
     const args = ['open'];
-    const title = this.pwSessionTitle();
-    if (title) args.unshift(`-s=${title}`);
+    if (!this.options.incognito) args.push(`--profile=${this.profileDir()}`);
     const url = this.options.url || this.configBaseUrl();
     if (url) args.push(url);
+    this.playwrightCli(args);
+  }
+
+  private profileDir(): string {
+    const dir = path.resolve(this.options.path || '.');
+    const hash = createHash('sha1').update(dir).digest('hex').slice(0, 8);
+    const session = this.pwSessionTitle() || 'default';
+    return path.join(globalDir(), 'profiles', safeFilename(`${path.basename(dir)}-${session}-${hash}`));
+  }
+
+  private playwrightCli(command: string[]) {
+    const args = [...command];
+    const title = this.pwSessionTitle();
+    if (title) args.unshift(`-s=${title}`);
 
     const stdio: any = ['ignore', 'ignore', 'inherit'];
     const local = spawnSync('playwright-cli', args, { stdio });
-    if (!local.error) return;
-    spawnSync('npx', ['-y', '@playwright/cli', ...args], { stdio });
+    if (!local.error) return local;
+    return spawnSync('npx', ['-y', '@playwright/cli', ...args], { stdio });
   }
 
   private pwSessionTitle(): string | undefined {
@@ -1468,7 +1495,7 @@ export interface PrimaOptions {
   config?: string;
   path?: string;
   instance?: string;
-  session?: string | boolean;
+  incognito?: boolean;
   ephemeral?: boolean;
   framework?: 'codeceptjs' | 'playwright';
   noVision?: boolean;

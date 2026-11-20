@@ -1,19 +1,32 @@
 import dedent from 'dedent';
 
 export const bareHelp = dedent(`
-  prima — declarative browser testing on top of playwright-cli
+  Declarative browser testing on top of playwright-cli
 
-    prima check "<outcome>" --expected "<result>"   test a behaviour
-    prima do "<step>" "<step>" ...                  drive the page
-    prima ask | verify | research | ux | go | pw    read, assert, map, review, navigate, raw code
-    prima state                                     capture the page as it is, no AI
+    prima browser start <url>                       open browser (playwright-cli), print AI model
+    prima go "<page>"                               navigate: url, path or page name
+    prima do "<step>" "<step>" ...                  act on the page
+    prima check "<outcome>" --expected "<result>"   act, then judge the result
+    prima ux [focus]                                UX review
+    prima video --purpose "<name>"                  join the recordings of that purpose
+    prima browser stop                              close browser
 
-    prima skill              how to use prima well (for coding agents)
-    prima skill --install    install that skill: local (default) or global
+    do/check options:
+      --purpose "<name>"   group commands into one session, report and video
+      --video              record video; needs --purpose and ffmpeg
+
+    prima state                    page as it is: overlay, aria, html, screenshot (no AI)
+    prima verify "<statement>"     assert a statement, no actions
+    prima ask "<question>"         answer a question about the page
+    prima research                 map the page into locators
+    prima pw "<fn>"                run a Playwright function (no AI)
+
+    prima skill              usage guide for coding agents
+    prima skill --install    install it: local (default) or global
     prima --help             all commands and options
 `);
 
-export const skillPointer = 'How to use these well: prima skill';
+export const skillPointer = 'Usage guide: prima skill';
 
 export const installHelp = dedent(`
   Install this skill for Claude Code, Codex and OpenCode:
