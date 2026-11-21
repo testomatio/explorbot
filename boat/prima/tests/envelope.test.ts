@@ -174,6 +174,31 @@ describe('renderEnvelope', () => {
     expect(out).toContain('not running');
   });
 
+  test('a verdict opens the result, with its reason', () => {
+    const out = renderEnvelope({ ...base, ok: false, verdict: { status: 'inconclusive', reason: 'the run stopped after step 11 without finishing' } });
+    expect(out.split('\n')[1]).toBe('verdict: INCONCLUSIVE — the run stopped after step 11 without finishing');
+    expect(renderEnvelope({ ...base, verdict: { status: 'passed' } })).toContain('### Result\nverdict: PASSED\nok: true');
+  });
+
+  test('a purpose history lists each command with its verdict and hash', () => {
+    const out = renderEnvelope({
+      ...base,
+      history: {
+        purpose: 'checkout',
+        commands: [
+          { number: '0001', verdict: 'failed', title: 'check sign in', hash: 'e7c27d2fcb10634', detail: "I.click('Sign in') — click timed out" },
+          { number: '0002', verdict: 'passed', title: 'check the cart total', hash: 'c2063842167525c' },
+        ],
+      },
+    });
+    expect(out).toContain("### History: checkout\n#0001 FAILED       check sign in  e7c27d2fcb10634\n      I.click('Sign in') — click timed out\n#0002 PASSED       check the cart total  c2063842167525c");
+  });
+
+  test('a state whose page was never captured says so instead of naming an empty file', () => {
+    const out = renderEnvelope({ ...base, states: [{ url: '/new', aria: '' }] });
+    expect(out).toContain('1. /new\n   aria: not captured');
+  });
+
   test('the status hash is offered as the way to reach details', () => {
     const out = renderEnvelope({ ...base, status: 'abc123def456789', artifacts: undefined });
     expect(out).toContain('details: prima status abc123def456789');

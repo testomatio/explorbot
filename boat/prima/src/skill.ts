@@ -85,7 +85,7 @@ const SKILL = dedent(`
 
   ## Read the reply
 
-  - \`ok\` in \`### Result\` is the verdict, and the exit code follows it; do not re-check a PASSED outcome
+  - \`verdict:\` opens \`### Result\` on \`check\` and \`do\`: PASSED, FAILED, or INCONCLUSIVE when the run settled nothing about the app (re-run it rather than reporting a bug); the exit code follows \`ok\`; do not re-check a PASSED outcome
   - \`not verified\`: never checked, not false
   - \`CONTRADICTION\`: screenshot and run log disagree and the page could not settle it; treat as an app bug, read \`### Artifacts\`
   - \`resolved:\` under an outcome: a dispute was settled, the verdict stands

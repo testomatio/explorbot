@@ -67,6 +67,7 @@ function commandTest(envelope: EnvelopeData, durationMs: number): any {
   if (envelope.failure) test.error = { message: envelope.failure.error };
   if (envelope.artifacts?.video) test.artifacts = [envelope.artifacts.video];
   if (envelope.purpose) test.meta = { purpose: envelope.purpose.text, number: envelope.purpose.number };
+  if (envelope.verdict) test.meta = { ...test.meta, verdict: envelope.verdict.status };
   return test;
 }
 

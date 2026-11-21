@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-11-22
+
+### New Commands
+- **`prima status --purpose <text>`** — Show the current page, then every command run with that purpose, numbered, with its verdict, the first failed step and the hash to open it with `prima status <hash>`. The history prints even when no browser is open.
+  ```bash
+  prima status --purpose "checkout"
+  ```
+
+### Changes
+- [Prima] `check` and `do` open `### Result` with a `verdict:` line: PASSED, FAILED, or INCONCLUSIVE when the run settled nothing about the app, such as stopping before it finished, verifying no outcome, or a failed model call. The verdict is kept in the purpose log.
+- [Prima] `prima status <hash>` prints the full output of the earlier command again, with steps, outcomes and failure, not just the page.
+- [Prima] A console error raised during a `check` or `do` step is listed under that step. Only errors outside any step stay under page issues.
+- [Prima] While `--video` records a `check`, each step shows `@12.4s`, its offset into that command's `video.webm`, for cutting with `ffmpeg -ss`/`-to`.
+- [Prima] `--json` prints the result of any command as JSON instead of text.
+  ```bash
+  prima status 1a2b3c4 --json
+  ```
+- [Prima] `check` without `--expected` splits the scenario into the outcomes it asks to confirm and verifies each one separately.
+- [Prima] A state's aria file keeps its latest non-empty capture; a state never captured shows `aria: not captured`.
+
 ## 2026-11-19
 
 ### New Commands

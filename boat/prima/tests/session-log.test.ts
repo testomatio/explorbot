@@ -150,6 +150,22 @@ describe('prima purpose log', () => {
     expect(await prima.video({ only: ['0001,0007'] })).toContain('No recording for #0001, #0007');
   });
 
+  test('status --purpose shows every command of the purpose with its verdict, even with no browser', async () => {
+    const prima = new Prima({ purpose: 'checkout flow' });
+    spyOn(prima as any, 'loadRecordedConfig').mockResolvedValue({});
+    spyOn(prima, 'start').mockRejectedValue(new Error('no playwright-cli session is open'));
+    spyOn(prima, 'toolFailureEnvelope').mockImplementation(async (command: string) => envelope({ ok: false, command }));
+    prima.record(envelope({ verdict: { status: 'passed' } }), 100);
+    prima.record(envelope({ ok: false, command: 'check "the cart total updates"', status: 'def456', verdict: { status: 'inconclusive' }, failure: { error: 'the run did not complete' } }), 100);
+
+    const status = await prima.purposeStatus();
+
+    expect(status.history?.commands).toEqual([
+      { number: '0001', verdict: 'passed', title: 'do "open the account menu"', hash: 'abc123' },
+      { number: '0002', verdict: 'inconclusive', title: 'check "the cart total updates"', hash: 'def456', detail: 'the run did not complete' },
+    ]);
+  });
+
   test('--video without --purpose is refused before anything runs', async () => {
     await expect(new Prima({ video: true }).startVideo()).rejects.toThrow('--purpose');
   });

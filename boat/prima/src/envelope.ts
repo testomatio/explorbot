@@ -17,6 +17,8 @@ const EXPECTATION_LABELS = {
   contradiction: 'CONTRADICTION',
 };
 
+const VERDICT_LABELS = { passed: 'PASSED', failed: 'FAILED', inconclusive: 'INCONCLUSIVE' };
+
 export interface InstanceInfo {
   name: string;
   tabs: number;
@@ -27,13 +29,14 @@ export interface InstanceInfo {
 
 export interface EnvelopeData {
   ok: boolean;
+  verdict?: Verdict;
   command: string;
   purpose?: { text: string; number: string };
   used?: string[];
   page: { url: string; previousUrl?: string; redirectedFrom?: string; title: string; state: string; visits: number };
   overlay?: string;
   changes?: string | null;
-  steps?: Array<{ label: string; ok: boolean; unconfirmed?: boolean; proof: string; state?: number }>;
+  steps?: Array<{ label: string; ok: boolean; unconfirmed?: boolean; proof: string; state?: number; at?: number }>;
   states?: Array<{ url: string; aria: string }>;
   expectations?: SettledExpectation[];
   warning?: string;
@@ -47,10 +50,26 @@ export interface EnvelopeData {
   instance: InstanceInfo;
   status?: string;
   artifacts?: ArtifactPaths;
+  history?: { purpose: string; commands: HistoryEntry[] };
 }
 
 export function renderEnvelope(data: EnvelopeData): string {
-  const sections = [renderResult(data), renderPage(data), renderValue(data), renderChanges(data), renderSteps(data), renderStates(data), renderExpectations(data), renderWarning(data), renderOutcome(data), renderPageIssues(data), ...renderFailure(data), renderInstance(data), renderArtifacts(data)];
+  const sections = [
+    renderResult(data),
+    renderPage(data),
+    renderValue(data),
+    renderChanges(data),
+    renderSteps(data),
+    renderStates(data),
+    renderExpectations(data),
+    renderWarning(data),
+    renderOutcome(data),
+    renderPageIssues(data),
+    ...renderFailure(data),
+    renderHistory(data),
+    renderInstance(data),
+    renderArtifacts(data),
+  ];
   return sections.filter((section) => section).join('\n\n');
 }
 
@@ -91,6 +110,7 @@ export function readArtifacts(dir: string): ArtifactPaths {
 
 function renderResult(data: EnvelopeData): string {
   const lines = [`ok: ${data.ok}`, `command: ${data.command}`];
+  if (data.verdict) lines.unshift(verdictLine(data.verdict));
   if (data.purpose) lines.push(`purpose: ${data.purpose.text} #${data.purpose.number}`);
   if (data.used?.length) lines.push(`used: ${data.used.join('; ')}`);
   return section('Result', lines.join('\n'));
@@ -128,17 +148,19 @@ function renderSteps(data: EnvelopeData): string | null {
     if (step.ok) mark = 'ok  ';
     if (step.unconfirmed) mark = '??  ';
     let label = step.label;
+    if (step.at !== undefined) label = `@${step.at.toFixed(1)}s ${label}`;
     if (step.state) label += `  // state ${step.state}`;
     lines.push(`${index + 1}. ${mark} ${label}`);
     for (const line of (step.proof || '').split('\n').filter(Boolean)) lines.push(`      ${line}`);
   });
+  if (data.steps.some((step) => step.at !== undefined)) lines.push('', `@ is seconds into this command's ${VIDEO_FILE}`);
   if (data.stepFiles) lines.push('', `page after each step: ${data.stepFiles}/<n>-<step>.{${Object.values(STEP_FILES).join(',')}}`);
   return section('Steps', lines.join('\n'));
 }
 
 function renderStates(data: EnvelopeData): string | null {
   if (!data.states?.length) return null;
-  return section('States', data.states.map((state, index) => `${index + 1}. ${state.url}\n   aria: ${state.aria}`).join('\n'));
+  return section('States', data.states.map((state, index) => `${index + 1}. ${state.url}\n   aria: ${state.aria || 'not captured'}`).join('\n'));
 }
 
 function renderExpectations(data: EnvelopeData): string | null {
@@ -186,7 +208,7 @@ function renderOutcome(data: EnvelopeData): string | null {
 
 function renderPageIssues(data: EnvelopeData): string | null {
   if (!data.pageIssues?.length) return null;
-  return section('Page issues', ['Noticed on the page while running, unrelated to the steps or the outcome:', ...data.pageIssues.map((issue) => `- ${issue}`)].join('\n'));
+  return section('Page issues', ['Noticed on the page while running, outside any step:', ...data.pageIssues.map((issue) => `- ${issue}`)].join('\n'));
 }
 
 function renderFailure(data: EnvelopeData): Array<string | null> {
@@ -197,6 +219,26 @@ function renderFailure(data: EnvelopeData): Array<string | null> {
 function renderCompactAria(compactAria?: string): string | null {
   if (!compactAria) return null;
   return section('Current page (compact ARIA)', compactAria);
+}
+
+function renderHistory(data: EnvelopeData): string | null {
+  if (!data.history) return null;
+  const title = `History: ${data.history.purpose}`;
+  if (!data.history.commands.length) return section(title, 'no command has run with this purpose yet');
+
+  const width = Math.max(...Object.values(VERDICT_LABELS).map((label) => label.length));
+  const lines: string[] = [];
+  for (const command of data.history.commands) {
+    lines.push(`#${command.number} ${VERDICT_LABELS[command.verdict].padEnd(width)} ${command.title}  ${command.hash}`);
+    if (command.detail) lines.push(`      ${command.detail}`);
+  }
+  lines.push('', 'full output of one: prima status <hash>');
+  return section(title, lines.join('\n'));
+}
+
+function verdictLine(verdict: Verdict): string {
+  if (!verdict.reason) return `verdict: ${VERDICT_LABELS[verdict.status]}`;
+  return `verdict: ${VERDICT_LABELS[verdict.status]} — ${verdict.reason}`;
 }
 
 function renderInstance(data: EnvelopeData): string | null {
@@ -245,4 +287,17 @@ export interface ArtifactPaths {
   network?: string;
   video?: string;
   files?: string[];
+}
+
+export interface Verdict {
+  status: keyof typeof VERDICT_LABELS;
+  reason?: string;
+}
+
+export interface HistoryEntry {
+  number: string;
+  verdict: Verdict['status'];
+  title: string;
+  hash: string;
+  detail?: string;
 }

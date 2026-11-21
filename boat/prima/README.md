@@ -48,7 +48,8 @@ prima-cli browser stop
 | `ux [focus]` | Review the area being worked on for UX issues at the current width, 768px and 375px |
 | `go <target>` | Navigate to a url, a path, or a page described in plain words |
 | `pw <fn>` | Run a Playwright function expression against the open page |
-| `status <hash>` | Show the artifacts and page detail recorded for an earlier command |
+| `status <hash>` | Print the output of an earlier command again, with its artifacts |
+| `status --purpose <text>` | Show the current page and every command run with that purpose, with its verdict |
 | `report` | Turn every command of a session into one html and markdown report |
 | `video` | Join and edit the `do` and `check` recordings of a purpose into one video |
 | `browser start [url]` | Open a playwright-cli session for prima to drive, or report the one already open |
@@ -60,6 +61,10 @@ prima-cli browser stop
 `check` takes an outcome rather than a click path. It runs on the page you are already on and never reloads it, so an open dialog survives the check. Each `--expected` outcome comes back as PASSED, FAILED, CONTRADICTION or not verified — settled against a screenshot of the whole page, because what a user can see is the proof.
 
 `do` accounts for every instruction you gave: each is reported as ok, FAIL or ??. Nothing runs past the last instruction.
+
+`check` and `do` open with a `verdict:` line: PASSED, FAILED, or INCONCLUSIVE when the run could not settle anything about the app, such as when it stopped before finishing or the model call failed. A console error raised during a step is listed under that step.
+
+`--json` prints the result as JSON instead of text, on every command that prints a result.
 
 `ux` reviews one area, not the whole page. A named focus is shown first with at most one click, which may open a dialog, tab or section or go to another page; nothing is submitted, and when no click leads to it the command fails without reviewing. The area reviewed is the dialog or region open on the page, else the focus you named, else the area your session's commands on this page acted in, else the main content. It measures target sizes, spacing, overflow, text size, zoom and motion at each width, runs axe on the area, and asks the model to judge copy, forms and navigation against the rules in `rules/quartermaster/ux/`. Findings are ranked Critical to Low. It reports problems only: no replacement wording and no colors or styles, since the project owns those. Override a rule by placing a file of the same name in `./rules/quartermaster/ux/`, or add your own with `ai.agents.quartermaster.rules`.
 
@@ -76,6 +81,8 @@ prima-cli do "add an item to the cart" --purpose "checkout" --video
 prima-cli check "the cart total updates" --purpose "checkout" --video
 prima-cli video --purpose "checkout"
 ```
+
+While `--video` records a `check`, each step is printed with `@12.4s`, its offset into that command's `video.webm`, so a step can be cut out with `ffmpeg -ss`/`-to`. `do` steps carry no offset yet.
 
 Without options, every command that passed is joined in run order. Waits are condensed, so a still frame holds for at most a second, and a recording where nothing moved on screen is left out. Recording needs `ffmpeg` on PATH.
 

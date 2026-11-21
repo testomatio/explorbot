@@ -27,8 +27,8 @@ import { compactAriaSnapshot } from '../../../src/utils/aria.ts';
 import { browserErrorMessage } from '../../../src/utils/browser-errors.ts';
 import { pluralize } from '../../../src/utils/logger.ts';
 import { mdq } from '../../../src/utils/markdown-query.ts';
-import { safeFilename } from '../../../src/utils/strings.ts';
-import { type ArtifactPaths, type EnvelopeData, type InstanceInfo, STATUS_FILE, STEP_FILES, VIDEO_FILE, readArtifacts, writeArtifacts } from './envelope.ts';
+import { safeFilename, truncate } from '../../../src/utils/strings.ts';
+import { type ArtifactPaths, type EnvelopeData, type HistoryEntry, type InstanceInfo, STATUS_FILE, STEP_FILES, VIDEO_FILE, readArtifacts, writeArtifacts } from './envelope.ts';
 import { isFunctionExpression, takePwValue, toCodeceptWrapper } from './pw-parser.ts';
 import { type PwServerDescriptor, readDescriptors, selectDescriptor } from './pw-registry.ts';
 import { type SessionRun, commandNumber, latestSessionFile, purposeFile, readSession, recordCommand, sessionFile, sessionsDir } from './session-log.ts';
@@ -42,6 +42,8 @@ const MAX_TOOL_ROUNDTRIPS = 5;
 const UX_SESSION_COMMANDS = 8;
 const AI_AGENT_NAME = 'prima';
 const CONNECT_TIMEOUT = 3000;
+const HISTORY_TITLE_CAP = 90;
+const HISTORY_DETAIL_CAP = 160;
 const requireLib = createRequire(import.meta.url);
 
 const VOLATILE_COLUMNS = ['CSS', 'XPath', 'Coordinates', 'eidx'];
@@ -79,6 +81,7 @@ export class Prima {
   private attached: string | null = null;
   private session: SessionRun | null = null;
   private recording: string | null = null;
+  private recordingStartedAt = 0;
 
   constructor(options: PrimaOptions = {}) {
     this.options = options;
@@ -225,16 +228,17 @@ export class Prima {
           continue;
         }
 
+        const consoleErrors = (output.pageDiff?.consoleErrors || []).map((error: string) => `Console error: ${error}`);
         if (!execution.wasSuccessful) {
           failure = { code: output.code || '', message: output.message || 'action failed' };
-          trace.push({ label: output.code || execution.toolName || 'action', ok: false, proof: output.message || '' });
+          trace.push({ label: output.code || execution.toolName || 'action', ok: false, proof: [output.message, ...consoleErrors].filter(Boolean).join('\n') });
           await this.writeStepFiles(trace.length, output.code || execution.toolName || 'action', '');
           continue;
         }
 
         const codes = this.executedCodes(output.code);
         used.push(...codes);
-        trace.push({ label: codes.join('; ') || execution.toolName || 'action', ok: true, proof: '' });
+        trace.push({ label: codes.join('; ') || execution.toolName || 'action', ok: true, proof: consoleErrors.join('\n') });
         await this.writeStepFiles(trace.length, codes.join(' ') || execution.toolName || 'action', output.pageDiff?.ariaChanges || '');
         failure = null;
       }
@@ -242,7 +246,11 @@ export class Prima {
       if (ledger.every((entry) => entry.status !== 'open')) break;
     }
 
-    if (aiError) return this.failureEnvelope(command, aiError, previousState);
+    if (aiError) {
+      const envelope = await this.failureEnvelope(command, aiError, previousState);
+      envelope.verdict = { status: 'inconclusive', reason: `the model call failed after ${trace.length} steps` };
+      return envelope;
+    }
 
     if (trace.length && ledger.some((entry) => entry.status === 'open')) {
       await this.judgeUnreportedInstructions(ledger, trace);
@@ -259,13 +267,16 @@ export class Prima {
       const envelope = await this.failureEnvelope(command, failure.message, previousState);
       envelope.steps = steps;
       envelope.stepFiles = this.statusDir();
+      envelope.verdict = { status: 'failed', reason: `step ${trace.findLastIndex((step) => !step.ok) + 1} failed, ${unfinished.length} of ${ledger.length} instructions not done` };
       return envelope;
     }
 
     if (!trace.length && unfinished.length === ledger.length) {
       let reason = 'No action was performed for these instructions on the current page.';
       if (narration) reason += `\nThe model replied with text instead of calling a tool:\n${narration}`;
-      return this.failureEnvelope(command, reason, previousState);
+      const envelope = await this.failureEnvelope(command, reason, previousState);
+      envelope.verdict = { status: 'inconclusive', reason: 'no action was performed' };
+      return envelope;
     }
 
     const result = await this.capturedResult(this.bot.stateManager().getCurrentState());
@@ -275,11 +286,15 @@ export class Prima {
     // the step log already reports every action and what it changed
     envelope.used = undefined;
     envelope.changes = undefined;
+    envelope.verdict = { status: 'passed' };
+    const open = ledger.filter((entry) => entry.status === 'open').length;
+    if (open) envelope.verdict.reason = `${open} of ${ledger.length} instructions unconfirmed`;
 
     const blocked = ledger.filter((entry) => entry.status === 'blocked');
     if (blocked.length) {
       envelope.ok = false;
       envelope.failure = { error: blocked.map((entry) => `blocked: ${entry.text}${entry.proof ? ` — ${entry.proof}` : ''}`).join('\n') };
+      envelope.verdict = { status: 'failed', reason: `${blocked.length} of ${ledger.length} instructions blocked` };
     }
     return envelope;
   }
@@ -389,7 +404,8 @@ export class Prima {
     const guard = await this.aiGuard(command);
     if (guard) return guard;
 
-    const outcomes = expected.length ? expected : [scenario];
+    let outcomes = expected;
+    if (!outcomes.length) outcomes = await this.scenarioOutcomes(scenario);
     const preparation = await this.preparationSteps(scenario, outcomes);
     let prepared: EnvelopeData | null = null;
     if (preparation.length) {
@@ -413,37 +429,57 @@ export class Prima {
       if (!number) {
         number = visited.size + 1;
         visited.set(state.hash, number);
-        const aria = path.join(this.statusDir(), `state-${number}.aria.yml`);
-        mkdirSync(this.statusDir(), { recursive: true });
-        writeFileSync(aria, state.ariaSnapshot || '', 'utf-8');
-        states.push({ url: state.url, aria });
+        states.push({ url: state.url, aria: '' });
       }
       timeline.push({ time: performance.now(), state: number });
+      if (!state.ariaSnapshot) return;
+      // the latest capture of a state replaces an earlier one, so values typed into it show up
+      const aria = path.join(this.statusDir(), `state-${number}.aria.yml`);
+      mkdirSync(this.statusDir(), { recursive: true });
+      writeFileSync(aria, state.ariaSnapshot, 'utf-8');
+      states[number - 1].aria = aria;
     };
     trackState(previousState);
     const stopTracking = this.bot.stateManager().onStateChange((transition) => trackState(transition.toState));
 
     await tester.test(test, { startOnCurrentPage: true }).finally(stopTracking);
 
-    const notes = Object.values(test.notes || {}) as Array<{ message: string; status?: string; log?: string; observation?: boolean }>;
+    const notes = Object.values(test.notes || {}) as Array<{ message: string; status?: string; log?: string; observation?: boolean; startTime: number }>;
     const result = await this.capturedResult(this.bot.stateManager().getCurrentState(), { screenshot: this.visionEnabled() });
     const envelope = await this.reportEnvelope(command, result, previousState, {});
-    const repeats = new Map<string, { message: string; ok: boolean; count: number; proof: string; state?: number }>();
-    for (const [startedAt, step] of Object.entries(test.steps || {})) {
+    const repeats = new Map<string, { message: string; ok: boolean; count: number; proof: string; state?: number; at?: number; observed: string[] }>();
+    const starts: Array<{ time: number; key: string }> = [];
+    for (const [endedAt, step] of Object.entries(test.steps || {})) {
       const ok = step.status !== 'failed';
-      const state = timeline.findLast((entry) => entry.time <= Number.parseFloat(startedAt))?.state;
+      const state = timeline.findLast((entry) => entry.time <= Number.parseFloat(endedAt))?.state;
       const key = `${ok} ${state} ${step.text}`;
+      const startedAt = Number.parseFloat(endedAt) - (step.duration || 0);
       let proof = '';
       if (!ok) proof = step.error || '';
-      repeats.set(key, { message: step.text, ok, count: (repeats.get(key)?.count || 0) + 1, proof, state });
+      const repeat = repeats.get(key);
+      let at = repeat?.at;
+      if (!repeat && this.recordingStartedAt) at = (startedAt - this.recordingStartedAt) / 1000;
+      repeats.set(key, { message: step.text, ok, count: (repeat?.count || 0) + 1, proof, state, at, observed: repeat?.observed || [] });
+      starts.push({ time: startedAt, key });
     }
+
+    const observations: string[] = [];
+    for (const note of notes.filter((note) => note.observation)) {
+      const owner = starts.findLast((start) => start.time <= note.startTime);
+      if (!owner) {
+        observations.push(note.message);
+        continue;
+      }
+      repeats.get(owner.key)?.observed.push(note.message);
+    }
+
     const preparedSteps = (prepared?.steps || []).map((step) => ({ ...step, label: `prepare: ${step.label}` }));
     envelope.steps = [
       ...preparedSteps,
-      ...[...repeats.values()].map(({ message, ok, count, proof, state }) => {
+      ...[...repeats.values()].map(({ message, ok, count, proof, state, at, observed }) => {
         let label = message;
         if (count > 1) label += ` (×${count})`;
-        return { label, ok, proof, state };
+        return { label, ok, proof: [proof, ...observed].filter(Boolean).join('\n'), state, at };
       }),
     ];
     if (prepared?.stepFiles) envelope.stepFiles = prepared.stepFiles;
@@ -465,12 +501,19 @@ export class Prima {
     if (nothingVerified) problems.push(...unverified.map((expectation) => `not verified: ${expectation.text}`));
     if (problems.length) envelope.failure = { error: problems.join('\n') };
 
+    const total = envelope.expectations.length;
+    envelope.verdict = { status: 'passed' };
+    if (unverified.length) envelope.verdict.reason = `${total - unverified.length} of ${total} outcomes verified, ${unverified.length} not verified`;
+    if (nothingVerified) envelope.verdict = { status: 'inconclusive', reason: 'no outcome could be verified' };
+    if (unreached.length || contradicted.length) envelope.verdict = { status: 'failed', reason: `${unreached.length + contradicted.length} of ${total} outcomes failed` };
+
     if (!test.hasFinished || test.isSkipped) {
+      const stopped = notes.at(-1)?.message || 'no steps were recorded';
       envelope.ok = false;
-      envelope.failure = { error: `the run did not complete, so it established nothing about the app: ${notes.at(-1)?.message || 'no steps were recorded'}` };
+      envelope.failure = { error: `the run did not complete, so it established nothing about the app: ${stopped}` };
+      envelope.verdict = { status: 'inconclusive', reason: `the run stopped after step ${envelope.steps.length} without finishing: ${stopped}` };
     }
 
-    const observations = notes.filter((note) => note.observation).map((note) => note.message);
     if (observations.length) envelope.pageIssues = observations;
     return envelope;
   }
@@ -632,6 +675,9 @@ export class Prima {
       envelope.purpose = { text: purpose, number: commandNumber(readSession(file).tests.length + 1) };
       recordCommand(file, { key: purpose, endpoint: purpose, title: purpose }, envelope, durationMs);
     }
+    if (envelope.status && existsSync(this.statusDir(envelope.status))) {
+      writeFileSync(path.join(this.statusDir(envelope.status), STATUS_FILE), JSON.stringify({ page: envelope.page, envelope }), 'utf-8');
+    }
     if (!this.session) return;
     recordCommand(sessionFile(this.session.key), this.session, envelope, durationMs);
   }
@@ -649,6 +695,7 @@ export class Prima {
     await page.screencast.start({ path: file, size: page.viewportSize() || undefined });
     await page.screencast.showActions({ position: 'top-left' }).catch(() => {});
     this.recording = file;
+    this.recordingStartedAt = performance.now();
   }
 
   async stopVideo(envelope: EnvelopeData): Promise<void> {
@@ -1142,6 +1189,25 @@ export class Prima {
     return response?.object?.steps || [];
   }
 
+  private async scenarioOutcomes(scenario: string): Promise<string[]> {
+    const prompt = dedent`
+      <scenario>
+      ${scenario}
+      </scenario>
+
+      Split this scenario into the outcomes it asks to confirm: each a separate observable result, in order, in the scenario's own words.
+      Leave out the actions that lead to them. Return the scenario itself as the only outcome when it names none.
+    `;
+    const schema = z.object({ outcomes: z.array(z.string()).describe('observable outcomes, in order') });
+    const response = await this.bot
+      .getProvider()
+      .generateObject([{ role: 'user', content: prompt }], schema, undefined, { agentName: AI_AGENT_NAME })
+      .catch(() => null);
+    const outcomes = response?.object?.outcomes?.filter(Boolean);
+    if (!outcomes?.length) return [scenario];
+    return outcomes;
+  }
+
   private async pageContext(result: ActionResult): Promise<string> {
     const experience = this.bot.experienceTracker?.()?.renderExperienceTocFor?.(result) || '';
     const knowledge = this.bot.knowledgeTracker?.()?.renderRelevantContext(result) || '';
@@ -1408,6 +1474,7 @@ export class Prima {
     if (!existsSync(statusFile)) return this.toolFailureEnvelope(`status ${hash}`, `No command was recorded under ${dir}. Every envelope prints its own hash on the Instance line.`);
 
     const saved = JSON.parse(readFileSync(statusFile, 'utf-8'));
+    if (saved.envelope) return { ...saved.envelope, artifacts: readArtifacts(dir) };
     return {
       ok: true,
       command: `status ${hash}`,
@@ -1415,6 +1482,34 @@ export class Prima {
       instance: await this.instanceInfo(),
       artifacts: readArtifacts(dir),
     };
+  }
+
+  async purposeStatus(): Promise<EnvelopeData> {
+    const { purpose } = this.options;
+    const command = `status --purpose ${purpose}`;
+    if (!purpose) return this.toolFailureEnvelope('status', 'status takes the hash of one command, or --purpose "<text>" for the current page and every command run with that purpose');
+
+    const startError = await this.start()
+      .then(() => null)
+      .catch((error: unknown) => error);
+    let envelope: EnvelopeData | undefined;
+    if (startError) {
+      await this.loadRecordedConfig();
+      envelope = await this.toolFailureEnvelope(command, `no page to show: ${browserErrorMessage(startError)}`);
+    }
+    envelope ||= { ...(await this.state()), command };
+
+    const commands = readSession(purposeFile(purpose)).tests.map((test, index) => {
+      const entry: HistoryEntry = { number: commandNumber(index + 1), verdict: test.meta?.verdict || test.status, title: truncate(test.title, HISTORY_TITLE_CAP), hash: test.rid };
+      if (entry.verdict === 'passed') return entry;
+      const failed = test.steps?.find((step: any) => step.status === 'failed');
+      let detail = test.error?.message || '';
+      if (failed) detail = `${failed.title} — ${failed.error || ''}`;
+      if (detail) entry.detail = truncate(detail.split('\n')[0], HISTORY_DETAIL_CAP);
+      return entry;
+    });
+    envelope.history = { purpose, commands };
+    return envelope;
   }
 
   private async saveStatus(result: ActionResult): Promise<{ hash: string; artifacts: ArtifactPaths }> {

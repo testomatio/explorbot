@@ -683,7 +683,8 @@ Run it as `npx explorbot prima <command>` or through the standalone `prima` bin.
 | `prima verify <assertion>` | Assert one statement about the page as it is now, without acting on it |
 | `prima research` | Map the current page and return verified locators |
 | `prima go <target>` | Navigate to a url, a path, or a page described in plain words |
-| `prima status <hash>` | Show the artifacts and page detail recorded for an earlier command |
+| `prima status <hash>` | Print the output of an earlier command again, with its artifacts |
+| `prima status --purpose <text>` | Show the current page and every command run with that purpose, with its verdict |
 | `prima report` | Turn every command of a session into one html and markdown report |
 | `prima config` | Show the AI models prima runs on and the config file they come from |
 | `prima skill` | Print the skill that teaches a coding agent to use prima; `--install [local\|global]` writes it for Claude Code, Codex and OpenCode |
@@ -703,7 +704,9 @@ Pass `do` the whole remaining sequence rather than one instruction per call. Eve
 
 ### `check`, `do`, and `verify` in detail
 
-`check` takes `--expected <outcome>`, repeatable for several; without it the scenario text is the single expected outcome. Each comes back under `### Expected outcomes` as `PASSED`, `FAILED` or `not verified` — "not verified" means the run never checked it, which is not the same as false. Page problems seen along the way appear under `### Answer` rather than as step failures.
+`check` takes `--expected <outcome>`, repeatable for several; without it the scenario text is the single expected outcome. Each comes back under `### Expected outcomes` as `PASSED`, `FAILED` or `not verified` — "not verified" means the run never checked it, which is not the same as false. A console error raised during a step is listed under that step; one raised outside any step appears under `### Page issues`.
+
+`check` and `do` open `### Result` with `verdict: PASSED`, `FAILED` or `INCONCLUSIVE`, plus a reason. INCONCLUSIVE means the run established nothing about the app: it stopped before finishing, no outcome could be verified, or the model call failed. With `--video`, each `check` step starts with `@<seconds>s`, its offset into that command's `video.webm`.
 
 ```bash
 prima check "signup rejects a duplicate email" \
@@ -747,7 +750,7 @@ html: /home/you/.explorbot/sites/app.example.com/output/prima/2026-08-04T10-04-2
 
 `### Changes` renders on every action envelope, saying `no change` when the tree is identical — so a successful command proves what it did instead of leaving you to check. `check` and `do` report per step rather than in aggregate: `### Steps` names each step with the code it ran and what proved it, and `page after each step:` names the per-step captures. `check` adds `### Expected outcomes`; `ask`, `research`, and `verify` add `### Answer`, `### Research`, or `### Assertions`; `pw` adds `### Value` when its expression returns one.
 
-`### Artifacts` names the files every command leaves on disk: the aria tree and the html always, `screenshot:` and `network:` when a screenshot was taken or requests were captured. The aria tree carries values and checked states, so one `grep` over it settles a question the envelope did not answer, without asking the page again. `prima status <hash>` reprints those paths for an earlier command and lists whatever else was kept under the hash; it only reads recorded files, so it needs no browser and outlives the session.
+`### Artifacts` names the files every command leaves on disk: the aria tree and the html always, `screenshot:` and `network:` when a screenshot was taken or requests were captured. The aria tree carries values and checked states, so one `grep` over it settles a question the envelope did not answer, without asking the page again. `prima status <hash>` prints the envelope of an earlier command again and lists whatever else was kept under the hash; it only reads recorded files, so it needs no browser and outlives the session. `prima status --purpose <text>` captures the current page and lists every command of that purpose with its number, verdict, first failed step and hash; with no browser open it still prints the list. `--json` prints any envelope as JSON.
 
 **A failed action is a failure.** Nothing is retried along a different route and no other element is substituted, so `ok: true` means the action you asked for is the one that landed. A failure adds `### Failure` with the error and the compact ARIA of the page, so you can retarget from the envelope itself instead of opening the artifact files.
 

@@ -58,7 +58,8 @@ function addCommonOptions(cmd: Command): Command {
     .option('--spec <path>', 'Docbot application spec directory or index.md to read as page knowledge')
     .option('--endpoint <ep>', 'Websocket endpoint of a browser server to attach to, skipping discovery')
     .option('--pw-session <title>', 'Title of the playwright-cli session to attach to')
-    .option('--purpose <text>', 'What a series of commands is for; groups them into one Langfuse session, report and video');
+    .option('--purpose <text>', 'What a series of commands is for; groups them into one Langfuse session, report and video')
+    .option('--json', 'Print the result as JSON instead of text');
 }
 
 async function primaFor(options: any): Promise<Prima> {
@@ -85,12 +86,14 @@ async function runPrima(options: any, command: string, run: (prima: Prima) => Pr
     envelope = await Observability.run(command, { tags: ['prima'], sessionId: options.purpose && safeFilename(options.purpose) }, () => run(prima));
   } catch (error) {
     envelope = await prima.toolFailureEnvelope(command, error);
+    envelope.verdict = { status: 'inconclusive', reason: 'prima failed before the command finished' };
   }
 
   await prima.stopVideo(envelope);
   if (record) prima.record(envelope, Date.now() - startedAt);
   clearActivityLine();
-  console.log(renderEnvelope(envelope));
+  if (options.json) console.log(JSON.stringify(envelope, null, 2));
+  if (!options.json) console.log(renderEnvelope(envelope));
   if (npxHint()) console.error(`hint: ${npxHint()}`);
   await prima.stop().catch(() => {});
   process.exit(envelope.ok ? 0 : 1);
@@ -188,7 +191,11 @@ export function createPrimaCommands(name = 'prima'): Command {
     await runPrima(options, `pw ${fn}`, (prima) => prima.pw(fn));
   });
 
-  addCommonOptions(cmd.command('status <hash>').description('Show the artifacts and page detail recorded for an earlier command')).action(async (hash, options) => {
+  addCommonOptions(cmd.command('status [hash]').description('Show the output recorded for an earlier command, or with --purpose the current page and every command of that purpose')).action(async (hash, options) => {
+    if (!hash) {
+      await runPrima(options, 'status', (prima) => prima.purposeStatus(), { browser: false, record: false });
+      return;
+    }
     await runPrima(options, `status ${hash}`, (prima) => prima.status(hash), { browser: false, record: false });
   });
 
@@ -198,15 +205,13 @@ export function createPrimaCommands(name = 'prima'): Command {
     process.exit(0);
   });
 
-  addCommonOptions(cmd.command('config').description('Show models, config file and paths used by this run'))
-    .option('--json', 'Print the resolved config as JSON')
-    .action(async (options) => {
-      setQuietMode(!isVerboseMode());
-      const prima = await primaFor(options);
-      console.log(await prima.config(options.json).catch((error: unknown) => browserErrorMessage(error)));
-      await prima.stop().catch(() => {});
-      process.exit(0);
-    });
+  addCommonOptions(cmd.command('config').description('Show models, config file and paths used by this run')).action(async (options) => {
+    setQuietMode(!isVerboseMode());
+    const prima = await primaFor(options);
+    console.log(await prima.config(options.json).catch((error: unknown) => browserErrorMessage(error)));
+    await prima.stop().catch(() => {});
+    process.exit(0);
+  });
 
   RecommendedModelsCommand.register(cmd);
 
