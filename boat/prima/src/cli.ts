@@ -8,7 +8,7 @@ import { isVerboseMode, setQuietMode } from '../../../src/utils/logger.ts';
 import { safeFilename } from '../../../src/utils/strings.ts';
 import { clearActivityLine, trackActivityLine } from './activity-line.ts';
 import { type EnvelopeData, renderEnvelope } from './envelope.ts';
-import { bareHelp, installHelp, mainUsage, npxHint, skillPointer } from './help.ts';
+import { PrimaHelp, npxHint } from './help.ts';
 import type { Prima, PrimaOptions } from './prima.ts';
 import { PrimaSkill } from './skill.ts';
 
@@ -105,14 +105,15 @@ export function createPrimaCommands(name = 'prima'): Command {
   cmd.version(version, '-V, --version');
   cmd.option('--pw-session <title>', 'Title of the playwright-cli session to attach to');
   cmd.option('--url <url>', 'Page to open when the session has no page yet');
-  cmd.addHelpText('before', `${mainUsage}\n`);
-  cmd.addHelpText('after', `\nOptions of one command: prima <command> --help\n${skillPointer}`);
+  const help = new PrimaHelp();
+  cmd.addHelpText('before', `${help.mainUsage()}\n`);
+  cmd.addHelpText('after', `\n${help.footer()}`);
   cmd
     .allowExcessArguments()
     .allowUnknownOption()
     .action(() => {
       if (cmd.args.length) cmd.error(`error: unknown command '${cmd.args[0]}'`);
-      console.log(`prima ${version}\n${bareHelp}`);
+      console.log(`${help.name} ${version}\n${help.bare()}`);
       if (npxHint()) console.log(`\n${npxHint()}`);
     });
   rootOptions = () => cmd.opts();
@@ -228,7 +229,7 @@ export function createPrimaCommands(name = 'prima'): Command {
     .action((options) => {
       if (!options.install) {
         console.log(PrimaSkill.render());
-        console.error(installHelp);
+        console.error(help.install());
         if (!providerWithKey()) console.error('\nNo provider API key is set: see "Getting an API key" in the skill.');
         return;
       }
