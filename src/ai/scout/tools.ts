@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { tool } from 'ai';
@@ -48,7 +49,7 @@ export function excludeCorpusUrls(corpus: ScoutCorpus, urls: string[]): ScoutCor
 }
 
 export async function createScoutTools(corpus: ScoutCorpus) {
-  const scanner = await detectScanner();
+  const scanner = detectScanner();
   const projectRoot = ConfigParser.getInstance().getProjectRoot();
 
   let result = '';
@@ -112,26 +113,21 @@ export async function createScoutTools(corpus: ScoutCorpus) {
   return { tools, scanner, getResult, finishFromText };
 }
 
-async function detectScanner(): Promise<'rg' | 'grep'> {
+function detectScanner(): 'rg' | 'grep' {
   if (cachedScanner) return cachedScanner;
-  if (await binaryRuns('rg')) {
+  if (binaryRuns('rg')) {
     cachedScanner = 'rg';
     return cachedScanner;
   }
-  if (await binaryRuns('grep')) {
+  if (binaryRuns('grep')) {
     cachedScanner = 'grep';
     return cachedScanner;
   }
   throw new Error('Scout requires ripgrep or grep on PATH — neither was found');
 }
 
-async function binaryRuns(binary: 'rg' | 'grep'): Promise<boolean> {
-  try {
-    const proc = Bun.spawn([binary, '--version'], { stdout: 'ignore', stderr: 'ignore', stdin: 'ignore' });
-    return (await proc.exited) === 0;
-  } catch {
-    return false;
-  }
+function binaryRuns(binary: 'rg' | 'grep'): boolean {
+  return spawnSync(binary, ['--version'], { stdio: 'ignore' }).status === 0;
 }
 
 function toPosix(path: string): string {

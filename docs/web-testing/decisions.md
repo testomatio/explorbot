@@ -112,8 +112,8 @@ The model supplies only the question. The tool gathers the rest of the state its
 
 Each question is recorded as a `judge.decide` span:
 
-- **Input:** the exact request body sent to the provider: model, state and question. Post it again to the endpoint to replay the decision.
+- **Input:** the model, state and question the decision was asked with. Ask the same model again with them to replay the decision.
 - **Output:** the raw answer and its probability, before the threshold is applied.
-- **Metadata:** `judgeQuestion` for filtering by question, `judgeDecision` with the approved value, confidence, threshold and model, and `judgeEndpoint`.
+- **Metadata:** `judgeQuestion` for filtering by question, `judgeDecision` with the approved value, confidence, threshold and model, and `judgeProvider`.
 
 A failed request marks the span as an error and records the reason. The TUI shows `⚖️ Asking judge...` while a question is in flight. See [Observability](../contributing/observability.md) for setting up tracing.

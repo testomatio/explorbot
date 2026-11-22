@@ -145,3 +145,9 @@ export function isSameHostFamily(urlA: string, urlB: string): boolean {
   if (!hostA || !hostB) return false;
   return hostA === hostB || hostA.endsWith(`.${hostB}`) || hostB.endsWith(`.${hostA}`);
 }
+
+export function isAppRequest(request: any, baseOrigin: string): boolean {
+  const resourceType = request.resourceType();
+  if (resourceType !== 'xhr' && resourceType !== 'fetch') return false;
+  return isSameHostFamily(request.url(), baseOrigin);
+}

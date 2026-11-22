@@ -1,5 +1,5 @@
+import { type ResearchElement, parseResearchSections } from '../../../src/ai/researcher/parser.ts';
 import type { WebPageState } from '../../../src/state-manager.ts';
-import { parseResearchSections, type ResearchElement } from '../../../src/ai/researcher/parser.ts';
 
 const OPEN_API_TAG_SELECTOR_PATTERN = /api-\d+\/tag\/([a-z0-9-]+)(?:["'#/\]\s]|$)/i;
 const OPEN_API_NAVIGATION_SECTION_KEYWORDS = ['navigation', 'menu'];

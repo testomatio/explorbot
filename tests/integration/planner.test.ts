@@ -152,6 +152,7 @@ describe('Planner with aimock', () => {
     clearPlanRegistry();
     clearSessionDedup();
     clearStyleCache();
+    provider.setJudge({ assert: async () => false } as any);
 
     planner = new Planner({ ...createMockDeps(), ai: provider } as any, { research: async () => taskBoardUiMap } as any);
 
@@ -451,14 +452,17 @@ describe('Planner with aimock', () => {
     expect(order).toEqual(['research', 'scout']);
   });
 
-  it('propagates scout setup errors', async () => {
+  it('plans without documentation when scout fails', async () => {
     planner.setScout({
       collectDocs: async () => {
-        throw new Error('Scout requires ripgrep or grep on PATH — neither was found');
+        throw new Error('scout crashed');
       },
     } as any);
 
-    await expect(planner.plan()).rejects.toThrow('Scout requires ripgrep or grep on PATH');
+    const plan = await planner.plan();
+
+    expect(plan.tests.length).toBeGreaterThan(0);
+    expect(extractPromptText(mock.getLastRequest())).not.toContain('<docs_context>');
   });
 
   it('passes the already injected spec URLs to the scout', async () => {
@@ -559,5 +563,21 @@ describe('Planner with aimock', () => {
     expect(prompt).toContain('must be verifiable through the web interface');
     expect(prompt).toContain('page or subpage has not been observed');
     expect(prompt).toContain('describe the expected visible result generically');
+  });
+
+  it('arms explicit tools when the decision model says the scenario needs them', async () => {
+    provider.setJudge({ assert: async () => true } as any);
+
+    const plan = await planner.plan();
+
+    expect(plan.tests[0].explicitTools).toEqual(['dragAndDrop', 'rightClick']);
+  });
+
+  it('keeps explicit tools off when the decision model declines', async () => {
+    provider.setJudge({ assert: async () => false } as any);
+
+    const plan = await planner.plan();
+
+    expect(plan.tests.every((t) => t.explicitTools.length === 0)).toBe(true);
   });
 });

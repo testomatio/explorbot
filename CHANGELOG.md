@@ -13,6 +13,178 @@
 - Agents see how long ago each experience record was last used (`used 2 days ago`, `never used, added 9 days ago`), so they can prefer recipes that worked recently. `explorbot experience` shows the same.
 - AI compaction keeps the last-used date, so a used record does not get removed just because the compactor rewrote it.
 
+## 2026-11-19
+
+### New Commands
+- **`prima browser start [url]` / `prima browser stop`** — Open and close the browser prima drives. Both hand over to playwright-cli: `start` runs `playwright-cli open`, or reports the session when one is already open, and `stop` runs `playwright-cli close`. `--pw-session <title>` names the session. A bare `prima browser` still behaves as `start`.
+  ```bash
+  prima browser start https://app.example.com
+  prima browser stop
+  ```
+- **`prima browser clear`** — Close the session and remove the browser profile kept for this directory, with its logins.
+  ```bash
+  prima browser clear
+  ```
+
+### Environment Variables
+- **`EXPLORBOT_TELEMETRY`** — Sets up Langfuse tracing in one value: the host with both keys as the URL's user and password, an optional `site` list of host globs to trace, or `off`. Prima reads `PRIMA_CLI_TELEMETRY` and the API boat reads `APIBOT_TELEMETRY` first, so each boat can trace to its own project or not at all; put them in `~/.explorbot/.env` to set it for the whole machine. `ai.langfuse` in a config still wins, and `LANGFUSE_*` keep working as the fallback.
+  ```bash
+  EXPLORBOT_TELEMETRY="langfuse=https://pk-lf-xxx:sk-lf-yyy@cloud.langfuse.com; site=*.staging.example.com"
+  PRIMA_CLI_TELEMETRY=off
+  ```
+### Changes
+- [Prima] `prima` with no arguments prints its version on the first line, also when run as `explorbot prima`. Its command list follows a regular check in order: `browser start`, `go`, `do`, `check`, `ux`, `video`, `browser stop`, then `state`, `verify`, `ask`, `research` and `pw` for a closer look at the page. `prima --help` lists commands in the same order.
+- [Prima] `prima browser start` prints the AI model in use on an `ai:` line, or says that none is configured.
+- [Prima] `prima browser start` keeps one browser profile per directory, so a login survives `browser stop` and the next start in that directory is already signed in. Profiles live in `~/.explorbot/profiles`, one per directory and `--pw-session`. `--incognito` opens a clean profile:
+  ```bash
+  prima browser start https://app.example.com --incognito
+  ```
+- [Prima] The `--session` option of prima is removed. It never took effect on a playwright-cli browser.
+- [Prima] The `assert` alias of `prima verify` is removed. Use `prima verify`.
+- [Prima] `prima` with no arguments, `--help`, `--version`, `skill` and `recommended-models` start in about 0.4 seconds instead of 1.5. The browser-driving code is loaded only by a command that uses it.
+
+## 2026-11-18
+
+### Configuration
+- **`ai.decisionModel`** — Two more providers: OpenAI's Decisions API and Google's Gemini Decisions API, authenticated with `OPENAI_API_KEY` and `GOOGLE_GENERATIVE_AI_API_KEY`. For example `decisionModel: { provider: 'openai', model: 'gpt-6-luna' }` or `decisionModel: { provider: 'google', model: 'gemini-decision-1' }`. Both models are also served by OpenRouter: `{ provider: 'openrouter', model: 'google/gemini-decision-1' }`.
+- **`ai.recommendedModels`** — `openai` and `google` now recommend a decision model (`gpt-6-luna` and `gemini-decision-1`), so `recommendedModels: 'openai'` or `EXPLORBOT_AI_PROVIDER=google` turns the decision model on. Anthropic has no decision model and stays without one.
+
+### Changes
+- The decision model is now called through the Vercel AI SDK (`experimental_decide`) for every provider. `openrouter` and `typesafe` configs keep their provider names and API keys. On the `judge.decide` span the `judgeEndpoint` metadata is replaced by `judgeProvider`.
+- Requires `ai` 7.0.173 or newer. That version rejects a response without a tool call when a tool call was required; Explorbot retries such a request once with automatic tool choice, as it already did when the provider itself rejected it.
+
+### New Commands
+- **`prima state`** — Captures the current page without acting on it and without calling an AI model. Prints the url, title and state hash, an `overlay:` line naming the open dialog or region (or `none`), and the paths to the aria tree, html and a fresh screenshot.
+  ```bash
+  prima state
+  ```
+
+## 2026-11-17
+
+### New Commands
+- **`prima skill`** — Prints the skill that teaches a coding agent to use prima: describe behaviour with `check` and `do` instead of scripting clicks through playwright-cli. `--install` writes it as `prima/SKILL.md` into `.claude/skills` and `.agents/skills`, which Claude Code, Codex and OpenCode read; `local` (the default) installs into the project, `global` into the home directory.
+  ```bash
+  prima skill                    # print the skill
+  prima skill --install          # install into this project
+  prima skill --install global   # install into your home directory
+  ```
+
+### Changes
+- [Config] One provider API key is enough to run without a config file. When no project or global config exists and neither `EXPLORBOT_AI_PROVIDER` nor `EXPLORBOT_AI_MODEL` is set, the provider is taken from the exported key and its recommended models are used for every role. Applies to `explorbot` and `prima`.
+  ```bash
+  OPENROUTER_API_KEY=your-key prima check "the settings page saves a changed theme"
+  ```
+- [Prima] `prima verify` exits with code 1 when its assertions ran and the claim was not verified. It used to exit 0 whatever the assertions reported.
+- [Prima] Running `prima` with no arguments prints a short summary instead of the full help, and an unknown command is reported as such. The per-command notes that followed `--help` moved into the skill.
+- [Prima] A command that finds no usable AI model lists, for each provider, where to create a key and which variable to export.
+- [Prima] When prima is run through `npx`, it suggests installing it, since `npx` adds about 5 seconds to every call.
+
+## 2026-11-16
+
+### New CLI Options
+- **`prima --purpose <text>`** — Marks a series of prima commands as working toward one goal. Commands with the same purpose share one Langfuse session, and each gets a number in hex, `#0001`, `#0002` and so on, printed on its `purpose:` line. `prima report --purpose <text>` reports only those commands, even across browser restarts.
+  ```bash
+  prima do "add an item to the cart" --purpose "checkout"
+  prima report --purpose "checkout"
+  ```
+- **`prima do --video` / `prima check --video`** — Records the command for `prima video`. Needs `--purpose` and `ffmpeg` on PATH; both are checked before the command runs.
+  ```bash
+  prima check "the cart total updates" --purpose "checkout" --video
+  ```
+- **`prima video --purpose <text>`** — Joins the recordings of a purpose into one webm. Without options every command that passed is joined in run order. Waits are condensed so a still frame holds for at most a second, and a recording where nothing moved on screen is left out. `--list` shows the commands by number; `--only` picks and orders them; `--caption`, `--speed` and `--hold` edit one command each and repeat for several.
+  ```bash
+  prima video --purpose "checkout" --list
+  prima video --purpose "checkout" --only 0003,0001 --caption 0001="Add to cart" --speed 0001=2 --hold 0003=3
+  ```
+
+### Changes
+- Nested traces keep the session of the run that started them, so every AI call of one test or prima command lands in one Langfuse session.
+
+## 2026-11-13
+
+### Changes
+- [Planner] Stress tests in the `psycho` style no longer expect the app to reject strange values such as SQL-like text. Saving the value and showing it as plain text passes; a crash, an error, lost data or executed markup fails.
+- [Prima] `prima browser` opens a playwright-cli session when none is open, instead of only printing the command to start one. It runs `playwright-cli open`, or `npx @playwright/cli open` when playwright-cli is not installed, at `--url` or the configured base URL. A `--pw-session` name that is not open yet is opened under that name. When several sessions are open and none is named, it still asks you to pick one.
+  ```bash
+  prima browser --url https://app.example.com   # browser: playwright-cli session "default" at ...
+  prima browser --pw-session staging            # opens or reuses the "staging" session
+  ```
+## 2026-11-12
+
+### Changes
+
+- Updated CodeceptJS to 4.2.4, which ships chained step options. When a locator matches several elements, the agent now picks one as `I.click('Delete').at(2)` instead of `I.click('Delete', step.opts({ elementIndex: 2 }))` — same behavior, modern syntax.
+- Generated tests now record the element picked for an ambiguous click as `I.click('Delete').at(2)`, so they stay short and replay without failing on multiple matches.
+- [Prima] `do` and `check` now see the knowledge for the current page: knowledge files, `--knowledge` and `--auth`. Before, a sign-in step blocked with "no auth details" even when `--auth` was given.
+## 2026-11-11
+
+### Changes
+- [Navigator] A step the Tester hands over with `interact` no longer counts as done just because its code ran without an error. If nothing on the page changed and the app sent no request of its own, the Navigator tries the next solution instead of reporting success, so a click on the wrong element is no longer reported back as the step being done. A change that shows up late, or a request to the app's own domain or subdomains, still counts; third-party calls such as analytics do not.
+- Test plans: the Prerequisite URL of a plan keeps underscores (`?assets_host=…`, `/my_project/`). They were stripped before, so tests opened a different URL than the one written in the plan.
+## 2026-11-12
+
+### Changes
+- **`verify()` can check the clipboard** — A claim about copied content is now checked with `I.seeInClipboard` / `I.seeClipboardEquals` against the real system clipboard, instead of a copy notification that may already have closed. A passing check is saved into the generated test.
+## 2026-11-11
+
+### Changes
+- **`EXPLORBOT_URL`** with a path or query (`https://app.example.com/projects/demo/?preview=pr-42`) now sets the base path and pinned query, the same as `web.url` in a config file or `--base-url`. Before, relative navigation was appended to the whole URL and opened pages like `/projects/demo/?preview=pr-42/projects/demo/settings`.
+- [Pilot] The action history Pilot reviews before a pass/fail verdict is now in the order things happened. Returning to a page shows it as a new visit instead of merging it into the first one, and checks made right after a navigation appear under the page they ran on. Actions are numbered across the whole log. A check from an earlier visit is no longer mistaken for the final state.
+- **Pilot sees notifications when it decides pass/fail** — A toast, alert or other message that appeared after an action is now part of the action log Pilot reads for its final verdict and for reset decisions. A test whose confirmation closed before it could be checked is no longer failed for showing "no confirmation".
+
+## 2026-11-10
+
+### Configuration
+- **`ai.toolChoice`** — Sets how every agent picks tools: `'auto'`, `'required'` or `'none'`. Use `'auto'` for a model whose provider accepts no other mode. When unset, each agent keeps its own choice. `recommendedModels: 'openrouter'` and `EXPLORBOT_AI_PROVIDER=openrouter` set it to `'auto'`, and `explorbot init` writes it for OpenRouter.
+- **`ai.agents.<agent>.toolChoice`** — The same setting for one agent, for example `agents: { tester: { toolChoice: 'auto' } }`. Takes priority over `ai.toolChoice`.
+
+### Changes
+- OpenRouter's recommended models are now `meta/muse-ember` for the main and vision models, with `anthropic/claude-haiku-5.5` kept as the agentic model. Against the previous defaults on the regression scenario, with muse-ember in the main slot (vision stayed on gpt-5.6-luna), it passed 10/10, ran about 20% more checks, and was about 20% faster and 25% cheaper per check.
+- OpenAI's recommended models are now `gpt-6-luna` for all three roles, replacing `gpt-5-nano` as the main model.
+- [Tester] The `reasoning` and `providerOptions` settings under `ai.agents.tester` now apply to the Tester's test steps too.
+
+## 2026-11-07
+
+### Changes
+- [Planner] Works out what a website is for and plans its main user flow first, such as buying or reserving, managing records, communicating, multi-step applications or reporting. Steps of that flow that are not visible yet are still planned. Sign-in, FAQ and support pages come afterwards, unless they are the main flow.
+
+## 2026-11-06
+
+### Changes
+- [Researcher] Closes cookie consent, paywall, marketing and similar popups before researching a page. Regular dialogs stay open and are researched as before.
+- [Planner] No longer plans tests for cookie consent, marketing, announcement or notification popups, unless you plan that feature explicitly.
+
+## 2026-11-05
+
+### Changes
+- [Navigator] Gets through flows spread over several pages, such as a sign-in that asks for the email, the password and a one-time code on separate pages. When a step moves the page on, Navigator now looks at the new page instead of spending its remaining attempts on the old one.
+
+## 2026-11-05
+
+### New CLI Options
+- **`prima --version`** — Shows the installed prima version. Running `prima` with no arguments also prints it, above the help.
+  ```bash
+  prima --version
+  prima
+  ```
+
+### Changes
+- [Scout] Works when Explorbot is installed from npm. It used to stop with `Scout requires ripgrep or grep on PATH` even though grep was installed, so any run with `--spec` planned no tests.
+- [Planner] A Scout failure no longer stops planning. The log shows a warning and the plan is made without documentation.
+- Prima: `npx prima-cli` releases are published again. Nothing newer than 0.5.4 reached npm because a release test failed, so fixes such as treating `localhost` and `127.0.0.1` as one site were missing from it.
+
+## 2026-11-01
+
+### Changes
+- [Explore] A page that cannot be opened (for example a sign-in form with no credentials) is now skipped as a whole: no more planning styles or tests run on it, and pages that look the same are skipped without trying again, listed as "matches a blocked page". Exploration stops after 3 such pages.
+- [Explore] When the start page itself is blocked, the run ends right away and suggests how to unblock it: pass credentials with `--auth`, or save them with `learn`. If knowledge for the page exists but did not help, it suggests updating it.
+  ```bash
+  explorbot explore /workspace --auth 'login: admin@example.com password: secret123'
+  explorbot learn /workspace "login: admin@example.com password: secret123"
+  ```
+- [Captain] Takes over a blocked page once. It no longer gets the same blocked page again each time the Planner words the problem differently.
+- Console output: blocker messages stand out with an empty line before and after, and empty lines no longer stack up.
+
 ## 2026-10-31
 
 ### New CLI Options
@@ -59,6 +231,8 @@
 - **`ai.agents.scout.enabled`** — Scout now turns on by itself when a spec is set with `--spec` or `dirs.spec`. Set it to `false` to keep it off.
 
 ### Changes
+- [Tester] When the browser page is lost and can't be restored, the test stops as failed at the next browser step instead of running on against a closed browser. Console errors and native dialogs keep being recorded on a page restored after a crash.
+- [Tester] A test stops for final review after three steps in a row with no progress on the same page, including steps where the model called no tools. Pilot steps in after two such steps. A successful `interact` or `visualClick` now counts as progress.
 - [Scout] Searches the docs for the facts a tester needs: roles and permissions, prerequisites, accepted values and limits, error messages, duplicates, state changes, side effects, failure and retry behavior, list and bulk behavior, deletions, file formats and differences between variants. For vague words such as "valid" or "supported" it looks for exact definitions with examples of valid and invalid values.
 - [Scout] Each digest is saved to `output/scout/` and reused for 6 hours for the same page and focus, so repeated planning doesn't search the docs again. The log shows how many words were found, the file path and the first lines of the digest.
 - [Planner] Writes the plan as markdown in the plan file format. If the format is off, the planner is asked to fix it, up to 3 times.
@@ -207,6 +381,20 @@
 - An `explore` run ends with an "Explore more" section suggesting `explorbot explore /` to cover the whole site, plus a link to the docs.
 - Init makes it explicit how to connect the AI: the `.env` template and the missing-key warning point to the provider's key page (e.g. `https://openrouter.ai/keys`) and show the exact line to paste — `OPENROUTER_API_KEY=<your-key>`; the setup wizard shows where to create the key too.
 
+## 2026-11-09
+
+### Changes
+- [Tester] Non-standard interaction tools — `dragAndDrop()` and `rightClick()` — are now explicit tools: off by default, so they never grow the Tester's context for ordinary scenarios. The Planner decides per scenario (via the decision model) whether a drag or a context menu is needed and arms the tools for exactly those scenarios; the choice is stored in the plan file (`tools:` line in the `<!-- test -->` comment) and survives re-runs. Mid-run, the Pilot can also arm the tools by including `ENABLE_TOOLS: <names>` in its instruction when a scenario turns out to need an interaction `click()`/`form()` cannot express.
+
+## 2026-10-08
+
+### Changes
+- [Tester] New `dragAndDrop()` tool, so scenarios that drag something onto something else can be tested: reordering lists and trees, moving cards between columns, dropping items into folders or zones — and dragging slider handles or drawing on canvas, where nothing can be addressed by a locator. The tool takes visual descriptions of what to grab and where to drop it, the vision model locates both points on the screenshot, and the drag runs as a real mouse press between them through the Playwright API. When the drop changes nothing, the same points are retried with HTML5 drag events — covering pages whose drag libraries cancel the mouse press.
+  ```javascript
+  dragAndDrop({ from: 'card labeled Bug 5 in the first column', to: 'column labeled Done' });   // move or reorder
+  ```
+  Copy-drag: pass the modifier (e.g. `Control`) to the tool; the generated test records the drag as a plain CodeceptJS `I.usePlaywrightTo` mouse sequence — so it replays and heals in rerun like any other step.
+
 ## 2026-10-06
 
 ### Configuration
@@ -220,8 +408,8 @@
 - OpenRouter's recommended agentic model is now Claude Haiku 5.5 (`anthropic/claude-haiku-5.5`).
 - OpenAI's recommended vision and agentic model is now GPT-6 Luna (`gpt-6-luna`).
 - `explorbot recommended-models` lists the decision model and its `EXPLORBOT_DECISION_MODEL` env line for providers that recommend one.
-### Changes
 - A `url` in the config file can now point to an app in a subfolder, such as `https://example.com/apps/todo/`. The folder becomes the base path for the run, just like `--base-url`: `explorbot start` opens the app itself, and relative paths such as `/active` resolve to `/apps/todo/active`. Previously every navigation was built as `https://example.com/apps/todo///…` and the Navigator had to guess its way back, sometimes ending on the wrong page. `--base-url` still takes precedence over the config `url`.
+- Generated tests no longer break on a locator that contains quotes, such as `li:has-text("Item 2")`: executed commands are recorded with the quotes escaped, so the test file stays valid code and reruns instead of failing to load.
 
 ## 2026-10-05
 

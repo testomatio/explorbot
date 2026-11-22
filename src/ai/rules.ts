@@ -348,11 +348,11 @@ export const actionRule = dedent`
   If nothing works, use visualClick() — it locates the target in a screenshot before clicking it.
 
   When a click result reports several matches, pick one from its numbered list by position rather than guessing a new locator.
-  Reuse the same locator with step.opts({ elementIndex: N }) as the LAST argument. N is the "Element N" number.
+  Reuse the same locator and chain .at(N) to the command. N is the "Element N" number. Negative N counts from the end.
 
   <example>
-    I.click('Remove', step.opts({ elementIndex: 2 }));
-    I.click({ role: 'link', text: 'Details' }, '.panel', step.opts({ elementIndex: 1 }));
+    I.click('Remove').at(2);
+    I.click({ role: 'link', text: 'Details' }, '.panel').at(1);
   </example>
 
   For checkboxes, prefer I.checkOption/I.uncheckOption over I.click.
@@ -504,6 +504,12 @@ export const actionRule = dedent`
 
   After hovering, use see() or context() to check what appeared.
 
+  ### I.dragAndDrop
+
+  When form() must drag directly, I.dragAndDrop(<source>, <target>) takes Playwright locators
+  as written: a bare string is read as CSS and an object locator loses its text filter.
+  Write text as 'text=...' and prefer CSS or XPath.
+
   ### I.seeInClipboard / I.seeClipboardEquals / I.clearClipboard
 
   Check what a copy control put into the system clipboard. Run via form(), not click().
@@ -522,4 +528,35 @@ export const actionRule = dedent`
   [DO NOT USE WAIT FUNCTIONS]
 
   </actions>
+  `;
+
+export const explicitToolsRule = dedent`
+  <explicit_tools>
+  These tools are present only when the plan enables them or the Pilot requests them mid-run.
+  They cover interactions click() and form() cannot express.
+
+  ### dragAndDrop() tool
+
+  Drags an element and drops it onto another element. Run via the dragAndDrop() tool, not form().
+  The tool takes visual descriptions of what to grab and where to drop it, locates both points
+  on the screenshot, and drags between them with a real mouse — this also covers sliders and canvas
+  drawing, where nothing can be addressed by a locator. When items look alike, describe the position
+  ("the second card in the first column"). When a drag starts from a handle, describe the handle
+  as the grab point, not the whole card. For a drag with a modifier held (a copy-drag that
+  duplicates the item), pass the modifier to the dragAndDrop() tool.
+
+  <example>
+    dragAndDrop(from: "card labeled Bug 5 in the first column", to: "column labeled Done")
+  </example>
+
+  ### rightClick() tool
+
+  Opens a context menu on an element with a right-click. Run via the rightClick() tool, not form().
+  All commands in one call must target the SAME element, ordered by locator reliability like click().
+  After the menu opens, act on its items with click() — the menu items are not part of this tool.
+
+  <example>
+    rightClick(commands: ['I.rightClick("Bug 5", ".board")'])
+  </example>
+  </explicit_tools>
   `;

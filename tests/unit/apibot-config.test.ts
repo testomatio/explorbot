@@ -96,6 +96,17 @@ describe('ApibotConfigParser environment fallback', () => {
     expect(parser.resolveEndpointPath('/users')).toBe('/users');
   });
 
+  it('strips the base endpoint path from a relative endpoint', async () => {
+    process.env.EXPLORBOT_AI_MODEL = 'openrouter/openai/gpt-oss-120b';
+    process.env.EXPLORBOT_OUTPUT = outputRoot;
+
+    await parser.loadConfig({ baseEndpoint: 'https://api.example.com/v1' });
+
+    expect(parser.resolveEndpointPath('/v1')).toBe('/');
+    expect(parser.resolveEndpointPath('/v1/users/42')).toBe('/users/42');
+    expect(parser.resolveEndpointPath('/v1users')).toBe('/v1users');
+  });
+
   it('maps repeated --header options to api.headers', async () => {
     process.env.EXPLORBOT_AI_MODEL = 'openrouter/openai/gpt-oss-120b';
     process.env.EXPLORBOT_OUTPUT = outputRoot;

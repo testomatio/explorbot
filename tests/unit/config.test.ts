@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os, { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ConfigParser, EXPLORBOT_ENV_VARS, materializeKnowledge, resolveConfigModels, resolveModel, resolveOutputRoot } from '../../src/config.ts';
+import { type AIConfig, ConfigParser, EXPLORBOT_ENV_VARS, PROVIDERS, materializeKnowledge, resolveConfigModels, resolveLangfuse, resolveModel, resolveOutputRoot, setBoatEnvPrefix } from '../../src/config.ts';
 
 describe('ConfigParser runtime baseUrl overrides', () => {
   beforeEach(() => {
@@ -76,7 +76,7 @@ describe('ConfigParser runtime baseUrl overrides', () => {
   });
 });
 
-const ENV_KEYS = ['EXPLORBOT_AI_PROVIDER', 'EXPLORBOT_AI_MODEL', 'EXPLORBOT_VISION_MODEL', 'EXPLORBOT_AGENTIC_MODEL', 'EXPLORBOT_URL', 'EXPLORBOT_OUTPUT', 'EXPLORBOT_EPHEMERAL', 'EXPLORBOT_KNOWLEDGE', 'EXPLORBOT_KNOWLEDGE_FILE'];
+const ENV_KEYS = ['EXPLORBOT_AI_PROVIDER', 'EXPLORBOT_AI_MODEL', 'EXPLORBOT_VISION_MODEL', 'EXPLORBOT_AGENTIC_MODEL', 'EXPLORBOT_URL', 'EXPLORBOT_OUTPUT', 'EXPLORBOT_EPHEMERAL', 'EXPLORBOT_KNOWLEDGE', 'EXPLORBOT_KNOWLEDGE_FILE', ...Object.values(PROVIDERS).map((provider) => provider.envKey)];
 
 let savedEnv: Record<string, string | undefined> = {};
 let scratchDir: string;
@@ -189,6 +189,18 @@ describe('ConfigParser environment mode', () => {
 
     expect(config.playwright.url).toBe('https://flag.example.com');
     expect(parser.getProjectRoot()).toBe(join(scratchDir, '.explorbot', 'sites', 'flag.example.com'));
+  });
+
+  it('treats a path and query in EXPLORBOT_URL as the base path and query', async () => {
+    process.env.EXPLORBOT_AI_MODEL = 'openrouter/openai/gpt-oss-120b';
+    process.env.EXPLORBOT_OUTPUT = scratchDir;
+    process.env.EXPLORBOT_URL = 'https://env.example.com/projects/demo/?preview=pr-42';
+
+    const config = await parser.loadConfig();
+
+    expect(config.playwright.url).toBe('https://env.example.com');
+    expect(parser.getBasePath()).toBe('/projects/demo');
+    expect(parser.getBaseQuery()).toBe('?preview=pr-42');
   });
 
   it('splits the model spec on the first slash only', async () => {
@@ -464,5 +476,86 @@ describe('EXPLORBOT_ENV_VARS registry', () => {
     const unused = EXPLORBOT_ENV_VARS.filter((v) => !code.includes(`process.env.${v.name}`));
 
     expect(unused.map((v) => v.name)).toEqual([]);
+  });
+});
+
+describe('resolveLangfuse telemetry', () => {
+  const TOUCHED = ['EXPLORBOT_TELEMETRY', 'PRIMA_CLI_TELEMETRY', 'LANGFUSE_PUBLIC_KEY', 'LANGFUSE_SECRET_KEY', 'LANGFUSE_BASE_URL', 'LANGFUSE_HOST'];
+  let saved: Record<string, string | undefined> = {};
+
+  beforeEach(() => {
+    saved = {};
+    for (const name of TOUCHED) {
+      saved[name] = process.env[name];
+      delete process.env[name];
+    }
+  });
+
+  afterEach(() => {
+    setBoatEnvPrefix('EXPLORBOT_');
+    for (const [name, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  });
+
+  function resolved(siteUrl?: string, langfuse?: AIConfig['langfuse']) {
+    const ai = { model: {}, langfuse } as AIConfig;
+    resolveLangfuse(ai, siteUrl);
+    return ai.langfuse;
+  }
+
+  it('reads keys and host from one langfuse URL', () => {
+    process.env.EXPLORBOT_TELEMETRY = 'langfuse=https://pk-lf-1:sk-lf-2@langfuse.example.com';
+
+    expect(resolved()).toEqual({ enabled: true, publicKey: 'pk-lf-1', secretKey: 'sk-lf-2', baseUrl: 'https://langfuse.example.com' });
+  });
+
+  it('accepts the colon separator and keeps LANGFUSE_* keys when the URL has none', () => {
+    process.env.LANGFUSE_PUBLIC_KEY = 'pk-env';
+    process.env.LANGFUSE_SECRET_KEY = 'sk-env';
+    process.env.EXPLORBOT_TELEMETRY = 'langfuse:http://localhost:3001';
+
+    expect(resolved()).toEqual({ enabled: true, publicKey: 'pk-env', secretKey: 'sk-env', baseUrl: 'http://localhost:3001' });
+  });
+
+  it('turns tracing off even when LANGFUSE_* keys are set', () => {
+    process.env.LANGFUSE_PUBLIC_KEY = 'pk-env';
+    process.env.LANGFUSE_SECRET_KEY = 'sk-env';
+    process.env.EXPLORBOT_TELEMETRY = 'off';
+
+    expect(resolved()?.enabled).toBe(false);
+  });
+
+  it('traces only sites matching the site globs', () => {
+    process.env.EXPLORBOT_TELEMETRY = 'langfuse=https://pk:sk@langfuse.example.com; site=*.staging.example.com, app.example.com';
+
+    expect(resolved('https://shop.staging.example.com/login')?.enabled).toBe(true);
+    expect(resolved('https://app.example.com')?.enabled).toBe(true);
+    expect(resolved('https://prod.example.com')?.enabled).toBe(false);
+    expect(resolved()?.enabled).toBe(false);
+  });
+
+  it('matches the site globs against the hostname, ignoring the port', () => {
+    process.env.EXPLORBOT_TELEMETRY = 'langfuse=https://pk:sk@langfuse.example.com; site=localhost, app.example.com';
+
+    expect(resolved('http://localhost:8899/issues')?.enabled).toBe(true);
+    expect(resolved('https://app.example.com:8443')?.enabled).toBe(true);
+  });
+
+  it('prefers the boat variable over EXPLORBOT_TELEMETRY', () => {
+    process.env.EXPLORBOT_TELEMETRY = 'langfuse=https://pk:sk@langfuse.example.com';
+    process.env.PRIMA_CLI_TELEMETRY = 'off';
+
+    expect(resolved()?.enabled).toBe(true);
+    setBoatEnvPrefix('PRIMA_CLI_');
+    expect(resolved()?.enabled).toBe(false);
+  });
+
+  it('lets ai.langfuse in the config win over telemetry', () => {
+    process.env.EXPLORBOT_TELEMETRY = 'off';
+
+    expect(resolved(undefined, { enabled: true, publicKey: 'pk-cfg', secretKey: 'sk-cfg' })).toEqual({ enabled: true, publicKey: 'pk-cfg', secretKey: 'sk-cfg', baseUrl: undefined });
+    expect(resolved(undefined, { publicKey: 'pk-cfg', secretKey: 'sk-cfg' })?.enabled).toBe(true);
   });
 });

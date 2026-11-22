@@ -30,6 +30,7 @@ import { type PaginationMethods, WithPagination } from './researcher/pagination.
 import { extractValidContainers, formatResearchSummary, parseResearchSections } from './researcher/parser.ts';
 import { ResearchResult } from './researcher/research-result.ts';
 import { type SectionMethods, WithSections } from './researcher/sections.ts';
+import { type WallMethods, WithWalls } from './researcher/walls.ts';
 import { locatorRule as generalLocatorRuleText } from './rules.js';
 import { TaskAgent } from './task-agent.ts';
 
@@ -48,9 +49,9 @@ export const POSSIBLE_SECTIONS = {
   navigation: 'main navigation (top bar, sidebar, breadcrumbs)',
 };
 
-const ResearcherBase = WithSections(WithPagination(WithDeepAnalysis(WithCoordinates(WithLocators(TaskAgent as unknown as new (...args: any[]) => TaskAgent)))));
+const ResearcherBase = WithWalls(WithSections(WithPagination(WithDeepAnalysis(WithCoordinates(WithLocators(TaskAgent as unknown as new (...args: any[]) => TaskAgent))))));
 
-export interface Researcher extends LocatorMethods, CoordinateMethods, DeepAnalysisMethods, SectionMethods, PaginationMethods {}
+export interface Researcher extends LocatorMethods, CoordinateMethods, DeepAnalysisMethods, SectionMethods, PaginationMethods, WallMethods {}
 
 export class Researcher extends ResearcherBase implements Agent {
   protected readonly ACTION_TOOLS = ['click'];
@@ -158,6 +159,7 @@ export class Researcher extends ResearcherBase implements Agent {
           tag('warning').log(`Page at ${state.url} did not finish loading within timeout, continuing with best-effort research`);
         }
       }
+      if (this.actionResult!.overlay.isModal) await this.closeWall(screenshot);
 
       debugLog('Researching web page:', this.actionResult!.url);
 
@@ -570,6 +572,44 @@ export class Researcher extends ResearcherBase implements Agent {
         - Keep the answer under two sentences.
         - Mention if the element is obscured or disabled when applicable.
         - Always include coordinates only when the element is found.
+        - Coordinates must follow the pattern "123X, 456Y" with X and Y suffixes.
+        </rules>
+
+        URL: ${actionResult.url || 'Unknown'}
+        Title: ${actionResult.title || 'Unknown'}
+
+        The screenshot is provided below.
+        `;
+
+    const r = await this.provider.processImage(prompt, image.toString('base64'));
+    return r.text;
+  }
+
+  async checkDragPoints(state: WebPageState, fromDescription: string, toDescription: string): Promise<string | null> {
+    const screenshotData = this.getScreenshotFromState(state);
+    if (!screenshotData) return null;
+
+    const { actionResult, image } = screenshotData;
+    tag('step').log('Locating drag points on screenshot');
+    const prompt = dedent`
+        <role>
+        You are a precise UI inspector preparing a drag-and-drop operation on a webpage screenshot.
+        </role>
+
+        <task>
+        Locate the element to grab: "${fromDescription}".
+        Locate the drop target: "${toDescription}".
+        When both are visible, respond with one short sentence naming each and give the point
+        coordinates: the grab point at the center of what is dragged, the drop point at the center
+        of where it must land. End the answer with "grab <x>X, <y>Y; drop <x>X, <y>Y"
+        (numbers must be integers followed by X and Y respectively).
+        If either element is not visible or cannot be reached, say which one and why — no coordinates then.
+        Do not describe other elements.
+        </task>
+
+        <rules>
+        - Keep the answer under three sentences.
+        - Give both points only when both elements are located.
         - Coordinates must follow the pattern "123X, 456Y" with X and Y suffixes.
         </rules>
 

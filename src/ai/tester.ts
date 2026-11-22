@@ -18,11 +18,12 @@ import { compactErrorMessage } from '../utils/strings.ts';
 import { isSamePageIgnoringQuery } from '../utils/url-matcher.ts';
 import type { Agent, AgentDeps } from './agent.ts';
 import type { Conversation } from './conversation.ts';
+import { createExplicitTools, normalizeExplicitTools, parseExplicitToolsRequest } from './explicit-tools.ts';
 import { pageEvidence } from './judge.ts';
 import { Navigator } from './navigator.ts';
 import type { Pilot } from './pilot.ts';
 import { Researcher } from './researcher.ts';
-import { actionRule, capabilityGroundingRule, dataProtectionRules, focusedElementRule, formRequirementsRule, locatorRule, multipleTabsRule, sectionContextRule } from './rules.ts';
+import { actionRule, capabilityGroundingRule, dataProtectionRules, explicitToolsRule, focusedElementRule, formRequirementsRule, locatorRule, multipleTabsRule, sectionContextRule } from './rules.ts';
 import { TaskAgent } from './task-agent.ts';
 import { createCodeceptJSTools, createIframeTools, withdrawVisionTools } from './tools.ts';
 
@@ -64,6 +65,7 @@ export class Tester extends TaskAgent implements Agent {
   private seenUiMapUrls = new Set<string>();
   private lastAnalyzedStateHash: string | null = null;
   private stalledIterations = 0;
+  private enabledExplicitTools = new Set<string>();
   private previousRegionPresent: boolean | null = null;
   private regionTransitioned = false;
   private readonly MAX_STALLED_ITERATIONS = 3;
@@ -120,11 +122,11 @@ export class Tester extends TaskAgent implements Agent {
     this.seenUiMapUrls.clear();
     this.lastAnalyzedStateHash = null;
     this.stalledIterations = 0;
+    this.enabledExplicitTools = new Set(normalizeExplicitTools(task.explicitTools));
     this.pendingReview = '';
     this.previousRegionPresent = null;
     this.regionTransitioned = false;
     this.stateManager.clearHistory();
-    this.resetFailureCount();
     this.pilot?.reset();
 
     const requestStore = this.requestStore;
@@ -245,7 +247,10 @@ export class Tester extends TaskAgent implements Agent {
 
     const pageContext = await this.reinjectContextIfNeeded(1, testerState);
     if (pageContext) conversation.addUserText(pageContext);
-    if (plan) conversation.addUserText(`Pilot's test plan:\n${plan}\n\nFollow this plan while executing the test.`);
+    if (plan) {
+      const enabledRules = this.applyExplicitTools(plan);
+      conversation.addUserText(`Pilot's test plan:\n${plan}\n\nFollow this plan while executing the test.${enabledRules}`);
+    }
 
     const offStateChange = this.stateManager.onStateChange((event: StateTransition) => {
       if (task.hasFinished) return;
@@ -255,6 +260,7 @@ export class Tester extends TaskAgent implements Agent {
     });
 
     const codeceptjsTools = createCodeceptJSTools(this.toolDeps, task);
+    const explicitTools = createExplicitTools({ ...this.toolDeps, researcher: this.researcher }, task);
     let assertionPerformed = false;
     let extensions = 0;
     let deadlineReached = false;
@@ -272,12 +278,6 @@ export class Tester extends TaskAgent implements Agent {
             return;
           }
           debugLog('iteration', iteration);
-          if (!(await this.explorer.recover()).ok) {
-            task.addNote('Browser page is unavailable');
-            task.finish(TestResult.FAILED);
-            stop();
-            return;
-          }
           const currentState = this.getCurrentState();
 
           const tools = {
@@ -289,6 +289,10 @@ export class Tester extends TaskAgent implements Agent {
             Object.assign(tools, createIframeTools(this.toolDeps));
           }
           withdrawVisionTools(tools);
+          for (const name of this.enabledExplicitTools) {
+            if (Stats.visionDisabled && name === 'dragAndDrop') continue;
+            if (explicitTools[name]) tools[name] = explicitTools[name];
+          }
 
           debugLog(`Test ${task.scenario} iteration ${iteration}`);
 
@@ -327,7 +331,7 @@ export class Tester extends TaskAgent implements Agent {
 
             if (isNewPage && this.pilot) {
               const guidance = await this.pilot.reviewNewPage(task, currentState, conversation);
-              if (guidance) nextStep += `\n\n${guidance}`;
+              if (guidance) nextStep += `\n\n${guidance}${this.applyExplicitTools(guidance)}`;
             } else if (this.shouldAnalyzeProgress(iteration, currentState) && this.pilot) {
               let guidance: string;
               if (this.isStruggling) {
@@ -335,8 +339,7 @@ export class Tester extends TaskAgent implements Agent {
               } else {
                 guidance = await this.pilot.periodicAnalyzeProgress(task, currentState, conversation);
               }
-              if (guidance) nextStep += `\n\n${guidance}`;
-              this.consecutiveFailures = 0;
+              if (guidance) nextStep += `\n\n${guidance}${this.applyExplicitTools(guidance)}`;
               this.lastAnalyzedStateHash = currentState.hash;
             }
             conversation.addUserText(nextStep);
@@ -345,6 +348,7 @@ export class Tester extends TaskAgent implements Agent {
           const result = await this.provider.invokeConversation(conversation, tools, {
             maxToolRoundtrips: 3,
             toolChoice: 'required',
+            agentName: 'tester',
             stopWhen: () => task.hasFinished || !!this.pendingReview,
           });
 
@@ -358,17 +362,9 @@ export class Tester extends TaskAgent implements Agent {
 
           const allToolNames = result?.toolExecutions?.map((execution: any) => execution.toolName) || [];
           const successfulToolNames = result?.toolExecutions?.filter((execution: any) => execution.wasSuccessful)?.map((execution: any) => execution.toolName) || [];
-          const actionPerformed = !!allToolNames.find((toolName: string) => this.ACTION_TOOLS.includes(toolName));
+          const actionPerformed = !!allToolNames.find((toolName: string) => this.currentActionTools.includes(toolName));
           assertionPerformed = !!successfulToolNames.find((toolName: string) => this.ASSERTION_TOOLS.includes(toolName));
           const wasSuccessful = result?.toolExecutions?.every((execution: any) => execution.wasSuccessful);
-
-          this.trackToolExecutions(result?.toolExecutions || []);
-
-          if (this.consecutiveEmptyResults >= 5) {
-            task.addNote('AI model is not responding with actions. Stopped');
-            stop();
-            return;
-          }
 
           if (actionPerformed && !wasSuccessful) {
             const noted = new Set(Object.values(task.notes).map((note) => note.message));
@@ -505,15 +501,24 @@ export class Tester extends TaskAgent implements Agent {
   }
 
   private get isStruggling(): boolean {
-    return this.consecutiveFailures >= 3 || this.consecutiveEmptyResults >= 2;
+    return this.stalledIterations >= this.MAX_STALLED_ITERATIONS - 1;
+  }
+
+  private get currentActionTools(): string[] {
+    return [...this.ACTION_TOOLS, ...this.enabledExplicitTools];
+  }
+
+  private applyExplicitTools(guidance: string): string {
+    const requested = parseExplicitToolsRequest(guidance).filter((name) => !this.enabledExplicitTools.has(name));
+    if (requested.length === 0) return '';
+    for (const name of requested) this.enabledExplicitTools.add(name);
+    return `\n\n${explicitToolsRule}`;
   }
 
   private shouldStopForStalledExecution(task: Test, previousState: ActionResult, toolExecutions: any[]): boolean {
-    if (task.hasFinished) return false;
-
     const currentState = this.getCurrentState();
     const stateChanged = previousState.url !== currentState.url || previousState.hash !== currentState.hash;
-    const actionTools = [...this.ACTION_TOOLS, ...this.DELEGATED_ACTION_TOOLS, ...this.SPECIAL_CONTEXT_ACTION_TOOLS];
+    const actionTools = [...this.currentActionTools, ...this.DELEGATED_ACTION_TOOLS, ...this.SPECIAL_CONTEXT_ACTION_TOOLS];
     const hasSuccessfulAction = toolExecutions.some((execution) => execution.wasSuccessful && actionTools.includes(execution.toolName));
     const hasSuccessfulAssertion = toolExecutions.some((execution) => execution.wasSuccessful && this.ASSERTION_TOOLS.includes(execution.toolName));
 
@@ -522,14 +527,7 @@ export class Tester extends TaskAgent implements Agent {
       return false;
     }
 
-    const hasNoBrowserProgress = toolExecutions.length === 0 || toolExecutions.every((execution) => !actionTools.includes(execution.toolName) || !execution.wasSuccessful);
-    if (!hasNoBrowserProgress) return false;
-
-    this.stalledIterations++;
-    if (this.stalledIterations < this.MAX_STALLED_ITERATIONS) return false;
-
-    task.addNote('No further browser progress on unchanged page; requesting final review');
-    return true;
+    return this.shouldStopAfterStall(task, 'No further browser progress on unchanged page; requesting final review');
   }
 
   private async prepareInstructionsForNextStep(task: Test): Promise<string> {
@@ -539,7 +537,7 @@ export class Tester extends TaskAgent implements Agent {
       </task>
   
       <rules>
-      Use tools ${this.ACTION_TOOLS.join(', ')} to interact with the page.
+      Use tools ${this.currentActionTools.join(', ')} to interact with the page.
       Fall back to interact() when those fail, when the step needs a sequence of actions, or when your context is not enough to locate the element.
       Use tool names exactly as listed in this prompt. Do not invent combined tool names or aliases.
       Match each tool input schema exactly. Do not invent parameter names or pass extra fields.
@@ -768,6 +766,7 @@ export class Tester extends TaskAgent implements Agent {
         </judge_rule>
       `;
     }
+    const enabledExplicitRule = this.enabledExplicitTools.size > 0 ? explicitToolsRule : '';
 
     return dedent`
     <role>
@@ -861,6 +860,8 @@ export class Tester extends TaskAgent implements Agent {
     ${locatorRule}
 
     ${actionRule}
+
+    ${enabledExplicitRule}
 
     ${sectionContextRule}
 
@@ -1191,11 +1192,10 @@ export class Tester extends TaskAgent implements Agent {
     }
 
     if (result.recovered) {
-      this.resetFailureCount();
       this.previousUrl = null;
       this.previousStateHash = null;
       this.stalledIterations = 0;
-    } else if (this.shouldStopAfterStalledLoopError(task)) {
+    } else if (this.shouldStopAfterStall(task, 'No browser progress after repeated execution errors; requesting final review')) {
       return 'stop';
     }
 
@@ -1203,13 +1203,13 @@ export class Tester extends TaskAgent implements Agent {
     return 'continue';
   }
 
-  private shouldStopAfterStalledLoopError(task: Test): boolean {
+  private shouldStopAfterStall(task: Test, note: string): boolean {
     if (task.hasFinished) return false;
 
     this.stalledIterations++;
     if (this.stalledIterations < this.MAX_STALLED_ITERATIONS) return false;
 
-    task.addNote('No browser progress after repeated execution errors; requesting final review');
+    task.addNote(note);
     return true;
   }
 

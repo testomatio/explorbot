@@ -16,6 +16,7 @@ import {
   resolveLangfuse,
   resolveModel,
   resolveOutputRoot,
+  setBoatEnvPrefix,
   setOutputDir,
 } from '../../../src/config.ts';
 import { type SiteRecord, findGlobalConfig, globalEnvPath, isGlobalConfigPath, loadSiteConfig, registerSite, resolveSiteTarget } from '../../../src/global-config.ts';
@@ -84,6 +85,7 @@ export class ApibotConfigParser {
       process.chdir(resolve(options.path));
     }
 
+    setBoatEnvPrefix('APIBOT_');
     ApibotConfigParser.loadEnv(globalEnvPath());
     ApibotConfigParser.loadEnv('.env');
     this.applyRunOptions(options);
@@ -118,7 +120,7 @@ export class ApibotConfigParser {
       this.applyEnvHeaders(config.api);
       if (options?.baseEndpoint) config.api.baseEndpoint = options.baseEndpoint.replace(/\/$/, '');
       await resolveConfigModels(config.ai);
-      resolveLangfuse(config.ai);
+      resolveLangfuse(config.ai, config.api.baseEndpoint);
       this.site = null;
       this.siteConfigPath = null;
 
@@ -165,19 +167,21 @@ export class ApibotConfigParser {
   }
 
   resolveEndpointPath(endpoint: string): string {
-    if (!this.site && !isAbsoluteEndpoint(endpoint)) return endpoint;
-
     const base = new URL(this.getConfig().api.baseEndpoint);
-    const origin = this.site?.url || base.origin;
+    let endpointPath = endpoint;
 
-    const resolved = resolveSiteTarget(endpoint, origin);
-    if (resolved.baseUrl !== origin) return endpoint;
+    if (this.site || isAbsoluteEndpoint(endpoint)) {
+      const origin = this.site?.url || base.origin;
+      const resolved = resolveSiteTarget(endpoint, origin);
+      if (resolved.baseUrl !== origin) return endpoint;
+      endpointPath = resolved.path;
+    }
 
     const basePath = base.pathname.replace(/\/$/, '');
-    if (!basePath) return resolved.path;
-    if (resolved.path === basePath) return '/';
-    if (resolved.path.startsWith(`${basePath}/`)) return resolved.path.slice(basePath.length);
-    return resolved.path;
+    if (!basePath) return endpointPath;
+    if (endpointPath === basePath) return '/';
+    if (endpointPath.startsWith(`${basePath}/`)) return endpointPath.slice(basePath.length);
+    return endpointPath;
   }
 
   getPlansDir(): string {
@@ -228,7 +232,7 @@ export class ApibotConfigParser {
 
     const merged = deepMerge(config, overrides);
     await resolveConfigModels(merged.ai);
-    resolveLangfuse(merged.ai);
+    resolveLangfuse(merged.ai, site.baseUrl);
 
     let baseEndpoint = site.baseUrl;
     const envUrl = process.env.EXPLORBOT_URL;
@@ -272,7 +276,7 @@ export class ApibotConfigParser {
       api,
       dirs: { output: '.', knowledge: 'knowledge' },
     };
-    resolveLangfuse(this.config.ai);
+    resolveLangfuse(this.config.ai, baseEndpoint);
     this.configPath = path.join(outputRoot, 'apibot.config.js');
     this.validateConfig(this.config);
     setOutputDir(this.getOutputDir());

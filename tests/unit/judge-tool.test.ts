@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
-import { Decision } from '../../src/ai/judge.ts';
 import { createJudgeTool } from '../../src/ai/judge-tool.ts';
+import { Decision } from '../../src/ai/judge.ts';
 
 function judgeReturning(decision: Decision, seen: any[] = []) {
   return {

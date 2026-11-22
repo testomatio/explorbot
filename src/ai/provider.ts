@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { OpenTelemetry } from '@ai-sdk/otel';
 import { LangfuseSpanProcessor } from '@langfuse/otel';
 import { NodeSDK } from '@opentelemetry/sdk-node';
-import { APICallError, NoObjectGeneratedError, NoOutputGeneratedError, Output, asSchema, extractJsonMiddleware, generateText, isStepCount, parsePartialJson, registerTelemetry, tool, wrapLanguageModel } from 'ai';
+import { APICallError, NoObjectGeneratedError, NoOutputGeneratedError, Output, ToolChoiceViolationError, asSchema, extractJsonMiddleware, generateText, isStepCount, parsePartialJson, registerTelemetry, tool, wrapLanguageModel } from 'ai';
 import type { ModelMessage } from 'ai';
 import dedent from 'dedent';
 import { z } from 'zod';
@@ -95,6 +95,7 @@ export class Provider {
     retryCondition: (error: Error) => {
       return (
         (error.name === 'AI_APICallError' ||
+          error.name === 'AI_ToolChoiceViolationError' ||
           error.message.includes('timeout') ||
           error.message.includes('network') ||
           error.message.includes('rate limit') ||
@@ -472,6 +473,9 @@ export class Provider {
     setActivity(`🤖 Asking ${modelName} with dynamic tools`, 'ai');
     promptLog(`Using model: ${modelName}`);
 
+    const agentToolChoice = this.config.agents?.[options.agentName as keyof typeof this.config.agents]?.toolChoice || this.config.toolChoice;
+    if (agentToolChoice) options = { ...options, toolChoice: agentToolChoice };
+
     let toolsWithCommentary = tools;
     if (options.toolChoice !== 'required') toolsWithCommentary = withHarmonyChannelFallback(tools);
     const toolNames = Object.keys(toolsWithCommentary || {});
@@ -805,6 +809,7 @@ function withInvalidRequestFeedback(messages: ModelMessage[], error: unknown): M
 }
 
 function isRequiredToolChoiceError(error: unknown): boolean {
+  if (ToolChoiceViolationError.isInstance(error)) return true;
   return error instanceof Error && error.message.includes('Tool choice is required');
 }
 

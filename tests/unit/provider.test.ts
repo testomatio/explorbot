@@ -142,7 +142,7 @@ describe('Provider', () => {
         doGenerate: async () => ({
           text: undefined,
           toolCalls: [{ toolCallId: 'call-1', toolName: 'click<|channel|>commentary', args: { commands: ['I.click("#btn")'] } }],
-          finishReason: 'tool-calls' as const,
+          finishReason: { unified: 'tool-calls' as const, raw: 'tool_calls' },
           usage: { inputTokens: 1, outputTokens: 1 },
           content: [{ type: 'tool-call' as const, toolCallId: 'call-1', toolName: 'click<|channel|>commentary', input: JSON.stringify({ commands: ['I.click("#btn")'] }) }],
         }),
@@ -169,7 +169,7 @@ describe('Provider', () => {
         doGenerate: async () => ({
           text: undefined,
           toolCalls: [{ toolCallId: 'call-1', toolName: 'nonexistent<|channel|>commentary', args: {} }],
-          finishReason: 'tool-calls' as const,
+          finishReason: { unified: 'tool-calls' as const, raw: 'tool_calls' },
           usage: { inputTokens: 1, outputTokens: 1 },
           content: [{ type: 'tool-call' as const, toolCallId: 'call-1', toolName: 'nonexistent<|channel|>commentary', input: '{}' }],
         }),
@@ -206,7 +206,7 @@ describe('Provider', () => {
         modelId: 'tools-list-model',
         doGenerate: async (params: any) => {
           toolNames = params.tools.map((t: any) => t.name);
-          return { text: 'ok', finishReason: 'stop', usage: { inputTokens: 1, outputTokens: 1 }, content: [{ type: 'text' as const, text: 'ok' }] };
+          return { finishReason: { unified: 'tool-calls' as const, raw: 'tool_calls' }, usage: { inputTokens: 1, outputTokens: 1 }, content: [{ type: 'tool-call' as const, toolCallId: 'call-1', toolName: 'click', input: '{}' }] };
         },
       });
 
@@ -214,6 +214,27 @@ describe('Provider', () => {
 
       expect(toolNames).not.toContain('commentary');
       expect(toolNames).toContain('click');
+    });
+
+    it.each([
+      ['the agent', { agents: { tester: { toolChoice: 'auto' } } }],
+      ['every agent', { toolChoice: 'auto' }],
+      ['the agent over every agent', { toolChoice: 'none', agents: { tester: { toolChoice: 'auto' } } }],
+    ])('should send the tool choice configured for %s', async (_name, configured: any) => {
+      let toolChoice: any;
+      const model = new MockLanguageModelV3({
+        provider: 'test',
+        modelId: 'agent-tool-choice-model',
+        doGenerate: async (params: any) => {
+          toolChoice = params.toolChoice;
+          return { text: 'ok', finishReason: 'stop', usage: { inputTokens: 1, outputTokens: 1 }, content: [{ type: 'text' as const, text: 'ok' }] };
+        },
+      });
+      Object.assign(aiConfig, configured);
+
+      await provider.generateWithTools([{ role: 'user', content: 'Use a tool' }], model, { click: tool({ description: 'Click', inputSchema: z.object({}) }) }, { toolChoice: 'required', agentName: 'tester' });
+
+      expect(toolChoice).toEqual({ type: 'auto' });
     });
 
     it('should relax required tool choice after the provider rejects it', async () => {
@@ -243,6 +264,60 @@ describe('Provider', () => {
       expect(JSON.stringify(requests[1].prompt)).toContain('Tool choice is required');
     });
 
+    it('should relax required tool choice when the model answers without a tool call', async () => {
+      const requests: Array<{ toolChoice: any; toolNames: string[] }> = [];
+      const model = new MockLanguageModelV3({
+        provider: 'test',
+        modelId: 'required-tool-text-model',
+        doGenerate: (async (params: any) => {
+          requests.push({ toolChoice: params.toolChoice, toolNames: params.tools.map((t: any) => t.name) });
+          return { finishReason: { unified: 'stop' as const, raw: 'stop' }, usage: { inputTokens: 1, outputTokens: 1 }, content: [{ type: 'text' as const, text: 'I need another turn' }], warnings: [] };
+        }) as any,
+      });
+      aiConfig.retryDelay = 1;
+
+      const response = await provider.generateWithTools([{ role: 'user', content: 'Use a tool' }], model, { click: tool({ description: 'Click', inputSchema: z.object({}) }) }, { toolChoice: 'required', maxRetries: 2 });
+
+      expect(response.text).toBe('I need another turn');
+      expect(requests).toHaveLength(2);
+      expect(requests[0].toolChoice).toEqual({ type: 'required' });
+      expect(requests[1].toolChoice).toEqual({ type: 'auto' });
+      expect(requests[1].toolNames).toContain('commentary');
+    });
+
+    it('should keep a tool step that ran before the model stopped calling required tools', async () => {
+      let calls = 0;
+      let executed = 0;
+      const model = new MockLanguageModelV3({
+        provider: 'test',
+        modelId: 'required-tool-then-text-model',
+        doGenerate: (async () => {
+          calls++;
+          if (calls === 1) {
+            return { finishReason: { unified: 'tool-calls' as const, raw: 'tool_calls' }, usage: { inputTokens: 1, outputTokens: 1 }, content: [{ type: 'tool-call' as const, toolCallId: 'call-1', toolName: 'click', input: '{}' }], warnings: [] };
+          }
+          return { finishReason: { unified: 'stop' as const, raw: 'stop' }, usage: { inputTokens: 1, outputTokens: 1 }, content: [{ type: 'text' as const, text: 'done' }], warnings: [] };
+        }) as any,
+      });
+      aiConfig.retryDelay = 1;
+      const tools = {
+        click: tool({
+          description: 'Click',
+          inputSchema: z.object({}),
+          execute: async () => {
+            executed++;
+            return { success: true };
+          },
+        }),
+      };
+
+      const response = await provider.generateWithTools([{ role: 'user', content: 'Use a tool' }], model, tools, { toolChoice: 'required', maxToolRoundtrips: 2, maxRetries: 2 });
+
+      expect(executed).toBe(1);
+      expect(response.text).toBe('done');
+      expect(response.responseMessages.some((message: any) => message.role === 'tool')).toBe(true);
+    });
+
     it('should repair bare harmony channel tool calls to commentary', async () => {
       const messages = [{ role: 'user', content: 'Use a tool' }];
       const tools = {
@@ -258,7 +333,7 @@ describe('Provider', () => {
         doGenerate: async () => ({
           text: undefined,
           toolCalls: [{ toolCallId: 'call-1', toolName: 'analysis', args: { content: 'planning' } }],
-          finishReason: 'tool-calls' as const,
+          finishReason: { unified: 'tool-calls' as const, raw: 'tool_calls' },
           usage: { inputTokens: 1, outputTokens: 1 },
           content: [{ type: 'tool-call' as const, toolCallId: 'call-1', toolName: 'analysis', input: 'I should click the submit button next' }],
         }),
@@ -300,7 +375,7 @@ describe('Provider', () => {
             return {
               text: undefined,
               toolCalls: [{ toolCallId: 'call-1', toolName: 'verify', args: { assertion: 'x' } }],
-              finishReason: 'tool-calls' as const,
+              finishReason: { unified: 'tool-calls' as const, raw: 'tool_calls' },
               usage: { inputTokens: 1, outputTokens: 1 },
               content: [{ type: 'tool-call' as const, toolCallId: 'call-1', toolName: 'verify', input: '{"assertion":"x"}' }],
             };
@@ -412,7 +487,7 @@ describe('Provider', () => {
             return {
               text: undefined,
               toolCalls: [{ toolCallId: 'c1', toolName: 'create', args: { name: 'suite' } }],
-              finishReason: 'tool-calls' as const,
+              finishReason: { unified: 'tool-calls' as const, raw: 'tool_calls' },
               usage: { inputTokens: 1, outputTokens: 1 },
               content: [{ type: 'tool-call' as const, toolCallId: 'c1', toolName: 'create', input: JSON.stringify({ name: 'suite' }) }],
             };
@@ -456,7 +531,7 @@ describe('Provider', () => {
             return {
               text: undefined,
               toolCalls: [{ toolCallId: 'c1', toolName: 'create', args: { name: 'suite' } }],
-              finishReason: 'tool-calls' as const,
+              finishReason: { unified: 'tool-calls' as const, raw: 'tool_calls' },
               usage: { inputTokens: 1, outputTokens: 1 },
               content: [{ type: 'tool-call' as const, toolCallId: 'c1', toolName: 'create', input: JSON.stringify({ name: 'suite' }) }],
             };
@@ -888,7 +963,7 @@ describe('Provider', () => {
             return {
               text: undefined,
               toolCalls: [{ toolCallId: 'c1', toolName: 'create', args: { name: 'suite' } }],
-              finishReason: 'tool-calls' as const,
+              finishReason: { unified: 'tool-calls' as const, raw: 'tool_calls' },
               usage: { inputTokens: 1, outputTokens: 1 },
               content: [{ type: 'tool-call' as const, toolCallId: 'c1', toolName: 'create', input: JSON.stringify({ name: 'suite' }) }],
             };

@@ -1055,26 +1055,25 @@ export class Pilot implements Agent {
     const initialUrl = stateHistory[0]?.toState?.url || '';
     let currentUrl = initialUrl;
 
-    const groups = new Map<string, { title?: string; h1?: string; h3?: string; lines: string[] }>();
+    const groups: { url: string; title?: string; h1?: string; h3?: string; lines: string[] }[] = [];
 
-    const ensureGroup = (url: string) => {
-      if (!groups.has(url)) {
-        const matchingState = stateHistory.find((t) => t.toState.url === url)?.toState;
-        groups.set(url, {
-          title: matchingState?.title,
-          h1: matchingState?.h1,
-          h3: matchingState?.h3,
-          lines: [],
-        });
-      }
+    const startGroup = (url: string) => {
+      currentUrl = url;
+      const matchingState = stateHistory.find((t) => t.toState.url === url)?.toState;
+      groups.push({
+        url,
+        title: matchingState?.title,
+        h1: matchingState?.h1,
+        h3: matchingState?.h3,
+        lines: [],
+      });
     };
 
-    ensureGroup(currentUrl);
+    startGroup(currentUrl);
 
-    for (const exec of executions) {
+    for (const [index, exec] of executions.entries()) {
       if (!CHECK_TOOLS.includes(exec.toolName) && exec.output?.url && exec.output.url !== currentUrl) {
-        currentUrl = exec.output.url;
-        ensureGroup(currentUrl);
+        startGroup(exec.output.url);
       }
 
       const description = exec.input?.explanation || exec.input?.assertion || exec.input?.request || truncateJson(exec.input);
@@ -1095,13 +1094,19 @@ export class Pilot implements Agent {
         line += `\n    result: ${resultMessage}`;
       }
 
-      groups.get(currentUrl)!.lines.push(line);
+      const messages = this.formatPageMessages(exec.output);
+      if (messages) line += `\n    messages: ${messages}`;
+
+      groups[groups.length - 1].lines.push(`${index + 1}. ${line}`);
+
+      const landedUrl = exec.output?.pageDiff?.currentUrl;
+      if (landedUrl && landedUrl !== currentUrl) startGroup(landedUrl);
     }
 
     const PER_GROUP_CAP = 25;
     const parts: string[] = [];
-    for (const [url, group] of groups) {
-      const header = [url];
+    for (const group of groups) {
+      const header = [group.url];
       if (group.title) header.push(`  title: ${group.title}`);
       if (group.h1) header.push(`  h1: ${group.h1}`);
       if (group.h3) header.push(`  h3: ${group.h3}`);
@@ -1195,10 +1200,8 @@ export class Pilot implements Agent {
           line += `\n   requests: ${requests.map((r: any) => `${r.method} ${r.path} → ${r.status}`).join(', ')}`;
         }
 
-        const messages = (t.output?.pageDiff?.messages ?? []).slice(0, PILOT_MESSAGE_LIMIT);
-        if (messages.length > 0) {
-          line += `\n   messages: ${messages.map((m: string) => m.slice(0, PILOT_MESSAGE_MAX_LENGTH)).join(' | ')}`;
-        }
+        const messages = this.formatPageMessages(t.output);
+        if (messages) line += `\n   messages: ${messages}`;
 
         const consoleError = t.output?.pageDiff?.consoleErrors?.[0];
         if (consoleError) line += `\n   console: ${consoleError.slice(0, PILOT_MESSAGE_MAX_LENGTH)}`;
@@ -1209,6 +1212,11 @@ export class Pilot implements Agent {
         return line;
       })
       .join('\n\n');
+  }
+
+  private formatPageMessages(output: any): string {
+    const messages = (output?.pageDiff?.messages ?? []).slice(0, PILOT_MESSAGE_LIMIT);
+    return messages.map((m: string) => m.slice(0, PILOT_MESSAGE_MAX_LENGTH)).join(' | ');
   }
 
   private getSystemPrompt(task: Test, initialState: ActionResult): string {
@@ -1249,7 +1257,7 @@ export class Pilot implements Agent {
       - "overlay: none" but Tester targets an overlay → overlay closed; re-trigger.
       - "region:" in <state> → a large area appeared in place without navigation (subview, wizard step, panel). Direct Tester to act inside it; the rest of the page is still usable.
       - Action SUCCESS but ariaDiff empty → may have worked without visible DOM change; check result message.
-      - MultipleElementsFound → nothing was clicked. Tell Tester to reuse the same locator with step.opts({ elementIndex: N }) from the numbered elements list.
+      - MultipleElementsFound → nothing was clicked. Tell Tester to reuse the same locator with .at(N) chained to it, N from the numbered elements list.
       - Wrong page (settings vs feature) → getVisitedStates() then back() or reset(). Don't try breadcrumbs (SPA back-nav is unreliable).
       - Click SUCCESS but executed locator ≠ explanation intent, or "skipped" attempts present → wrong element clicked.
       - form(I.type()) SUCCESS but "element" shows a button/link → keys went to wrong element; click the input first.
@@ -1264,8 +1272,13 @@ export class Pilot implements Agent {
 
       To request more context, mention ATTACH_ARIA, ATTACH_SUMMARY, or ATTACH_UI_MAP — only when recent actions show failures.
 
-      Tester tools: click, pressKey, form, see, verify, interact, context, research, xpathCheck,
-      visualClick, back, getVisitedStates, reset, stop, finish, record.
+      dragAndDrop and rightClick are extra tools: Tester has them only when the plan enables them or after you request them.
+      Request by including a line "ENABLE_TOOLS: <comma-separated tool names>" in your instruction — when the scenario needs
+      dragging an element or opening a context menu and click()/form() cannot achieve it (for example, repeated failed
+      attempts to move an item).
+
+      Tester tools: click, hover, pressKey, form, see, verify, interact, context, research, xpathCheck,
+      visualClick, back, getVisitedStates, reset, stop, finish, record; extra when enabled: dragAndDrop, rightClick.
       Use tool names exactly as listed. Do not invent combined names or aliases.
       Reloading is not a tool: to re-read a page from the server, instruct Tester to run I.refreshPage() through form.
 
