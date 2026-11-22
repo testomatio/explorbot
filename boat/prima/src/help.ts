@@ -1,14 +1,19 @@
 import dedent from 'dedent';
 
-export const bareHelp = dedent(`
-  Declarative browser testing on top of playwright-cli
+export const mainUsage = dedent(`
+  Typical run: commands toward one goal share a purpose and are recorded as evidence
+    prima do "<step>" "<step>" --purpose "<goal>" --video
+    prima check "<outcome>" --expected "<result>" --purpose "<goal>" --video
+    prima video --purpose "<goal>"     join the recordings into one video
+    prima status --purpose "<goal>"    current page and every command of that goal
+`);
 
+const commandHelp = dedent(`
     prima browser start <url>                       open browser (playwright-cli), print AI model
     prima go "<page>"                               navigate: url, path or page name
     prima do "<step>" "<step>" ...                  act on the page
     prima check "<outcome>" --expected "<result>"   act, then judge the result
     prima ux [focus]                                UX review
-    prima video --purpose "<name>"                  join the recordings of that purpose
     prima browser stop                              close browser
 
     do/check options:
@@ -24,7 +29,18 @@ export const bareHelp = dedent(`
     prima skill              usage guide for coding agents
     prima skill --install    install it: local (default) or global
     prima --help             all commands and options
+    prima <command> --help   options of one command
 `);
+
+export const bareHelp = [
+  'Declarative browser testing on top of playwright-cli',
+  ...[mainUsage, commandHelp].map((block) =>
+    block
+      .split('\n')
+      .map((line) => `  ${line}`.trimEnd())
+      .join('\n')
+  ),
+].join('\n\n');
 
 export const skillPointer = 'Usage guide: prima skill';
 
