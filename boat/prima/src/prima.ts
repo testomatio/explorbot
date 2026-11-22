@@ -33,6 +33,7 @@ import { isFunctionExpression, takePwValue, toCodeceptWrapper } from './pw-parse
 import { type PwServerDescriptor, readDescriptors, selectDescriptor } from './pw-registry.ts';
 import { type SessionRun, commandNumber, latestSessionFile, purposeFile, readSession, recordCommand, sessionFile, sessionsDir } from './session-log.ts';
 import { type VideoClip, VideoEditor } from './video-editor.ts';
+import { OVERLAY_KINDS, type TimelineStep, VideoTimeline } from './video-timeline.ts';
 
 const WITHHELD_TOOLS = ['learnExperience', 'askUser', 'research'];
 const ITERATIONS_PER_INSTRUCTION = 2;
@@ -82,6 +83,7 @@ export class Prima {
   private session: SessionRun | null = null;
   private recording: string | null = null;
   private recordingStartedAt = 0;
+  private timeline: VideoTimeline | null = null;
 
   constructor(options: PrimaOptions = {}) {
     this.options = options;
@@ -696,6 +698,8 @@ export class Prima {
     await page.screencast.showActions({ position: 'top-left' }).catch(() => {});
     this.recording = file;
     this.recordingStartedAt = performance.now();
+    this.timeline = new VideoTimeline();
+    this.timeline.start(this.recordingStartedAt);
   }
 
   async stopVideo(envelope: EnvelopeData): Promise<void> {
@@ -705,6 +709,7 @@ export class Prima {
       .page?.screencast.stop()
       .then(() => true)
       .catch(() => false);
+    this.timeline?.save(path.dirname(this.recording));
     if (!stopped || !envelope.artifacts) return;
     envelope.artifacts.video = this.recording;
   }
@@ -724,16 +729,26 @@ export class Prima {
           if (command.passed) status = 'passed';
           let video = 'no video';
           if (recorded.includes(command)) video = 'video   ';
-          return [`#${command.number}`, status, video, command.title].join('  ');
+          const line = [`#${command.number}`, status, video, command.title].join('  ');
+          if (!recorded.includes(command)) return line;
+          const steps = VideoTimeline.load(path.dirname(command.file))?.steps || [];
+          return [line, ...steps.flatMap((step, index) => this.timelineLines(step, index + 1))].join('\n');
         })
         .join('\n');
     }
 
+    const overlays = edits.overlay || [];
+    const unknown = overlays.filter((kind) => !OVERLAY_KINDS.includes(kind));
+    if (unknown.length) return `Unknown overlay ${unknown.join(', ')}: use ${OVERLAY_KINDS.join(', ')}`;
+
+    const picks = this.numbered(edits.steps);
     let selected = recorded.filter((command) => command.passed);
     const missing: string[] = [];
-    if (edits.only?.length) {
+    let order = edits.only || [];
+    if (!order.length && picks.size) order = [...picks.keys()].map((key) => key.toString(16));
+    if (order.length) {
       selected = [];
-      for (const number of edits.only.flatMap((value) => value.split(','))) {
+      for (const number of order.flatMap((value) => value.split(','))) {
         const command = recorded.find((candidate) => Number.parseInt(candidate.number, 16) === Number.parseInt(number, 16));
         if (command) selected.push(command);
         if (!command) missing.push(number.trim());
@@ -745,14 +760,30 @@ export class Prima {
     const captions = this.numbered(edits.caption);
     const speeds = this.numbered(edits.speed);
     const holds = this.numbered(edits.hold);
-    const clips: VideoClip[] = selected.map((command) => {
+    const stepTime = Number.parseFloat(edits.stepTime || '');
+    const uncut: string[] = [];
+    const clips: VideoClip[] = [];
+    for (const command of selected) {
       const key = Number.parseInt(command.number, 16);
       const clip: VideoClip = { number: command.number, title: command.title, file: command.file };
       if (captions.has(key)) clip.caption = captions.get(key);
       if (speeds.has(key)) clip.speed = Number(speeds.get(key));
       if (holds.has(key)) clip.hold = Number(holds.get(key));
-      return clip;
-    });
+      if (stepTime > 0) clip.stepTime = stepTime;
+      clips.push(clip);
+      if (!picks.has(key) && !clip.stepTime && !overlays.length) continue;
+      const timeline = VideoTimeline.load(path.dirname(command.file));
+      if (!timeline?.steps.length) {
+        if (picks.has(key)) return `#${command.number} was recorded without step times, so its steps cannot be picked. Record it again with --video.`;
+        uncut.push(`  #${command.number} ${command.title}`);
+        continue;
+      }
+      try {
+        clip.segments = timeline.segments(picks.get(key) || '', overlays);
+      } catch (error) {
+        return `#${command.number}: ${(error as Error).message}`;
+      }
+    }
 
     const output = purposeFile(purpose, '.webm');
     const { used, still } = new VideoEditor().render(clips, output);
@@ -760,6 +791,7 @@ export class Prima {
     if (used.length) lines.push(`video: ${output}`, `joined ${used.length} ${pluralize(used.length, 'command')}:`, ...used.map((clip) => `  #${clip.number} ${clip.title}`));
     if (!used.length) lines.push(`No video written: nothing moved on screen in any selected recording of purpose "${purpose}".`);
     if (still.length) lines.push('left out, nothing moved on screen:', ...still.map((clip) => `  #${clip.number} ${clip.title}`));
+    if (uncut.length) lines.push('joined whole, recorded without step times:', ...uncut);
     return lines.join('\n');
   }
 
@@ -825,6 +857,16 @@ export class Prima {
 
   private async loadConfig(): Promise<ExplorbotConfig> {
     return ConfigParser.getInstance().loadConfig({ config: this.options.config, path: this.options.path, baseUrl: this.configBaseUrl() });
+  }
+
+  private timelineLines(step: TimelineStep, number: number): string[] {
+    let status = 'ok  ';
+    if (!step.ok) status = 'FAIL';
+    const line = `    ${String(number).padStart(3)}  ${status}  @${step.start.toFixed(1)}-${step.end.toFixed(1)}s  ${truncate(step.label, HISTORY_DETAIL_CAP)}`;
+    const errors = step.events.filter((event) => event.error).map((event) => `           ! ${truncate(event.text, HISTORY_DETAIL_CAP)}`);
+    const quiet = step.events.length - errors.length;
+    if (quiet) errors.push(`           ${quiet} more console ${pluralize(quiet, 'message')} and requests`);
+    return [line, ...errors];
   }
 
   private numbered(values: string[] = []): Map<number, string> {
@@ -1584,6 +1626,9 @@ export interface VideoEdits {
   caption?: string[];
   speed?: string[];
   hold?: string[];
+  steps?: string[];
+  stepTime?: string;
+  overlay?: string[];
 }
 
 export interface PrimaOptions {

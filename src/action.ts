@@ -399,6 +399,7 @@ class Action {
 
     let codeString = code.replace(/^\(I\) => /, '').trim();
 
+    let settled: ActionResult | null = null;
     const executedSteps: ExecutedStep[] = [];
     const assertionSteps: Array<{ name: string; args: any[] }> = [];
     const detachSteps = attachStepLogger(executedSteps, assertionSteps);
@@ -440,6 +441,7 @@ class Action {
       }
 
       const pageState = await this.captureOnce({ codeBlock: codeString });
+      settled = pageState;
 
       this.actionResult = pageState;
       this.assertionSteps = assertionSteps;
@@ -454,7 +456,10 @@ class Action {
       }
       if (!isFatalBrowserError(err)) {
         const captured = await this.captureOnce({ codeBlock: codeString }).catch(() => null);
-        if (captured && !captured.error) this.actionResult = captured;
+        if (captured && !captured.error) {
+          this.actionResult = captured;
+          settled = captured;
+        }
       }
       this.assertionSteps = [];
       throw err;
@@ -462,6 +467,7 @@ class Action {
       this.executedSteps = executedSteps;
       this.restorePageTimeout();
       detachResponses();
+      tag('data').log('action', { steps: executedSteps, logs: (settled?.browserLogs || []).map(toBrowserLog), requests: settled?.networkRequests || [] });
       if (groupId) await this.recorder!.endAction();
       detachSteps();
       if (stepSpan) {
@@ -591,7 +597,8 @@ export const attachStepLogger = (target: ExecutedStep[], assertionsTarget?: Arra
     }
     if (batchFailed) return;
 
-    const executed: ExecutedStep = { command: stepCode(step), success: !error };
+    const endedAt = performance.now();
+    const executed: ExecutedStep = { command: stepCode(step), success: !error, startedAt: endedAt - (step.duration || 0), endedAt };
     if (error) {
       executed.error = errorToString(error);
       batchFailed = true;
@@ -662,4 +669,6 @@ export interface ExecutedStep {
   command: string;
   success: boolean;
   error?: string;
+  startedAt?: number;
+  endedAt?: number;
 }

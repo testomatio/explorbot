@@ -101,6 +101,14 @@ const SKILL = dedent(`
   - Never take a \`playwright-cli snapshot\` after a prima command; it is already on disk
   - \`pw\` is for what words cannot reach: storage, computed styles, a forced reload
 
+  ## Record video
+
+  - Record with \`--video\` only once the flow works; the video is evidence, not a debugging aid
+  - A video of a working feature shows only the steps that prove it: leave out failed, retried and recovery steps
+  - A video of a defect shows the steps that lead to it and the moment it appears; leave out automation trouble before them
+  - \`video --list\` numbers each command's steps with their time; pick them with \`--steps <command>=<steps>\`
+  - \`--step-time\` caps how long a step plays; \`--overlay <kind>\`, repeatable, shows a step's console-errors, console-logs, network or network-errors over that step only
+
   ## Setup
 
   - A provider API key in the environment is enough; prima picks that provider's recommended models

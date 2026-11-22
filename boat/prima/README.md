@@ -82,7 +82,7 @@ prima-cli check "the cart total updates" --purpose "checkout" --video
 prima-cli video --purpose "checkout"
 ```
 
-While `--video` records a `check`, each step is printed with `@12.4s`, its offset into that command's `video.webm`, so a step can be cut out with `ffmpeg -ss`/`-to`. `do` steps carry no offset yet.
+While `--video` records a `check`, each step is printed with `@12.4s`, its offset into that command's `video.webm`. Every recording also keeps the time of each browser step, with what the page logged and requested during it, so `video` can cut by step.
 
 Without options, every command that passed is joined in run order. Waits are condensed, so a still frame holds for at most a second, and a recording where nothing moved on screen is left out. Recording needs `ffmpeg` on PATH.
 
@@ -90,17 +90,23 @@ Edits refer to commands by number:
 
 | Option | Effect |
 | --- | --- |
-| `--list` | List the purpose's commands with number, result and whether a recording exists |
+| `--list` | List the purpose's commands with number, result and whether a recording exists, and each recorded step with its number and time |
 | `--only 0003,0001` | Join only these commands, in this order; failed ones may be picked |
+| `--steps 0002=1,3-5` | Keep only these steps of a command; `0002=@4.0-9.5` keeps a span in seconds. Without `--only`, the commands named here are joined, in this order |
+| `--step-time 1s` | Longest a step plays; a 5s step is sped up 5 times, a shorter one keeps its speed |
+| `--overlay console-errors` | Show what each step logged over that step only: `console-errors`, `console-logs`, `network` or `network-errors`; repeat for several |
 | `--caption 0001="Add to cart"` | Show a caption over one command |
 | `--speed 0001=2` | Play one command faster (`2`) or slower (`0.5`) |
 | `--hold 0003=3` | Hold the last frame of one command for 3 seconds |
 
-`--caption`, `--speed` and `--hold` repeat for several commands:
+`--caption`, `--speed`, `--hold` and `--steps` repeat for several commands:
 
 ```bash
 prima-cli video --purpose "checkout" --only 0002,0001 --caption 0002="Cart total updates" --speed 0001=2 --hold 0002=3
+prima-cli video --purpose "checkout" --steps 0001=2-4 --steps 0003=1,5 --step-time 1s --overlay console-errors --overlay network-errors
 ```
+
+A step is cut from its start until the next step starts, at most 1.5 seconds past its end, so the page has time to show the result.
 
 ## AI model
 

@@ -162,9 +162,14 @@ export function createPrimaCommands(name = 'prima'): Command {
     .option('--caption <number=text>', 'Caption shown over one command, e.g. 0002="Add to cart"; repeatable', repeat, [])
     .option('--speed <number=factor>', 'Play one command faster (2) or slower (0.5); repeatable', repeat, [])
     .option('--hold <number=seconds>', 'Hold the last frame of one command for this long; repeatable', repeat, [])
+    .option('--steps <number=steps>', 'Steps of one command to keep, by number or @from-to seconds, e.g. 0002=1,3-5 or 0002=@4.0-9.5; repeatable', repeat, [])
+    .option('--step-time <seconds>', 'Longest a step may play; a longer step is sped up to fit')
+    .option('--overlay <kind>', 'Show what each step logged over its video: console-errors, console-logs, network or network-errors; repeatable', repeat, [])
     .action(async (options) => {
       setQuietMode(!isVerboseMode());
-      const output = await (await primaFor(options)).video({ list: options.list, only: options.only, caption: options.caption, speed: options.speed, hold: options.hold }).catch((error: unknown) => browserErrorMessage(error));
+      const output = await (await primaFor(options))
+        .video({ list: options.list, only: options.only, caption: options.caption, speed: options.speed, hold: options.hold, steps: options.steps, stepTime: options.stepTime, overlay: options.overlay })
+        .catch((error: unknown) => browserErrorMessage(error));
       console.log(output);
       process.exit(0);
     });

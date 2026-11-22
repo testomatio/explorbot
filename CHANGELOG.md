@@ -19,6 +19,11 @@
   ```
 - [Prima] `check` without `--expected` splits the scenario into the outcomes it asks to confirm and verifies each one separately.
 - [Prima] A state's aria file keeps its latest non-empty capture; a state never captured shows `aria: not captured`.
+- [Prima] `prima video` cuts by step. A `--video` recording keeps each browser step's time, with what the page logged and requested during it, and `video --list` numbers the steps of every command. `--steps` keeps chosen steps or a span in seconds, `--step-time` speeds up any step longer than the cap, and `--overlay` shows `console-errors`, `console-logs`, `network` or `network-errors` over the step they belong to and clears with the next one.
+  ```bash
+  prima video --purpose "checkout" --steps 0001=2-4 --steps 0003=@4.0-9.5 --step-time 1s --overlay console-errors --overlay network-errors
+  ```
+- [Prima] The prima skill explains what a video should show: the steps that prove a feature works, or the steps that lead to a defect, without automation trouble.
 
 ## 2026-11-19
 
