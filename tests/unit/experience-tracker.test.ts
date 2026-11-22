@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { afterEach, beforeEach, describe, expect, it, setSystemTime } from 'bun:test';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import matter from 'gray-matter';
 import { ActionResult } from '../../src/action-result';
@@ -382,6 +382,126 @@ describe('ExperienceTracker', () => {
     });
   });
 
+  describe('usage tracking', () => {
+    const state = new ActionResult({ html: '<html></html>', url: 'https://example.com/usage', title: 'Usage' });
+    const flowBody = '## FLOW: create a test\n\n* Click create\n\n```js\nI.click("Create")\n```\n\n---\n';
+
+    afterEach(() => {
+      setSystemTime();
+    });
+
+    function readFirstSectionTag() {
+      return experienceTracker.getExperienceTableOfContents(state)[0];
+    }
+
+    it('stamps added on a new action and keeps the code block intact', () => {
+      setSystemTime(new Date('2026-11-01T10:00:00.000Z'));
+      experienceTracker.writeAction(state, { title: 'Save the form', code: 'I.click("Save")' });
+
+      const { content } = experienceTracker.readExperienceFile(state.getStateHash());
+
+      expect(content).toContain('## ACTION: save the form\n\n<!-- added: 2026-11-01T10:00:00.000Z -->\n\n```javascript');
+      expect(content).not.toContain('used:');
+    });
+
+    it('marks a record used when read through getExperienceSection, once per day', () => {
+      setSystemTime(new Date('2026-11-01T10:00:00.000Z'));
+      experienceTracker.writeAction(state, { title: 'Save the form', code: 'I.click("Save")' });
+
+      setSystemTime(new Date('2026-11-05T09:00:00.000Z'));
+      const section = experienceTracker.getExperienceSection(readFirstSectionTag().fileTag, 1, state);
+      expect(section!.content).not.toContain('<!--');
+      expect(section!.content).toContain('I.click("Save")');
+
+      setSystemTime(new Date('2026-11-05T22:00:00.000Z'));
+      experienceTracker.getExperienceSection(readFirstSectionTag().fileTag, 1, state);
+
+      const { content } = experienceTracker.readExperienceFile(state.getStateHash());
+      expect(content).toContain('<!-- added: 2026-11-01T10:00:00.000Z -->');
+      expect(content).toContain('<!-- used: 2026-11-05T09:00:00.000Z -->');
+      expect(content.match(/used:/g)).toHaveLength(1);
+
+      setSystemTime(new Date('2026-11-07T08:00:00.000Z'));
+      experienceTracker.getExperienceSection(readFirstSectionTag().fileTag, 1, state);
+      const updated = experienceTracker.readExperienceFile(state.getStateHash()).content;
+      expect(updated).toContain('<!-- used: 2026-11-07T08:00:00.000Z -->');
+      expect(updated.match(/used:/g)).toHaveLength(1);
+      expect(updated).toContain('```javascript\nI.click("Save")\n```');
+    });
+
+    it('keeps dollar sequences in code intact when marking used', () => {
+      const code = "I.fillField('Price', '100$'); I.fillField('Tax', '$&$$')";
+      setSystemTime(new Date('2026-11-01T10:00:00.000Z'));
+      experienceTracker.writeAction(state, { title: 'Fill price', code });
+      setSystemTime(new Date('2026-11-03T10:00:00.000Z'));
+      experienceTracker.writeAction(state, { title: 'Fill price again', code });
+
+      const { content } = experienceTracker.readExperienceFile(state.getStateHash());
+      expect(content).toContain(code);
+      expect(content.match(/## ACTION/g)).toHaveLength(1);
+      expect(content).toContain('<!-- used: 2026-11-03T10:00:00.000Z -->');
+    });
+
+    it('marks an existing action used when the same code is recorded again', () => {
+      setSystemTime(new Date('2026-11-01T10:00:00.000Z'));
+      experienceTracker.writeAction(state, { title: 'Save the form', code: 'I.click("Save")' });
+      setSystemTime(new Date('2026-11-03T10:00:00.000Z'));
+      experienceTracker.writeAction(state, { title: 'Save again', code: 'I.click("Save")' });
+
+      const { content } = experienceTracker.readExperienceFile(state.getStateHash());
+      expect(content.match(/## ACTION/g)).toHaveLength(1);
+      expect(content).toContain('<!-- used: 2026-11-03T10:00:00.000Z -->');
+    });
+
+    it('dedups a stamped flow and marks it used', () => {
+      setSystemTime(new Date('2026-11-01T10:00:00.000Z'));
+      experienceTracker.writeFlow(state, flowBody);
+      setSystemTime(new Date('2026-11-02T10:00:00.000Z'));
+      experienceTracker.writeFlow(state, flowBody);
+
+      const { content } = experienceTracker.readExperienceFile(state.getStateHash());
+      expect(content.match(/## FLOW: create a test/g)).toHaveLength(1);
+      expect(content).toContain('<!-- used: 2026-11-02T10:00:00.000Z -->');
+    });
+
+    it('shows how long ago each record was used in the TOC', () => {
+      setSystemTime(new Date('2026-11-01T10:00:00.000Z'));
+      experienceTracker.writeAction(state, { title: 'Open the menu', code: 'I.click("Menu")' });
+      experienceTracker.writeAction(state, { title: 'Save the form', code: 'I.click("Save")' });
+      setSystemTime(new Date('2026-11-08T10:00:00.000Z'));
+      experienceTracker.getExperienceSection(readFirstSectionTag().fileTag, 1, state);
+      setSystemTime(new Date('2026-11-10T10:00:00.000Z'));
+
+      const rendered = experienceTracker.renderExperienceTocFor(state);
+
+      expect(rendered).toContain('ACTION: save the form (used 2 days ago)');
+      expect(rendered).toContain('ACTION: open the menu (never used, added 9 days ago)');
+    });
+
+    it('writes usage back to the secondary directory the record was read from', () => {
+      const secondaryRoot = '/tmp/explorbot-secondary-usage';
+      const secondaryDir = join(secondaryRoot, 'experience');
+      const savedInitialCwd = process.env.INITIAL_CWD;
+      rmSync(secondaryRoot, { recursive: true, force: true });
+      mkdirSync(secondaryDir, { recursive: true });
+      writeFileSync(join(secondaryDir, 'secondaryusage.md'), matter.stringify('## ACTION: do a thing\n\n```js\nI.click("Go")\n```\n', { url: '/secondary-usage' }), 'utf8');
+      process.env.INITIAL_CWD = secondaryRoot;
+
+      try {
+        const secondaryState = new ActionResult({ url: '/secondary-usage' });
+        const entry = experienceTracker.getExperienceTableOfContents(secondaryState)[0];
+        experienceTracker.getExperienceSection(entry.fileTag, 1, secondaryState);
+
+        expect(existsSync(join(testDir, 'secondaryusage.md'))).toBe(false);
+        const written = matter(readFileSync(join(secondaryDir, 'secondaryusage.md'), 'utf8')).content;
+        expect(written).toContain('<!-- used:');
+      } finally {
+        process.env.INITIAL_CWD = savedInitialCwd;
+        rmSync(secondaryRoot, { recursive: true, force: true });
+      }
+    });
+  });
+
   describe('getSuccessfulExperience rendering', () => {
     it('rewrites FLOW/ACTION headings to HOW to phrasing', () => {
       const state = new ActionResult({ html: '<html></html>', url: 'https://example.com/howto', title: 'HowTo' });
@@ -390,8 +510,8 @@ describe('ExperienceTracker', () => {
 
       const combined = experienceTracker.getSuccessfulExperience(state).join('\n');
 
-      expect(combined).toContain('## HOW to create a test (multi-step)');
-      expect(combined).toContain('## HOW to save the form (single-step)');
+      expect(combined).toContain('## HOW to create a test (multi-step, never used, added today)');
+      expect(combined).toContain('## HOW to save the form (single-step, never used, added today)');
       expect(combined).not.toContain('## FLOW:');
       expect(combined).not.toContain('## ACTION:');
     });
@@ -403,7 +523,7 @@ describe('ExperienceTracker', () => {
 
       const combined = experienceTracker.getSuccessfulExperience(state).join('\n');
 
-      expect(combined).toContain('## HOW to undo FLOW: steps (multi-step)');
+      expect(combined).toContain('## HOW to undo FLOW: steps (multi-step, never used, added today)');
       expect(combined).not.toContain('## FLOW:');
     });
   });

@@ -158,6 +158,7 @@ describe('Historian experience', () => {
     };
     const experienceTracker = {
       getRelevantExperience: () => [{ content: '## FLOW: create item\n\n```js\nI.click("New item")\n```' }],
+      stripUsageComments: (content: string) => content,
       writeAction: () => {},
       writeFlow: () => {
         writeCount += 1;

@@ -296,7 +296,7 @@ export class ExplorBot {
   }
 
   agentExperienceCompactor(): ExperienceCompactor {
-    return (this.agents.experienceCompactor ||= new ExperienceCompactor(this.provider, this.experienceTracker()));
+    return (this.agents.experienceCompactor ||= new ExperienceCompactor(this.provider, this.experienceTracker(), { forgetUnusedAfterDays: this.config?.experience?.forgetUnusedAfterDays }));
   }
 
   agentQuartermaster(): Quartermaster {

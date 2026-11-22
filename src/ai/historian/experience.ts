@@ -120,7 +120,7 @@ export function WithExperience<T extends Constructor>(Base: T) {
 
       const existingExperience = this.experienceTracker
         .getRelevantExperience(initialState)
-        .map((e) => e.content)
+        .map((e) => this.experienceTracker.stripUsageComments(e.content))
         .filter(Boolean)
         .join('\n');
       const existingSummary = existingExperience.length > 2000 ? existingExperience.substring(0, 2000) : existingExperience;

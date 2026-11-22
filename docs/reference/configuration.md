@@ -620,6 +620,7 @@ export default {
   experience: {
     disabled: true,                // Stop writing experience; reading still works
     maxReadLines: 100,             // Lines of experience injected into prompts
+    forgetUnusedAfterDays: 15,     // Compactor drops records never used this many days after being added; 0 or false keeps them
   },
 };
 ```
