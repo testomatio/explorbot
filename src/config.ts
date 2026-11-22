@@ -252,6 +252,7 @@ interface ExplorbotConfig {
   experience?: {
     maxReadLines?: number;
     disabled?: boolean;
+    forgetUnusedAfterDays?: number | false;
   };
   reporter?: ReporterConfig;
   api?: ApiConfig;

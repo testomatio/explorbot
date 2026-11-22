@@ -101,7 +101,9 @@ export class ExperienceCommand extends BaseCommand {
         const isLast = i === entry.sections.length - 1;
         const branch = isLast ? '└─' : '├─';
         const ref = chalk.yellow(`${entry.fileTag}${section.index}`);
-        lines.push(`    ${chalk.dim(branch)} ${ref} ${chalk.dim(':')} ${section.title}`);
+        let line = `    ${chalk.dim(branch)} ${ref} ${chalk.dim(':')} ${section.title}`;
+        if (section.age) line += ` ${chalk.dim(`(${section.age})`)}`;
+        lines.push(line);
       }
     }
 

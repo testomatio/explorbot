@@ -1,5 +1,7 @@
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
-import { existsSync, rmSync } from 'node:fs';
+import { afterEach, beforeEach, describe, expect, it, setSystemTime } from 'bun:test';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import matter from 'gray-matter';
 import { ExperienceCompactor } from '../../src/ai/experience-compactor';
 import type { Provider } from '../../src/ai/provider';
 import { ConfigParser } from '../../src/config';
@@ -300,6 +302,78 @@ describe('ExperienceCompactor', () => {
       expect(experiences[0].content).toContain('---');
       expect(experiences[0].content).toContain('First content');
       expect(experiences[0].content).toContain('Second content');
+    });
+  });
+
+  describe('forgetUnusedRecords', () => {
+    const record = (title: string, comments: string[]) => [`## ACTION: ${title}`, '', ...comments.flatMap((c) => [c, '']), '```js', `I.click("${title}")`, '```', ''].join('\n');
+
+    afterEach(() => {
+      setSystemTime();
+    });
+
+    it('drops records never used past the limit and keeps used, fresh and legacy ones', () => {
+      setSystemTime(new Date('2026-11-22T10:00:00.000Z'));
+      const content = [record('stale', ['<!-- added: 2026-11-01T10:00:00.000Z -->']), record('used once', ['<!-- added: 2026-10-01T10:00:00.000Z -->', '<!-- used: 2026-10-02T10:00:00.000Z -->']), record('fresh', ['<!-- added: 2026-11-20T10:00:00.000Z -->'])].join('\n');
+      experienceTracker.writeExperienceFile('page', content, { url: '/page' });
+
+      expect(compactor.forgetUnusedRecords()).toBe(1);
+
+      const { content: result } = experienceTracker.readExperienceFile('page');
+      expect(result).not.toContain('ACTION: stale');
+      expect(result).toContain('ACTION: used once');
+      expect(result).toContain('ACTION: fresh');
+    });
+
+    it('stamps legacy records so they get a grace period', () => {
+      setSystemTime(new Date('2026-11-22T10:00:00.000Z'));
+      writeFileSync(join(testDir, 'legacy.md'), matter.stringify(record('legacy', []), { url: '/legacy' }), 'utf8');
+
+      expect(compactor.forgetUnusedRecords()).toBe(0);
+      expect(experienceTracker.readExperienceFile('legacy').content).toContain('<!-- added: 2026-11-22T10:00:00.000Z -->');
+    });
+
+    it('stamps a secondary-directory file in place instead of copying it into the primary one', () => {
+      setSystemTime(new Date('2026-11-22T10:00:00.000Z'));
+      const secondaryRoot = '/tmp/explorbot-secondary-forget';
+      const secondaryDir = join(secondaryRoot, 'experience');
+      const savedInitialCwd = process.env.INITIAL_CWD;
+      rmSync(secondaryRoot, { recursive: true, force: true });
+      mkdirSync(secondaryDir, { recursive: true });
+      writeFileSync(join(secondaryDir, 'secondary.md'), matter.stringify(record('legacy', []), { url: '/secondary' }), 'utf8');
+      process.env.INITIAL_CWD = secondaryRoot;
+
+      try {
+        compactor.forgetUnusedRecords();
+        expect(existsSync(join(testDir, 'secondary.md'))).toBe(false);
+        expect(readFileSync(join(secondaryDir, 'secondary.md'), 'utf8')).toContain('<!-- added: 2026-11-22T10:00:00.000Z -->');
+      } finally {
+        process.env.INITIAL_CWD = savedInitialCwd;
+        rmSync(secondaryRoot, { recursive: true, force: true });
+      }
+    });
+
+    it('keeps everything when disabled', () => {
+      setSystemTime(new Date('2026-11-22T10:00:00.000Z'));
+      const keeper = new ExperienceCompactor(mockProvider as unknown as Provider, experienceTracker, { forgetUnusedAfterDays: false });
+      experienceTracker.writeExperienceFile('page', record('stale', ['<!-- added: 2026-01-01T10:00:00.000Z -->']), { url: '/page' });
+
+      expect(keeper.forgetUnusedRecords()).toBe(0);
+      expect(experienceTracker.readExperienceFile('page').content).toContain('ACTION: stale');
+    });
+
+    it('carries the last use onto records rewritten by AI compaction', async () => {
+      setSystemTime(new Date('2026-11-22T10:00:00.000Z'));
+      const big = `${record('used', ['<!-- added: 2026-11-21T10:00:00.000Z -->', '<!-- used: 2026-11-21T12:00:00.000Z -->'])}\n${'* filler step\n'.repeat(500)}`;
+      experienceTracker.writeExperienceFile('big', big, { url: '/big' });
+      mockProvider.setResponses([{ text: '## ACTION: merged record\n\n```js\nI.click("x")\n```\n' }]);
+
+      await compactor.compactFiles(experienceTracker.getAllExperience().map((f) => ({ ...f, mtime: new Date(0) })));
+
+      const { content } = experienceTracker.readExperienceFile('big');
+      expect(content).toContain('ACTION: merged record');
+      expect(content).toContain('<!-- added: 2026-11-22T10:00:00.000Z -->');
+      expect(content).toContain('<!-- used: 2026-11-21T12:00:00.000Z -->');
     });
   });
 

@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-11-22
+
+### Configuration
+- **`experience.forgetUnusedAfterDays`** — The compactor removes experience records that were never used this many days after they were added. Defaults to 15. Set it to `0` or `false` to keep unused records.
+  ```js
+  experience: { forgetUnusedAfterDays: 30 }
+  ```
+
+### Changes
+- Each experience record now stores when it was added and when it was last used, as `<!-- added -->` and `<!-- used -->` comments under its heading. A record counts as used when an agent reads it, or when the same recipe is recorded again after it worked. The used date updates at most once a day.
+- Agents see how long ago each experience record was last used (`used 2 days ago`, `never used, added 9 days ago`), so they can prefer recipes that worked recently. `explorbot experience` shows the same.
+- AI compaction keeps the last-used date, so a used record does not get removed just because the compactor rewrote it.
+
 ## 2026-10-31
 
 ### New CLI Options

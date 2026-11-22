@@ -7,13 +7,17 @@ import { KnowledgeTracker } from './knowledge-tracker.js';
 import type { WebPageState } from './state-manager.js';
 import { createDebug, pluralize, tag } from './utils/logger.js';
 import { loadMarkdownFiles } from './utils/markdown-files.js';
-import { mdq } from './utils/markdown-query.js';
+import { type MarkdownQuery, mdq } from './utils/markdown-query.js';
 import { redactSecrets } from './utils/secrets.js';
 import { isNonReusableCode } from './utils/step-analyzer.ts';
 import { extractStatePath } from './utils/url-matcher.js';
 
 const debugLog = createDebug('explorbot:experience');
 const DEFAULT_MAX_EXPERIENCE_LINES = 100;
+
+export const DAY_MS = 24 * 60 * 60 * 1000;
+export const RECORD_SELECTOR = 'section2(~"FLOW:") || section2(~"ACTION:")';
+const USAGE_COMMENT = /^(added|used):/;
 
 export const RECENT_WINDOW_DAYS = 30;
 
@@ -103,11 +107,14 @@ export class ExperienceTracker {
   }
 
   writeExperienceFile(stateHash: string, content: string, frontmatter?: any): void {
+    this.writeExperienceFileAt(this.getExperienceFilePath(stateHash), content, frontmatter);
+  }
+
+  writeExperienceFileAt(filePath: string, content: string, frontmatter?: any): void {
     if (this.disabled) {
       return;
     }
-    const filePath = this.getExperienceFilePath(stateHash);
-    const fileContent = matter.stringify(redactSecrets(content), frontmatter || {});
+    const fileContent = matter.stringify(stampAdded(redactSecrets(content)), frontmatter || {});
     writeFileSync(filePath, fileContent, 'utf8');
   }
 
@@ -162,13 +169,18 @@ export class ExperienceTracker {
     this.ensureExperienceFile(state);
     const stateHash = state.getStateHash();
     const { content, data } = this.readExperienceFile(stateHash);
-    if (
-      mdq(content)
-        .query('code')
-        .meta()
-        .some((m) => m.text.trim() === action.code.trim())
-    ) {
+    const duplicate = mdq(content)
+      .query('section2')
+      .each()
+      .find((section) =>
+        section
+          .query('code')
+          .meta()
+          .some((m) => m.text.trim() === action.code.trim())
+      );
+    if (duplicate) {
       debugLog('Skipping duplicate action', action.code);
+      this.markUsed(this.getExperienceFilePath(stateHash), duplicate.meta()[0].text);
       return;
     }
 
@@ -195,13 +207,14 @@ export class ExperienceTracker {
     const stateHash = state.getStateHash();
     const { content, data } = this.readExperienceFile(stateHash);
 
-    if (
-      mdq(content)
-        .query('section2')
-        .each()
-        .some((s) => s.text().trim() === body.trim())
-    ) {
+    const normalizedBody = this.stripUsageComments(stampAdded(body)).trim();
+    const duplicate = mdq(content)
+      .query('section2')
+      .each()
+      .find((s) => this.stripUsageComments(s.text()).trim() === normalizedBody);
+    if (duplicate) {
       debugLog('Skipping duplicate flow body');
+      this.markUsed(this.getExperienceFilePath(stateHash), duplicate.meta()[0].text);
       return;
     }
 
@@ -257,9 +270,9 @@ export class ExperienceTracker {
         });
       })
       .map((experience) => {
-        if (experience.content.split('\n').length <= maxLines) return experience;
+        if (this.stripUsageComments(experience.content).split('\n').length <= maxLines) return experience;
         let content = experience.content;
-        while (content.split('\n').length > maxLines) {
+        while (this.stripUsageComments(content).split('\n').length > maxLines) {
           const sections = mdq(content).query('section2').each();
           if (sections.length <= 1) break;
           content = sections[sections.length - 1].replace('').toString();
@@ -283,7 +296,7 @@ export class ExperienceTracker {
 
       if (!combined.trim()) continue;
 
-      combined = renderAsHowTo(combined);
+      combined = this.renderAsHowTo(combined);
 
       if (options?.stripCode) {
         combined = mdq(combined).query('code').replace('').toString();
@@ -331,10 +344,43 @@ export class ExperienceTracker {
     const entry = toc.find((e) => e.fileTag === fileTag);
     if (!entry) return null;
 
+    const filePath = this.findExperienceFileByHash(entry.fileHash);
     const extracted = this.readSectionByHash(entry.fileHash, sectionIndex);
-    if (!extracted) return null;
+    if (!filePath || !extracted) return null;
 
-    return { title: extracted.title, url: entry.url, content: extracted.body };
+    if (!this.isWritingDisabled(state)) this.markUsed(filePath, extracted.title);
+    return { title: extracted.title, url: entry.url, content: this.stripUsageComments(extracted.body) };
+  }
+
+  getRecordUsage(record: string): RecordUsage {
+    const usage: RecordUsage = {};
+    const added = commentDate(record, 'added');
+    const used = commentDate(record, 'used');
+    if (added) usage.added = added;
+    if (used) usage.used = used;
+    return usage;
+  }
+
+  stripUsageComments(content: string): string {
+    return mdq(content).comment(USAGE_COMMENT).remove().toString();
+  }
+
+  restoreLastUsed(original: string, rewritten: string): string {
+    const lastUsed = mdq(original)
+      .query(RECORD_SELECTOR)
+      .each()
+      .map((record) => this.getRecordUsage(record.text()).used)
+      .filter((date): date is Date => !!date)
+      .sort((a, b) => b.getTime() - a.getTime())[0];
+    if (!lastUsed) return rewritten;
+
+    return mdq(rewritten)
+      .query(RECORD_SELECTOR)
+      .replaceEach((record) => {
+        if (this.getRecordUsage(record.text()).used) return record.text();
+        return stampUsed(mdq(stampAdded(record.text())), 0, lastUsed).toString();
+      })
+      .toString();
   }
 
   private buildToc(records: ExperienceFile[]): ExperienceTocEntry[] {
@@ -390,7 +436,7 @@ export class ExperienceTracker {
     }
 
     if (options?.recency) {
-      const cutoff = Date.now() - RECENT_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+      const cutoff = Date.now() - RECENT_WINDOW_DAYS * DAY_MS;
       matching = matching.filter((record) => {
         const isRecent = record.mtime.getTime() >= cutoff;
         return options.recency === 'recent' ? isRecent : !isRecent;
@@ -416,14 +462,56 @@ export class ExperienceTracker {
 
     return { title: extracted.title, url: entry.url, content: extracted.body, fileHash: entry.fileHash };
   }
+
+  private markUsed(filePath: string, title: string): void {
+    if (this.disabled) return;
+    const doc = mdq(readFileSync(filePath, 'utf8'));
+    const index = doc
+      .query('section2')
+      .meta()
+      .findIndex((m) => m.text === title);
+    if (index < 0) return;
+
+    const used = this.getRecordUsage(doc.query('section2').at(index).text()).used;
+    if (used && dayOf(used) === dayOf(new Date())) return;
+
+    writeFileSync(filePath, stampUsed(doc, index, new Date()).toString(), 'utf8');
+    debugLog(`Marked experience record used in ${basename(filePath)}`);
+  }
+
+  private renderAsHowTo(content: string): string {
+    return mdq(content)
+      .query('section2')
+      .replaceEach((section) => {
+        const age = describeAge(section.text());
+        const body = mdq(this.stripUsageComments(section.text()));
+        const text = body.query('h2').meta()[0]?.text.trim() || '';
+        let kind = '';
+        let title = '';
+        if (text.startsWith('FLOW:')) {
+          kind = 'multi-step';
+          title = text.slice(5).trim();
+        }
+        if (text.startsWith('ACTION:')) {
+          kind = 'single-step';
+          title = text.slice(7).trim();
+        }
+        if (!kind) return body.toString();
+        if (age) kind += `, ${age}`;
+        return body.query('h2').replace(`## HOW to ${title} (${kind})\n\n`).toString();
+      })
+      .toString();
+  }
 }
 
-function listTocHeadings(content: string): { index: number; level: 2 | 3; title: string }[] {
+function listTocHeadings(content: string): { index: number; level: 2 | 3; title: string; age: string }[] {
+  const sections = mdq(content).query('section').each();
   return mdq(content)
-    .query('heading')
+    .query('section')
     .meta()
-    .filter((m) => m.depth === 2 || m.depth === 3)
-    .map((m, i) => ({ index: i + 1, level: m.depth as 2 | 3, title: m.text }));
+    .map((meta, i) => ({ meta, section: sections[i] }))
+    .filter((entry) => entry.meta.depth === 2 || entry.meta.depth === 3)
+    .map((entry, i) => ({ index: i + 1, level: entry.meta.depth as 2 | 3, title: entry.meta.text, age: describeAge(entry.section.text()) }));
 }
 
 function extractHeadingSection(content: string, sectionIndex: number): { title: string; body: string } | null {
@@ -469,7 +557,9 @@ export function renderExperienceToc(toc: ExperienceTocEntry[]): string {
     lines.push(`File ${entry.fileTag} ${entry.url}:`);
     for (const section of entry.sections) {
       const prefix = '#'.repeat(section.level);
-      lines.push(`  ${entry.fileTag}.${section.index} ${prefix} ${section.title}`);
+      let line = `  ${entry.fileTag}.${section.index} ${prefix} ${section.title}`;
+      if (section.age) line += ` (${section.age})`;
+      lines.push(line);
     }
     lines.push('');
   }
@@ -507,16 +597,58 @@ function generateActionContent(title: string, code: string, explanation?: string
   return lines.join('\n');
 }
 
-function renderAsHowTo(content: string): string {
+function stampAdded(content: string): string {
+  if (!mdq(content).query(RECORD_SELECTOR).exists()) return content;
+  const now = new Date().toISOString();
   return mdq(content)
-    .query('h2')
-    .replaceEach((heading) => {
-      const text = heading.meta()[0]?.text.trim() || '';
-      if (text.startsWith('FLOW:')) return `## HOW to ${text.slice(5).trim()} (multi-step)\n\n`;
-      if (text.startsWith('ACTION:')) return `## HOW to ${text.slice(7).trim()} (single-step)\n\n`;
-      return heading.text();
+    .query(RECORD_SELECTOR)
+    .replaceEach((record) => {
+      if (commentDate(record.text(), 'added')) return record.text();
+      return mdq(record.text()).query('h2').first().insertAfter(`<!-- added: ${now} -->`).toString();
     })
     .toString();
+}
+
+function stampUsed(doc: MarkdownQuery, index: number, date: Date): MarkdownQuery {
+  const record = doc
+    .query('section2')
+    .at(index)
+    .comment(/^used:/)
+    .remove()
+    .query('section2')
+    .at(index);
+  let anchor = record.comment(/^added:/).first();
+  if (!anchor.exists()) anchor = record.query('h2').first();
+  return anchor.insertAfter(`<!-- used: ${date.toISOString()} -->`);
+}
+
+function commentDate(record: string, key: string): Date | undefined {
+  const comment = mdq(record)
+    .comment(new RegExp(`^${key}:`))
+    .nodes()[0];
+  if (!comment) return undefined;
+  const date = new Date(comment.text.slice(key.length + 1).trim());
+  if (Number.isNaN(date.getTime())) return undefined;
+  return date;
+}
+
+function describeAge(record: string): string {
+  const used = commentDate(record, 'used');
+  if (used) return `used ${daysAgo(used)}`;
+  const added = commentDate(record, 'added');
+  if (added) return `never used, added ${daysAgo(added)}`;
+  return '';
+}
+
+function daysAgo(date: Date): string {
+  const days = Math.round((Date.parse(dayOf(new Date())) - Date.parse(dayOf(date))) / DAY_MS);
+  if (days <= 0) return 'today';
+  if (days === 1) return 'yesterday';
+  return `${days} days ago`;
+}
+
+function dayOf(date: Date): string {
+  return date.toISOString().slice(0, 10);
 }
 
 export interface ExperienceFile {
@@ -544,5 +676,10 @@ export interface ExperienceTocEntry {
   fileTag: string;
   fileHash: string;
   url: string;
-  sections: { index: number; level: 2 | 3; title: string }[];
+  sections: { index: number; level: 2 | 3; title: string; age: string }[];
+}
+
+export interface RecordUsage {
+  added?: Date;
+  used?: Date;
 }

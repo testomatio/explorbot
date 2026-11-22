@@ -2,7 +2,7 @@ import { unlinkSync } from 'node:fs';
 import { basename, relative } from 'node:path';
 import dedent from 'dedent';
 import { z } from 'zod';
-import { type ExperienceFile, type ExperienceTracker, RECENT_WINDOW_DAYS } from '../experience-tracker.js';
+import { DAY_MS, type ExperienceFile, type ExperienceTracker, RECENT_WINDOW_DAYS, RECORD_SELECTOR } from '../experience-tracker.js';
 import { Observability } from '../observability.js';
 import { createDebug, log, tag } from '../utils/logger.js';
 import { mdq } from '../utils/markdown-query.js';
@@ -14,6 +14,7 @@ import type { Provider } from './provider.js';
 const debugLog = createDebug('explorbot:experience-compactor');
 
 export const COMPACT_MAX_LENGTH = 5000;
+const DEFAULT_FORGET_UNUSED_AFTER_DAYS = 15;
 
 interface MergeGroup {
   pattern: string;
@@ -24,10 +25,12 @@ export class ExperienceCompactor implements Agent {
   emoji = '🗜️';
   private provider: Provider;
   private experienceTracker: ExperienceTracker;
+  private forgetUnusedAfterDays: number | false;
 
-  constructor(provider: Provider, experienceTracker: ExperienceTracker) {
+  constructor(provider: Provider, experienceTracker: ExperienceTracker, options: { forgetUnusedAfterDays?: number | false } = {}) {
     this.provider = provider;
     this.experienceTracker = experienceTracker;
+    this.forgetUnusedAfterDays = options.forgetUnusedAfterDays ?? DEFAULT_FORGET_UNUSED_AFTER_DAYS;
   }
 
   async compactExperience(experience: string): Promise<string> {
@@ -105,6 +108,7 @@ export class ExperienceCompactor implements Agent {
 
   async compactAllExperiences(): Promise<{ merged: number; compacted: number }> {
     return Observability.run('experience-compactor.compactAll', { tags: ['experience-compactor'] }, async () => {
+      this.forgetUnusedRecords();
       const aiMerged = await this.mergeSimilarExperiences();
       const generalized = this.generalizeDynamicUrls();
       const compacted = await this.compactFiles(this.experienceTracker.getAllExperience());
@@ -114,11 +118,39 @@ export class ExperienceCompactor implements Agent {
 
   async autocompact(): Promise<{ merged: number; compacted: number }> {
     return Observability.run('experience-compactor.autocompact', { tags: ['experience-compactor'] }, async () => {
+      this.forgetUnusedRecords();
       const aiMerged = await this.mergeSimilarExperiences({ onlyDynamic: true });
       const generalized = this.generalizeDynamicUrls();
       const compacted = await this.compactFiles(this.experienceTracker.getAllExperience(), { skipSmall: true });
       return { merged: aiMerged + generalized, compacted };
     });
+  }
+
+  forgetUnusedRecords(): number {
+    if (!this.forgetUnusedAfterDays) return 0;
+    const cutoff = Date.now() - this.forgetUnusedAfterDays * DAY_MS;
+    let forgotten = 0;
+
+    for (const file of this.experienceTracker.getAllExperience()) {
+      let unstamped = false;
+      let dropped = 0;
+      const content = mdq(file.content)
+        .query(RECORD_SELECTOR)
+        .replaceEach((record) => {
+          const usage = this.experienceTracker.getRecordUsage(record.text());
+          if (!usage.added) unstamped = true;
+          if (!usage.added || usage.used || usage.added.getTime() >= cutoff) return record.text();
+          dropped++;
+          return '';
+        })
+        .toString();
+      forgotten += dropped;
+      if (!dropped && !unstamped) continue;
+      this.experienceTracker.writeExperienceFileAt(file.filePath, content, file.data);
+    }
+
+    if (forgotten > 0) tag('substep').log(`Forgot ${forgotten} experience record${forgotten === 1 ? '' : 's'} unused for ${this.forgetUnusedAfterDays} days`);
+    return forgotten;
   }
 
   generalizeDynamicUrls(): number {
@@ -176,7 +208,7 @@ export class ExperienceCompactor implements Agent {
           model,
           { telemetryFunctionId: 'experience.compact' }
         );
-        content = response.text;
+        content = this.experienceTracker.restoreLastUsed(experience.content, response.text);
       }
 
       if (content === experience.content) continue;
