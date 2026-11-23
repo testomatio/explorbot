@@ -1,5 +1,30 @@
 # Changelog
 
+## 2026-11-22
+
+### New Commands
+- **`prima status --purpose <text>`** — Show the current page, then every command run with that purpose, numbered, with its verdict, the first failed step and the hash to open it with `prima status <hash>`. The history prints even when no browser is open.
+  ```bash
+  prima status --purpose "checkout"
+  ```
+
+### Changes
+- [Prima] `check` and `do` open `### Result` with a `verdict:` line: PASSED, FAILED, or INCONCLUSIVE when the run settled nothing about the app, such as stopping before it finished, verifying no outcome, or a failed model call. The verdict is kept in the purpose log.
+- [Prima] `prima status <hash>` prints the full output of the earlier command again, with steps, outcomes and failure, not just the page.
+- [Prima] A console error raised during a `check` or `do` step is listed under that step. Only errors outside any step stay under page issues.
+- [Prima] While `--video` records a `check`, each step shows `@12.4s`, its offset into that command's `video.webm`, for cutting with `ffmpeg -ss`/`-to`.
+- [Prima] `--json` prints the result of any command as JSON instead of text.
+  ```bash
+  prima status 1a2b3c4 --json
+  ```
+- [Prima] `check` without `--expected` splits the scenario into the outcomes it asks to confirm and verifies each one separately.
+- [Prima] A state's aria file keeps its latest non-empty capture; a state never captured shows `aria: not captured`.
+- [Prima] `prima video` cuts by step. A `--video` recording keeps each browser step's time, with what the page logged and requested during it, and `video --list` numbers the steps of every command. `--steps` keeps chosen steps or a span in seconds, `--step-time` speeds up any step longer than the cap, and `--overlay` shows `console-errors`, `console-logs`, `network` or `network-errors` over the step they belong to and clears with the next one.
+  ```bash
+  prima video --purpose "checkout" --steps 0001=2-4 --steps 0003=@4.0-9.5 --step-time 1s --overlay console-errors --overlay network-errors
+  ```
+- [Prima] The prima skill explains what a video should show: the steps that prove a feature works, or the steps that lead to a defect, without automation trouble.
+
 ## 2026-11-19
 
 ### New Commands

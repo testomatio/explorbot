@@ -6,6 +6,7 @@ import path from 'node:path';
 const DROP_STALE_FRAMES = 'mpdecimate=hi=64*48:lo=64*24:frac=0.5';
 const STILL_HOLD_SECONDS = 1;
 const FPS = 25;
+const MIN_SEGMENT_SECONDS = 0.05;
 
 export class VideoEditor {
   static requireFfmpeg(): void {
@@ -22,9 +23,23 @@ export class VideoEditor {
     const workDir = mkdtempSync(path.join(tmpdir(), 'prima-video-'));
     try {
       const size = this.frameSize(used[0].file);
-      const chains = used.map((clip, index) => `[${index}:v]${this.clipFilter(clip, size, path.join(workDir, `${index}.txt`))}[v${index}]`);
-      const joined = used.map((_, index) => `[v${index}]`).join('');
-      const graph = `${chains.join(';')};${joined}concat=n=${used.length}:v=1:a=0,tpad=stop_mode=clone:stop_duration=${STILL_HOLD_SECONDS}[out]`;
+      const chains: string[] = [];
+      const joined: string[] = [];
+      used.forEach((clip, index) => {
+        const segments = (clip.segments || []).filter((segment) => segment.end - segment.start >= MIN_SEGMENT_SECONDS);
+        if (!segments.length) {
+          chains.push(`[${index}:v]${this.clipFilter(clip, size, path.join(workDir, `${index}`), null, true)}[v${index}]`);
+          joined.push(`[v${index}]`);
+          return;
+        }
+        const labels = segments.map((_, part) => `s${index}_${part}`);
+        chains.push(`[${index}:v]split=${segments.length}${labels.map((label) => `[${label}]`).join('')}`);
+        segments.forEach((segment, part) => {
+          chains.push(`[${labels[part]}]${this.clipFilter(clip, size, path.join(workDir, `${index}-${part}`), segment, part === segments.length - 1)}[v${labels[part]}]`);
+          joined.push(`[v${labels[part]}]`);
+        });
+      });
+      const graph = `${chains.join(';')};${joined.join('')}concat=n=${joined.length}:v=1:a=0,tpad=stop_mode=clone:stop_duration=${STILL_HOLD_SECONDS}[out]`;
 
       mkdirSync(path.dirname(output), { recursive: true });
       this.ffmpeg([...used.flatMap((clip) => ['-i', clip.file]), '-filter_complex', graph, '-map', '[out]', '-c:v', 'libvpx', '-crf', '10', '-b:v', '2M', output]);
@@ -34,15 +49,28 @@ export class VideoEditor {
     }
   }
 
-  private clipFilter(clip: VideoClip, size: { width: number; height: number }, captionFile: string): string {
+  private clipFilter(clip: VideoClip, size: { width: number; height: number }, textBase: string, segment: VideoSegment | null, last: boolean): string {
     const { width, height } = size;
-    const filters = [`scale=${width}:${height}:force_original_aspect_ratio=decrease`, `pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2`, 'setsar=1', `fps=${FPS}`, DROP_STALE_FRAMES, `setpts='if(eq(N\\,0)\\,0\\,PREV_OUTPTS+min(PTS-PREV_INPTS\\,${STILL_HOLD_SECONDS}/TB))'`];
-    if (clip.speed) filters.push(`setpts=PTS/${clip.speed}`);
+    const filters: string[] = [];
+    let speed = clip.speed || 1;
+    if (segment) {
+      filters.push(`trim=start=${segment.start}:end=${segment.end}`, 'setpts=PTS-STARTPTS');
+      const length = segment.end - segment.start;
+      if (clip.stepTime && length > clip.stepTime) speed *= length / clip.stepTime;
+    }
+    filters.push(`scale=${width}:${height}:force_original_aspect_ratio=decrease`, `pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2`, 'setsar=1', `fps=${FPS}`, DROP_STALE_FRAMES, `setpts='if(eq(N\\,0)\\,0\\,PREV_OUTPTS+min(PTS-PREV_INPTS\\,${STILL_HOLD_SECONDS}/TB))'`);
+    if (speed !== 1) filters.push(`setpts=PTS/${speed}`);
     filters.push(`fps=${FPS}`);
-    if (clip.hold) filters.push(`tpad=stop_mode=clone:stop_duration=${clip.hold}`);
+    if (last && clip.hold) filters.push(`tpad=stop_mode=clone:stop_duration=${clip.hold}`);
+    let color = 'black@0.75';
+    if (segment?.alert) color = '0xB00020@0.85';
+    segment?.overlay?.forEach((line, index) => {
+      writeFileSync(`${textBase}-overlay-${index}.txt`, line, 'utf-8');
+      filters.push(`drawtext=textfile='${textBase}-overlay-${index}.txt':expansion=none:fontsize=h/36:fontcolor=white:box=1:boxcolor=${color}:boxborderw=8:x=w/40:y=h/40+${index}*h/22`);
+    });
     if (clip.caption) {
-      writeFileSync(captionFile, clip.caption, 'utf-8');
-      filters.push(`drawtext=textfile='${captionFile}':fontsize=h/22:fontcolor=white:box=1:boxcolor=black@0.65:boxborderw=14:x=(w-text_w)/2:y=h-text_h-h/12`);
+      writeFileSync(`${textBase}-caption.txt`, clip.caption, 'utf-8');
+      filters.push(`drawtext=textfile='${textBase}-caption.txt':expansion=none:fontsize=h/22:fontcolor=white:box=1:boxcolor=black@0.65:boxborderw=14:x=(w-text_w)/2:y=h-text_h-h/12`);
     }
     return filters.join(',');
   }
@@ -73,4 +101,13 @@ export interface VideoClip {
   caption?: string;
   speed?: number;
   hold?: number;
+  stepTime?: number;
+  segments?: VideoSegment[];
+}
+
+export interface VideoSegment {
+  start: number;
+  end: number;
+  overlay?: string[];
+  alert?: boolean;
 }

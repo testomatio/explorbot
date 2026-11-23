@@ -73,3 +73,37 @@ describe.skipIf(!hasFfmpeg)('VideoEditor', () => {
     expect(existsSync(output)).toBe(false);
   });
 });
+
+describe.skipIf(!hasFfmpeg)('VideoEditor steps', () => {
+  test('keeps only the given segments, and a step longer than the step time is sped up to fit', () => {
+    const cut = path.join(dir, 'cut.webm');
+    const capped = path.join(dir, 'capped.webm');
+    const segments = [
+      { start: 0, end: 1 },
+      { start: 2, end: 4 },
+    ];
+    new VideoEditor().render([clip('steps', 'testsrc=size=320x240', { segments })], cut);
+    new VideoEditor().render([clip('capped-source', 'testsrc=size=320x240', { segments, stepTime: 0.5 })], capped);
+
+    expect(duration(cut)).toBeCloseTo(3 + 1, 0);
+    expect(duration(capped)).toBeLessThan(0.5 + 0.5 + 1 + 0.3);
+  });
+
+  test('draws an overlay over its segment without escaping', () => {
+    const output = path.join(dir, 'overlay.webm');
+    const { used } = new VideoEditor().render(
+      [
+        clip('overlay-source', 'testsrc=size=320x240', {
+          segments: [
+            { start: 0, end: 2, overlay: ["console error: 100% it's broken: {x}"], alert: true },
+            { start: 2, end: 3 },
+          ],
+        }),
+      ],
+      output
+    );
+
+    expect(used).toHaveLength(1);
+    expect(existsSync(output)).toBe(true);
+  });
+});

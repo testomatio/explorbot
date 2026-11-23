@@ -85,7 +85,7 @@ const SKILL = dedent(`
 
   ## Read the reply
 
-  - \`ok\` in \`### Result\` is the verdict, and the exit code follows it; do not re-check a PASSED outcome
+  - \`verdict:\` opens \`### Result\` on \`check\` and \`do\`: PASSED, FAILED, or INCONCLUSIVE when the run settled nothing about the app (re-run it rather than reporting a bug); the exit code follows \`ok\`; do not re-check a PASSED outcome
   - \`not verified\`: never checked, not false
   - \`CONTRADICTION\`: screenshot and run log disagree and the page could not settle it; treat as an app bug, read \`### Artifacts\`
   - \`resolved:\` under an outcome: a dispute was settled, the verdict stands
@@ -100,6 +100,14 @@ const SKILL = dedent(`
   - A locator → \`research\`
   - Never take a \`playwright-cli snapshot\` after a prima command; it is already on disk
   - \`pw\` is for what words cannot reach: storage, computed styles, a forced reload
+
+  ## Record video
+
+  - Record with \`--video\` only once the flow works; the video is evidence, not a debugging aid
+  - A video of a working feature shows only the steps that prove it: leave out failed, retried and recovery steps
+  - A video of a defect shows the steps that lead to it and the moment it appears; leave out automation trouble before them
+  - \`video --list\` numbers each command's steps with their time; pick them with \`--steps <command>=<steps>\`
+  - \`--step-time\` caps how long a step plays; \`--overlay <kind>\`, repeatable, shows a step's console-errors, console-logs, network or network-errors over that step only
 
   ## Setup
 

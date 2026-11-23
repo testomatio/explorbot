@@ -8,7 +8,7 @@ import { isVerboseMode, setQuietMode } from '../../../src/utils/logger.ts';
 import { safeFilename } from '../../../src/utils/strings.ts';
 import { clearActivityLine, trackActivityLine } from './activity-line.ts';
 import { type EnvelopeData, renderEnvelope } from './envelope.ts';
-import { bareHelp, installHelp, npxHint, skillPointer } from './help.ts';
+import { PrimaHelp, npxHint } from './help.ts';
 import type { Prima, PrimaOptions } from './prima.ts';
 import { PrimaSkill } from './skill.ts';
 
@@ -58,7 +58,8 @@ function addCommonOptions(cmd: Command): Command {
     .option('--spec <path>', 'Docbot application spec directory or index.md to read as page knowledge')
     .option('--endpoint <ep>', 'Websocket endpoint of a browser server to attach to, skipping discovery')
     .option('--pw-session <title>', 'Title of the playwright-cli session to attach to')
-    .option('--purpose <text>', 'What a series of commands is for; groups them into one Langfuse session, report and video');
+    .option('--purpose <text>', 'What a series of commands is for; groups them into one Langfuse session, report and video')
+    .option('--json', 'Print the result as JSON instead of text');
 }
 
 async function primaFor(options: any): Promise<Prima> {
@@ -85,12 +86,14 @@ async function runPrima(options: any, command: string, run: (prima: Prima) => Pr
     envelope = await Observability.run(command, { tags: ['prima'], sessionId: options.purpose && safeFilename(options.purpose) }, () => run(prima));
   } catch (error) {
     envelope = await prima.toolFailureEnvelope(command, error);
+    envelope.verdict = { status: 'inconclusive', reason: 'prima failed before the command finished' };
   }
 
   await prima.stopVideo(envelope);
   if (record) prima.record(envelope, Date.now() - startedAt);
   clearActivityLine();
-  console.log(renderEnvelope(envelope));
+  if (options.json) console.log(JSON.stringify(envelope, null, 2));
+  if (!options.json) console.log(renderEnvelope(envelope));
   if (npxHint()) console.error(`hint: ${npxHint()}`);
   await prima.stop().catch(() => {});
   process.exit(envelope.ok ? 0 : 1);
@@ -102,13 +105,15 @@ export function createPrimaCommands(name = 'prima'): Command {
   cmd.version(version, '-V, --version');
   cmd.option('--pw-session <title>', 'Title of the playwright-cli session to attach to');
   cmd.option('--url <url>', 'Page to open when the session has no page yet');
-  cmd.addHelpText('after', `\n${skillPointer}`);
+  const help = new PrimaHelp();
+  cmd.addHelpText('before', `${help.mainUsage()}\n`);
+  cmd.addHelpText('after', `\n${help.footer()}`);
   cmd
     .allowExcessArguments()
     .allowUnknownOption()
     .action(() => {
       if (cmd.args.length) cmd.error(`error: unknown command '${cmd.args[0]}'`);
-      console.log(`prima ${version}\n${bareHelp}`);
+      console.log(`${help.name} ${version}\n${help.bare()}`);
       if (npxHint()) console.log(`\n${npxHint()}`);
     });
   rootOptions = () => cmd.opts();
@@ -159,9 +164,14 @@ export function createPrimaCommands(name = 'prima'): Command {
     .option('--caption <number=text>', 'Caption shown over one command, e.g. 0002="Add to cart"; repeatable', repeat, [])
     .option('--speed <number=factor>', 'Play one command faster (2) or slower (0.5); repeatable', repeat, [])
     .option('--hold <number=seconds>', 'Hold the last frame of one command for this long; repeatable', repeat, [])
+    .option('--steps <number=steps>', 'Steps of one command to keep, by number or @from-to seconds, e.g. 0002=1,3-5 or 0002=@4.0-9.5; repeatable', repeat, [])
+    .option('--step-time <seconds>', 'Longest a step may play; a longer step is sped up to fit')
+    .option('--overlay <kind>', 'Show what each step logged over its video: console-errors, console-logs, network or network-errors; repeatable', repeat, [])
     .action(async (options) => {
       setQuietMode(!isVerboseMode());
-      const output = await (await primaFor(options)).video({ list: options.list, only: options.only, caption: options.caption, speed: options.speed, hold: options.hold }).catch((error: unknown) => browserErrorMessage(error));
+      const output = await (await primaFor(options))
+        .video({ list: options.list, only: options.only, caption: options.caption, speed: options.speed, hold: options.hold, steps: options.steps, stepTime: options.stepTime, overlay: options.overlay })
+        .catch((error: unknown) => browserErrorMessage(error));
       console.log(output);
       process.exit(0);
     });
@@ -188,7 +198,11 @@ export function createPrimaCommands(name = 'prima'): Command {
     await runPrima(options, `pw ${fn}`, (prima) => prima.pw(fn));
   });
 
-  addCommonOptions(cmd.command('status <hash>').description('Show the artifacts and page detail recorded for an earlier command')).action(async (hash, options) => {
+  addCommonOptions(cmd.command('status [hash]').description('Show the output recorded for an earlier command, or with --purpose the current page and every command of that purpose')).action(async (hash, options) => {
+    if (!hash) {
+      await runPrima(options, 'status', (prima) => prima.purposeStatus(), { browser: false, record: false });
+      return;
+    }
     await runPrima(options, `status ${hash}`, (prima) => prima.status(hash), { browser: false, record: false });
   });
 
@@ -198,15 +212,13 @@ export function createPrimaCommands(name = 'prima'): Command {
     process.exit(0);
   });
 
-  addCommonOptions(cmd.command('config').description('Show models, config file and paths used by this run'))
-    .option('--json', 'Print the resolved config as JSON')
-    .action(async (options) => {
-      setQuietMode(!isVerboseMode());
-      const prima = await primaFor(options);
-      console.log(await prima.config(options.json).catch((error: unknown) => browserErrorMessage(error)));
-      await prima.stop().catch(() => {});
-      process.exit(0);
-    });
+  addCommonOptions(cmd.command('config').description('Show models, config file and paths used by this run')).action(async (options) => {
+    setQuietMode(!isVerboseMode());
+    const prima = await primaFor(options);
+    console.log(await prima.config(options.json).catch((error: unknown) => browserErrorMessage(error)));
+    await prima.stop().catch(() => {});
+    process.exit(0);
+  });
 
   RecommendedModelsCommand.register(cmd);
 
@@ -217,7 +229,7 @@ export function createPrimaCommands(name = 'prima'): Command {
     .action((options) => {
       if (!options.install) {
         console.log(PrimaSkill.render());
-        console.error(installHelp);
+        console.error(help.install());
         if (!providerWithKey()) console.error('\nNo provider API key is set: see "Getting an API key" in the skill.');
         return;
       }

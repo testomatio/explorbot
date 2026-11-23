@@ -1116,6 +1116,75 @@ describe('Prima.check', () => {
     expect(output).not.toContain('### Answer');
   });
 
+  test('a console error raised during a step is reported on that step', async () => {
+    const { prima } = fakePrima();
+    (prima as any).bot.agentTester = () => ({
+      test: async (test: any) => {
+        test.addStep("I.fillField('Key', 'x')", 0, 'passed');
+        test.addStep("I.click('Sign in')", 0, 'failed', 'click timed out');
+        test.addObservation('Console error: Minified React error');
+        test.finish(TestResult.FAILED);
+        return { success: false };
+      },
+    });
+    (prima as any).bot.agentPilot = () => ({ settleExpectations: async () => [new SettledExpectation('signed in', 'failed')] });
+
+    const envelope = await prima.check('sign in', ['signed in']);
+
+    expect(envelope.steps?.[1].proof).toBe('click timed out\nConsole error: Minified React error');
+    expect(envelope.pageIssues).toBeUndefined();
+  });
+
+  test('steps carry their offset into the recording when one is running', async () => {
+    const { prima } = fakePrima();
+    (prima as any).recordingStartedAt = performance.now();
+    (prima as any).bot.agentTester = () => ({
+      test: async (test: any) => {
+        test.addStep("I.click('Sign in')", 0, 'passed');
+        test.finish(TestResult.PASSED);
+        return { success: true };
+      },
+    });
+    (prima as any).bot.agentPilot = () => ({ settleExpectations: async () => [new SettledExpectation('signed in', 'passed')] });
+
+    const envelope = await prima.check('sign in', ['signed in']);
+
+    expect(envelope.steps?.[0].at).toBeGreaterThanOrEqual(0);
+    expect(renderEnvelope(envelope)).toMatch(/1\. ok {3}@\d+\.\ds I\.click/);
+  });
+
+  test('the verdict names a failed outcome, an unverified one, and a run that never finished', async () => {
+    const run = async (expectations: SettledExpectation[], finish: boolean) => {
+      const { prima } = fakePrima();
+      (prima as any).bot.agentTester = () => ({
+        test: async (test: any) => {
+          test.addNote('execution stalled');
+          if (finish) test.finish(TestResult.FAILED);
+          return { success: false };
+        },
+      });
+      (prima as any).bot.agentPilot = () => ({ settleExpectations: async () => expectations });
+      return (await prima.check('save', ['saved', 'listed'])).verdict;
+    };
+
+    expect(await run([new SettledExpectation('saved', 'passed'), new SettledExpectation('listed', 'failed')], true)).toEqual({ status: 'failed', reason: '1 of 2 outcomes failed' });
+    expect(await run([new SettledExpectation('saved', 'passed'), new SettledExpectation('listed', 'unverified')], true)).toEqual({ status: 'passed', reason: '1 of 2 outcomes verified, 1 not verified' });
+    expect(await run([new SettledExpectation('saved', 'unverified'), new SettledExpectation('listed', 'unverified')], true)).toEqual({ status: 'inconclusive', reason: 'no outcome could be verified' });
+    expect((await run([new SettledExpectation('saved', 'passed')], false))?.status).toBe('inconclusive');
+  });
+
+  test('status prints the recorded output of a command again', async () => {
+    const { prima } = fakePrima();
+    const first = await prima.pw("({ page }) => page.click('text=Login')");
+    first.verdict = { status: 'failed', reason: 'step 2 failed' };
+    prima.record(first, 10);
+
+    const replayed = await prima.status(first.status!);
+
+    expect(replayed.verdict).toEqual({ status: 'failed', reason: 'step 2 failed' });
+    expect(replayed.changes).toBe(first.changes);
+  });
+
   test('an outcome the run showed failing names itself in the failure', async () => {
     const { prima } = fakePrima();
     (prima as any).bot.agentTester = () => ({
