@@ -274,6 +274,36 @@ describe('aria', () => {
     expect(result).toContain('ref=e13');
   });
 
+  it('keeps each table cell text once', () => {
+    const snapshot = ['- row "Alpha Run 332 tests" [ref=e40]:', '  - cell "Alpha Run" [ref=e41]:', '    - link "Alpha Run" [ref=e42]:', '      - img', '      - text: Alpha Run', '  - cell "332 tests" [ref=e43]', '  - cell:', '    - button [ref=e44]:', '      - img'].join('\n');
+
+    const result = compactAriaSnapshot(snapshot, true);
+
+    expect(result.match(/Alpha Run/g)).toHaveLength(1);
+    expect(result).toContain('link "Alpha Run" [ref=e42]');
+    expect(result).toContain('cell "332 tests"');
+    expect(result).toContain('row [ref=e40]');
+    expect(result).toContain('cell [ref=e41]');
+  });
+
+  it('keeps a container name that its children do not spell out', () => {
+    const snapshot = ['- listitem "Billing":', '  - link "Invoices"'].join('\n');
+
+    expect(compactAriaSnapshot(snapshot, true)).toContain('listitem "Billing"');
+  });
+
+  it('keeps a button name when its child text repeats it', () => {
+    const snapshot = ['- button "Save":', '  - generic "Save"'].join('\n');
+
+    expect(compactAriaSnapshot(snapshot, true)).toContain('button "Save"');
+  });
+
+  it('keeps a name in interactive mode when only non-interactive children repeat it', () => {
+    const snapshot = ['- listitem "Docs":', '  - generic "Docs"'].join('\n');
+
+    expect(compactAriaSnapshot(snapshot, false)).toContain('listitem "Docs"');
+  });
+
   it('reads an ARIA locator written with the name key, as CodeceptJS resolves it', () => {
     expect(parseAriaLocator("{ role: 'checkbox', name: 'Select test or suite' }")).toEqual({ role: 'checkbox', text: 'Select test or suite' });
     expect(parseAriaLocator("{ role: 'button', text: 'Save' }")).toEqual({ role: 'button', text: 'Save' });

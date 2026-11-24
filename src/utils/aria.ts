@@ -45,6 +45,10 @@ const INTERACTIVE_ROLES = new Set(
 
 const IGNORED_ROLES = new Set(['navigation']);
 
+const NAME_KEEPING_ROLES = new Set(['button', 'link']);
+
+const TEXT_ROLE = 'text';
+
 // ─────────────────────────────────────────────────────────────────
 // Tunables (knobs that change pipeline behavior)
 // ─────────────────────────────────────────────────────────────────
@@ -185,6 +189,35 @@ const dropEmpty = (nodes: AriaNode[], opts: { keepNamed?: boolean } = {}): AriaN
     if (opts.keepNamed && (node.name || node.value !== undefined)) return [{ ...node, children }];
     return [];
   });
+
+// Drop `text` children that repeat the parent's name.
+const dropRepeatedText = (nodes: AriaNode[]): AriaNode[] =>
+  nodes.map((node) => {
+    const children = dropRepeatedText(node.children).filter((child) => child.role !== TEXT_ROLE || !node.name || String(child.value ?? '') !== node.name);
+    return { ...node, children };
+  });
+
+// Drop a name that its children already spell out (row = its cells, cell = its link).
+//   keepNamed=false → only interactive children count, the rest are dropped later by dropEmpty.
+const dropDerivedNames = (nodes: AriaNode[], opts: { keepNamed?: boolean } = {}): AriaNode[] =>
+  nodes.map((node) => {
+    const children = dropDerivedNames(node.children, opts);
+    if (!node.name || NAME_KEEPING_ROLES.has(node.role)) return { ...node, children };
+    if (spelledText(node.children, opts) !== node.name) return { ...node, children };
+    const { name, ...rest } = node;
+    return { ...rest, children };
+  });
+
+const spelledText = (nodes: AriaNode[], opts: { keepNamed?: boolean }): string =>
+  nodes
+    .map((node) => {
+      if (!opts.keepNamed && !INTERACTIVE_ROLES.has(node.role)) return spelledText(node.children, opts);
+      if (node.name) return node.name;
+      if (node.role === TEXT_ROLE && node.value) return String(node.value);
+      return spelledText(node.children, opts);
+    })
+    .filter(Boolean)
+    .join(' ');
 
 // ─────────────────────────────────────────────────────────────────
 // STEP 3 · Render: AriaNode[] → text or flat entries
@@ -495,6 +528,8 @@ export const compactAriaSnapshot = (snapshot: string | null, keepNamed = false, 
   if (!snapshot) return '';
   let tree = parseSnapshot(snapshot);
   tree = unwrapIgnored(tree);
+  tree = dropRepeatedText(tree);
+  tree = dropDerivedNames(tree, { keepNamed });
   tree = nameIconButtons(tree);
   tree = dropEmpty(tree, { keepNamed });
   return renderTree(tree, 0, offload);
@@ -546,7 +581,6 @@ export const collectInteractiveNodes = (snapshot: string | null): Array<Record<s
 };
 
 const TEMPLATE_CHROME_ROLES = new Set(['banner', 'navigation', 'contentinfo', 'complementary']);
-const TEMPLATE_PROSE_ROLE = 'text';
 
 const dropChrome = (nodes: AriaNode[]): AriaNode[] =>
   nodes.flatMap((node) => {
@@ -556,7 +590,7 @@ const dropChrome = (nodes: AriaNode[]): AriaNode[] =>
 
 const collectRolePaths = (nodes: AriaNode[], prefix: string, into: Set<string>): void => {
   for (const node of nodes) {
-    if (node.role === TEMPLATE_PROSE_ROLE) continue;
+    if (node.role === TEXT_ROLE) continue;
     const path = prefix ? `${prefix}/${node.role}` : node.role;
     into.add(path);
     collectRolePaths(node.children, path, into);

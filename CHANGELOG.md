@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-11-24
+
+### Changes
+- ARIA snapshots sent to the AI no longer repeat the same text down the tree. A table row's name (its cells joined), a cell name equal to its link's, and a `text:` line equal to its parent's name are dropped; button and link names and all element refs are kept. Snapshots are about 22% smaller on table-heavy pages and 11% smaller in interactive-only mode.
+
 ## 2026-10-31
 
 ### New CLI Options
