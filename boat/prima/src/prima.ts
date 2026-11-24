@@ -962,9 +962,18 @@ export class Prima {
     if (title) args.unshift(`-s=${title}`);
 
     const stdio: any = ['ignore', 'ignore', 'inherit'];
-    const local = spawnSync('playwright-cli', args, { stdio });
+    if (process.platform !== 'win32') {
+      const local = spawnSync('playwright-cli', args, { stdio });
+      if (!local.error) return local;
+      return spawnSync('npx', ['-y', '@playwright/cli', ...args], { stdio });
+    }
+
+    const line = (cmd: string, cliArgs: string[]) => [cmd, ...cliArgs.map((arg) => `"${arg}"`)].join(' ');
+    const local = spawnSync(line('playwright-cli', args), { stdio, shell: true });
     if (!local.error) return local;
-    return spawnSync('npx', ['-y', '@playwright/cli', ...args], { stdio });
+    const fallback = spawnSync(line('npx', ['-y', '@playwright/cli', ...args]), { stdio, shell: true });
+    if (!fallback.error) return fallback;
+    throw new Error(`failed to launch playwright-cli (${fallback.error.message}); is it installed and on PATH?`);
   }
 
   private pwSessionTitle(): string | undefined {
